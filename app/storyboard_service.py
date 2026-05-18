@@ -32,7 +32,14 @@ class StoryboardService:
         project: Project,
         chapters: list[NovelChapter],
         title: str,
+        context_pack_inputs: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        video_feed = context_pack_inputs.get("video_feed", {}) if isinstance(context_pack_inputs, dict) else {}
+        project_snapshot = context_pack_inputs.get("project_snapshot", {}) if isinstance(context_pack_inputs, dict) else {}
+        hard_constraints = context_pack_inputs.get("hard_constraints", []) if isinstance(context_pack_inputs, dict) else []
+        user_decisions = video_feed.get("user_decisions", {}) if isinstance(video_feed, dict) else {}
+        reference_constraints = video_feed.get("reference_constraints", {}) if isinstance(video_feed, dict) else {}
+        character_visual_anchors = video_feed.get("character_visual_anchors", []) if isinstance(video_feed, dict) else []
         chapter_text = "\n\n".join(
             f"第 {chapter.chapter_no} 章《{chapter.title}》\n摘要：{chapter.summary}\n正文节选：{chapter.content[:5000]}"
             for chapter in chapters
@@ -44,14 +51,23 @@ class StoryboardService:
             """
         ).strip()
         prompt = f"""
-项目：{project.title}
-类型：{project.genre}
+项目：{project_snapshot.get("title") or project.title}
+类型：{project_snapshot.get("genre") or project.genre}
 短片标题：{title}
 
 {build_visual_style_block(project)}
 
 世界设定：
-{project.world_brief or "暂无"}
+{project_snapshot.get("world_brief") or project.world_brief or "暂无"}
+
+已确认角色视觉锚点：
+{character_visual_anchors}
+
+已确认参考作品约束：
+{reference_constraints}
+
+用户已确认的版本选择：
+{user_decisions}
 
 已定稿章节：
 {chapter_text}
@@ -94,6 +110,7 @@ class StoryboardService:
 - 每个 visual_prompt 必须明确写出画面媒介、美术方向、角色外观、场景、构图、光影和色彩。
 - 必须遵守项目级视觉风格锁定；如果用户填写了作者/工作室画风参考，只借鉴可迁移的美术特征，不要复刻原作角色、剧情、专有名词或具体画面。
 - 不要改写章节既定事实。
+- 必须遵守以下硬约束：{hard_constraints}
 - 优先从小说正文、角色关系和镜头意图中生成自然角色对白；不要要求用户手动补对白。
 - 如果原文没有适合对白，可以用极短旁白或字幕补足信息。
 - `audio_script.dialogues` 必须只包含当前镜头内合理会说出口的话，不要把大段叙述硬改成台词。

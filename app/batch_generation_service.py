@@ -14,6 +14,7 @@ from .api_support_project import _canonical_project_evolution
 from .config import Settings
 from .evolution_service import EvolutionService
 from .json_utils import json_loads_object
+from .context_pack_service import ContextPackService
 from .models import (
     BatchGenerationChapterTask,
     BatchGenerationJob,
@@ -31,6 +32,7 @@ from .story_service import StoryGenerationService
 class BatchGenerationService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.context_pack_service = ContextPackService()
 
     ACTIVE_JOB_STATUSES = ("queued", "retry_queued", "running", "pause_requested", "paused", "cancel_requested")
 
@@ -345,10 +347,15 @@ class BatchGenerationService:
         scene_card = self._build_outline_scene_card(db, project, series_plan, outline, outline_payload)
         user_prompt = self._outline_to_prompt(outline_payload)
         memories = [{"title": item.title, "content": item.content} for item in project.memories]
+        context_pack_inputs = self.context_pack_service.resolved_inputs(self.context_pack_service.require_confirmed(db, project))
         title, summary, content = writer.generate(
             project_title=project.title,
             genre=project.genre,
             reference_work=project.reference_work,
+            reference_work_synopsis=project.reference_work_synopsis,
+            reference_work_style_traits=project.reference_work_style_traits,
+            reference_work_world_traits=project.reference_work_world_traits,
+            reference_work_narrative_constraints=project.reference_work_narrative_constraints,
             premise=project_chapter.premise,
             world_brief=project.world_brief,
             writing_rules=project.writing_rules,
@@ -358,6 +365,7 @@ class BatchGenerationService:
             scene_card=scene_card,
             memories=memories,
             use_refiner=True,
+            context_pack_inputs=context_pack_inputs,
         )
 
         generation = GenerationRun(

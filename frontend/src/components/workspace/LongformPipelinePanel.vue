@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
-import type { BatchGenerationChapterTask, ChapterOutline, CharacterCard, DraftVersion, LongformState, MediaAsset, NovelCard, NovelDetail, Project, SeriesPlan, StoryboardShot, VideoTask } from "../../types";
+import type { BatchGenerationChapterTask, ChapterOutline, CharacterCard, ContextPack, DraftVersion, LongformState, MediaAsset, NovelCard, NovelDetail, Project, SeriesPlan, StoryboardShot, VideoTask } from "../../types";
 
 const props = defineProps<{
+  mode: "novel" | "video";
   project?: Project | null;
   projectTitle?: string;
   loading: boolean;
   state: LongformState;
+  contextPack?: ContextPack | null;
   characterCards: CharacterCard[];
   managedNovels: NovelCard[];
   currentNovel?: NovelDetail | null;
@@ -120,14 +122,14 @@ const shotEdit = reactive({
 const turnaroundForm = reactive({ character_card_id: 0, chapter_no: 1, prompt_note: "" });
 const visualStyleForm = reactive({
   locked: true,
-  medium: "二维动画电影",
+  medium: "",
   artistsText: "",
-  positiveText: "",
-  negativeText: "",
   notes: "",
 });
 const preview = ref<{ type: "image" | "video" | "audio"; title: string; url: string } | null>(null);
 const localError = ref("");
+const isNovelMode = computed(() => props.mode === "novel");
+const isVideoMode = computed(() => props.mode === "video");
 
 const latestPlan = computed(
   () => props.state.series_plans.find((item) => item.id === props.preferredSeriesPlanId) ?? props.state.series_plans[0] ?? null,
@@ -181,6 +183,17 @@ const latestStoryboardAssets = computed(() => {
   if (!storyboardId) return [];
   return props.state.media_assets.filter((asset) => asset.storyboard_id === storyboardId).slice(0, 18);
 });
+const canonicalDraftCount = computed(() => props.state.draft_versions.filter((draft) => draft.status === "chapter_canonical").length);
+const latestStoryboardLockedShotCount = computed(() => latestStoryboard.value?.shots.filter((shot) => shot.status === "locked").length ?? 0);
+const latestStoryboardAudioScriptCount = computed(
+  () => latestStoryboard.value?.shots.filter((shot) => shot.audio_script && Object.keys(shot.audio_script).length > 0).length ?? 0,
+);
+const latestStoryboardDialogueAssetCount = computed(
+  () => latestStoryboardAssets.value.filter((asset) => asset.asset_type === "dialogue" && asset.status === "completed").length,
+);
+const latestStoryboardFirstFrameCount = computed(
+  () => latestStoryboardAssets.value.filter((asset) => asset.asset_type === "shot_first_frame" && asset.status === "completed").length,
+);
 const assetSummary = computed(() => {
   const counts: Record<string, number> = {};
   for (const asset of latestStoryboardAssets.value) {
@@ -190,27 +203,128 @@ const assetSummary = computed(() => {
 });
 const visualAssets = computed(() => props.state.media_assets.filter((asset) => asset.asset_type.startsWith("character_") || asset.asset_type.startsWith("scene_") || asset.asset_type === "shot_first_frame"));
 const videoOutputs = computed(() => props.state.video_tasks.filter((task) => typeof task.progress.public_url === "string" && task.progress.public_url));
+const headerStats = computed(() =>
+  isNovelMode.value
+    ? [
+        { label: "概要", value: String(props.state.series_plans.length) },
+        { label: "锁定", value: `${lockedOutlineCount.value}/${outlineCount.value}` },
+        { label: "定稿", value: String(canonicalDraftCount.value) },
+      ]
+    : [
+        { label: "分镜", value: String(props.state.storyboards.length) },
+        { label: "素材", value: String(visualAssets.value.length) },
+        { label: "任务", value: String(props.state.video_tasks.length) },
+      ],
+);
+const panelTitle = computed(() => (isNovelMode.value ? "小说主流程" : "视频化生产"));
+const panelDescription = computed(() =>
+  isNovelMode.value
+    ? "这里只保留小说主流程：先生成并锁定概要，再批量生成正文，再把章节修订成定稿。"
+    : "这里只保留视频生产：视觉风格、角色资产、分镜、对白、首帧、视频任务与成片。",
+);
+const contextPackSummary = computed(() => {
+  const pack = props.contextPack;
+  if (!pack) return null;
+  const hard = Array.isArray(pack.derived_constraints?.hard_constraints) ? pack.derived_constraints.hard_constraints.slice(0, 4) : [];
+  const decisions = pack.user_decisions ? Object.entries(pack.user_decisions).slice(0, 4) : [];
+  const pendingTodos = (pack.todo_tasks ?? []).filter((item) => item.status === "todo").slice(0, 4);
+  return {
+    version: pack.version_no,
+    status: pack.status,
+    referenceMode: pack.reference_mode,
+    hard,
+    decisions,
+    pendingTodos,
+  };
+});
+const novelChecklist = computed(() => [
+  {
+    key: "plan",
+    label: "长篇概要",
+    done: Boolean(latestPlan.value),
+    detail: latestPlan.value
+      ? `${lockedOutlineCount.value}/${outlineCount.value} 章概要已生成${latestPlan.value.status === "locked" ? "，当前已锁定。" : "，还可以继续修订。"}`
+      : "先生成全书概要和章节细纲，再开始正文生产。",
+  },
+  {
+    key: "batch",
+    label: "批量正文",
+    done: Boolean(latestBatchJob.value),
+    detail: latestBatchJob.value ? batchJobSummary() : "概要锁定后，再按章节范围顺序生成正文。",
+  },
+  {
+    key: "drafts",
+    label: "章节定稿",
+    done: canonicalDraftCount.value > 0,
+    detail:
+      canonicalDraftCount.value > 0
+        ? `已有 ${canonicalDraftCount.value} 个定稿章节，可继续修订或进入视频化。`
+        : "批量生成后先挑章节修订，再定稿为正式章节。",
+  },
+]);
 const visualStyleSummary = computed(() => {
   const project = props.project;
   const reference = project?.reference_work?.trim() || "";
   const artists = project?.visual_style_artists?.filter(Boolean) ?? [];
-  const positive = project?.visual_style_positive?.filter(Boolean) ?? project?.reference_work_style_traits?.filter(Boolean) ?? [];
-  const negative = project?.visual_style_negative?.filter(Boolean) ?? [];
   const chips = [
-    project?.visual_style_medium || "二维动画电影",
+    project?.visual_style_medium || "",
     ...artists.slice(0, 3),
-    ...positive.slice(0, 4),
-    ...negative.slice(0, 3).map((item) => `避开：${item}`),
   ];
   return {
     reference,
     title: project?.visual_style_locked ? "视觉风格已锁定" : "视觉风格未锁定",
     description: reference
-      ? `生成图片和视频时会参考《${reference}》的可迁移视觉特征，并叠加下方作者画风、正向关键词和禁止项。`
-      : "生成图片和视频时会使用下方画面媒介、作者画风、正向关键词和禁止项。",
+      ? `生成图片和视频时会参考《${reference}》的可迁移视觉方向，并叠加这部项目自己的媒介、画风参考和补充约束。`
+      : "生成图片和视频时会使用这部项目自己的画面媒介、画风参考和补充约束。",
     chips: Array.from(new Set(chips.filter(Boolean))),
   };
 });
+const productionChecklist = computed(() => [
+  {
+    key: "style",
+    label: "项目级视觉风格",
+    done: Boolean(props.project?.visual_style_locked),
+    detail: props.project?.visual_style_locked ? "已锁定，后续分镜、首帧和视频会继承这套约束。" : "建议先锁定，再进入首帧和视频生产。",
+  },
+  {
+    key: "plan",
+    label: "长篇概要",
+    done: Boolean(latestPlan.value && latestPlan.value.status === "locked"),
+    detail: latestPlan.value ? `${lockedOutlineCount.value}/${outlineCount.value} 章概要已锁定。` : "还没有概要，先生成并确认全书方向。",
+  },
+  {
+    key: "drafts",
+    label: "定稿章节",
+    done: canonicalDraftCount.value > 0,
+    detail: canonicalDraftCount.value > 0 ? `已有 ${canonicalDraftCount.value} 个定稿章节，可继续做分镜。` : "至少先把一章正文定稿，分镜和视频只面向定稿章节。",
+  },
+  {
+    key: "storyboard",
+    label: "分镜稿",
+    done: Boolean(latestStoryboard.value && latestStoryboard.value.shots.length),
+    detail: latestStoryboard.value
+      ? `当前分镜 ${latestStoryboard.value.shots.length} 镜头，已锁定 ${latestStoryboardLockedShotCount.value} 镜头。`
+      : "还没有分镜，先从已定稿章节生成分镜稿。",
+  },
+  {
+    key: "audio",
+    label: "对白与音频准备",
+    done: latestStoryboardAudioScriptCount.value > 0 || latestStoryboardDialogueAssetCount.value > 0,
+    detail:
+      latestStoryboard.value
+        ? `对白脚本 ${latestStoryboardAudioScriptCount.value}/${latestStoryboard.value.shots.length}，对白音频 ${latestStoryboardDialogueAssetCount.value} 条。`
+        : "分镜创建后，先补对白脚本和对白音频。",
+  },
+  {
+    key: "frames",
+    label: "首帧与视觉资产",
+    done: latestStoryboardFirstFrameCount.value > 0 || visualAssets.value.length > 0,
+    detail:
+      latestStoryboard.value
+        ? `角色/首帧等视觉资产 ${visualAssets.value.length} 个，其中镜头首帧 ${latestStoryboardFirstFrameCount.value} 个。`
+        : "角色三视图和镜头首帧不是必需，但会明显提升可控性。",
+  },
+]);
 const feedbackTargets = computed(() => {
   const plan = latestPlan.value;
   if (!plan) return [];
@@ -261,10 +375,8 @@ watch(feedbackTargets, (targets) => {
 
 watch(() => props.project, (project) => {
   visualStyleForm.locked = project?.visual_style_locked ?? true;
-  visualStyleForm.medium = project?.visual_style_medium || "二维动画电影";
+  visualStyleForm.medium = project?.visual_style_medium || "";
   visualStyleForm.artistsText = (project?.visual_style_artists ?? []).join("，");
-  visualStyleForm.positiveText = (project?.visual_style_positive ?? project?.reference_work_style_traits ?? []).join("，");
-  visualStyleForm.negativeText = (project?.visual_style_negative ?? ["真人", "实拍", "三次元", "照片级写实", "文字", "水印", "logo"]).join("，");
   visualStyleForm.notes = project?.visual_style_notes || "";
 }, { immediate: true });
 
@@ -319,10 +431,10 @@ function saveVisualStyle() {
   if (!props.project) return;
   emit("update-visual-style", {
     locked: visualStyleForm.locked,
-    medium: visualStyleForm.medium.trim() || "二维动画电影",
+    medium: visualStyleForm.medium.trim(),
     artists: splitTags(visualStyleForm.artistsText),
-    positive: splitTags(visualStyleForm.positiveText),
-    negative: splitTags(visualStyleForm.negativeText),
+    positive: [],
+    negative: [],
     notes: visualStyleForm.notes.trim(),
   });
 }
@@ -863,17 +975,15 @@ function generateTurnaround() {
     <section class="panel panel--paper">
       <div class="panel-heading">
         <div>
-          <p class="panel-heading__kicker">长篇流水线</p>
+          <p class="panel-heading__kicker">{{ panelTitle }}</p>
           <h2>{{ projectTitle || "当前项目" }}</h2>
-          <p class="panel-heading__desc">先控概要，再按锁定概要顺序生成正文；已发布章节可进入读后短片分镜。</p>
+          <p class="panel-heading__desc">{{ panelDescription }}</p>
         </div>
         <div class="hero__stats">
-          <span>概要 {{ state.series_plans.length }}</span>
-          <span>锁定 {{ lockedOutlineCount }}/{{ outlineCount }}</span>
-          <span>分镜 {{ state.storyboards.length }}</span>
+          <span v-for="item in headerStats" :key="item.label">{{ item.label }} {{ item.value }}</span>
         </div>
       </div>
-      <form class="form-stack" @submit.prevent="emit('generate-plan', { ...planForm, user_brief: planForm.user_brief.trim() })">
+      <form v-if="isNovelMode" class="form-stack" @submit.prevent="emit('generate-plan', { ...planForm, user_brief: planForm.user_brief.trim() })">
         <div class="inline-row">
           <label class="field">
             <span>目标章节数</span>
@@ -888,51 +998,65 @@ function generateTurnaround() {
       </form>
     </section>
 
-    <section class="panel visual-style-panel" v-if="project">
+    <section v-if="contextPackSummary" class="panel panel--paper">
       <div class="panel-heading">
         <div>
-          <p class="panel-heading__kicker">视觉风格锁定</p>
-          <h2>{{ visualStyleSummary.title }}</h2>
-          <p class="panel-heading__desc">{{ visualStyleSummary.description }}</p>
+          <p class="panel-heading__kicker">当前解释源</p>
+          <h2>Context Pack v{{ contextPackSummary.version }}</h2>
+          <p class="panel-heading__desc">状态：{{ contextPackSummary.status }} / 模式：{{ contextPackSummary.referenceMode }}</p>
         </div>
       </div>
-      <div class="style-chip-row">
-        <span v-for="chip in visualStyleSummary.chips" :key="chip" class="style-chip">{{ chip }}</span>
+      <div class="longform-outline">
+        <article class="memory-card">
+          <strong>本次硬约束</strong>
+          <span v-for="(item, index) in contextPackSummary.hard" :key="`cp-hard-${index}`">{{ item }}</span>
+        </article>
+        <article class="memory-card">
+          <strong>本次用户选择</strong>
+          <span v-if="!contextPackSummary.decisions.length">当前没有显式版本选择。</span>
+          <span v-for="([key, value], index) in contextPackSummary.decisions" :key="`cp-decision-${index}`">{{ key }}: {{ value }}</span>
+        </article>
+        <article class="memory-card">
+          <strong>仍未解决的待办</strong>
+          <span v-if="!contextPackSummary.pendingTodos.length">当前没有待处理项。</span>
+          <span v-for="item in contextPackSummary.pendingTodos" :key="item.task_id">{{ item.title }}</span>
+        </article>
       </div>
-      <form class="form-stack" @submit.prevent="saveVisualStyle()">
-        <label class="field field--check">
-          <input v-model="visualStyleForm.locked" type="checkbox" />
-          <span>生成图片和视频时强制使用这套视觉风格</span>
-        </label>
-        <div class="inline-row">
-          <label class="field">
-            <span>画面媒介</span>
-            <input v-model="visualStyleForm.medium" maxlength="80" placeholder="例如：二维动画电影、手绘漫画、水彩插画、写实电影" />
-          </label>
-          <label class="field">
-            <span>作者 / 工作室画风</span>
-            <input v-model="visualStyleForm.artistsText" maxlength="1000" placeholder="例如：新海诚画风，宫崎骏画风" />
-          </label>
-        </div>
-        <div class="inline-row">
-          <label class="field">
-            <span>正向视觉关键词</span>
-            <textarea v-model="visualStyleForm.positiveText" rows="3" maxlength="2000" placeholder="例如：雨天城市，天空云层，通透光线，手绘背景，青春感" />
-          </label>
-          <label class="field">
-            <span>禁止项</span>
-            <textarea v-model="visualStyleForm.negativeText" rows="3" maxlength="2000" placeholder="例如：真人，实拍，三次元，照片级写实，文字，水印，logo" />
-          </label>
-        </div>
-        <label class="field">
-          <span>补充说明</span>
-          <textarea v-model="visualStyleForm.notes" rows="3" maxlength="4000" placeholder="说明这部项目的色彩、光线、构图、角色造型和场景质感。" />
-        </label>
-        <button class="primary-button" :disabled="loading">保存视觉风格</button>
-      </form>
     </section>
 
-    <section class="longform-grid">
+    <section class="panel panel--paper" v-if="isNovelMode">
+      <div class="panel-heading">
+        <div>
+          <p class="panel-heading__kicker">主流程检查</p>
+          <h2>概要、正文、定稿</h2>
+          <p class="panel-heading__desc">旧的单章创作流程不再放在主位。现在小说创作只保留长篇概要到批量正文这条主线。</p>
+        </div>
+      </div>
+      <div class="longform-outline">
+        <article v-for="item in novelChecklist" :key="item.key" class="memory-card">
+          <strong>{{ item.label }} / {{ item.done ? "已就绪" : "待补齐" }}</strong>
+          <span>{{ item.detail }}</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel panel--paper" v-if="isVideoMode">
+      <div class="panel-heading">
+        <div>
+          <p class="panel-heading__kicker">生产准备</p>
+          <h2>进入视频前先确认</h2>
+          <p class="panel-heading__desc">视频化只面向已经定稿的章节。先看主链路是否齐备，再继续做视觉、分镜和视频任务。</p>
+        </div>
+      </div>
+      <div class="longform-outline">
+        <article v-for="item in productionChecklist" :key="item.key" class="memory-card">
+          <strong>{{ item.label }} / {{ item.done ? "已就绪" : "待补齐" }}</strong>
+          <span>{{ item.detail }}</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="longform-grid" v-if="isNovelMode">
       <article class="panel" v-if="latestPlan">
         <div class="panel-heading">
           <div>
@@ -990,7 +1114,7 @@ function generateTurnaround() {
       </article>
     </section>
 
-    <section class="panel" v-if="latestPlan">
+    <section class="panel" v-if="latestPlan && isNovelMode">
       <div class="panel-heading"><div><p class="panel-heading__kicker">阶段与章节概要</p><h2>{{ latestPlan.chapters.length }} 章细纲</h2></div></div>
       <div class="longform-outline">
         <article v-for="arc in latestPlan.arcs" :key="arc.id" class="memory-card">
@@ -1023,7 +1147,112 @@ function generateTurnaround() {
       </form>
     </section>
 
-    <section class="panel">
+    <section class="panel" v-if="latestPlan && isNovelMode">
+      <div class="panel-heading"><div><p class="panel-heading__kicker">批量正文</p><h2>顺序生成</h2></div></div>
+      <form class="form-stack" @submit.prevent="emit('batch-generate', { ...batchForm })">
+        <div class="inline-row">
+          <label class="field"><span>起始章</span><input v-model.number="batchForm.start_chapter_no" type="number" min="1" /></label>
+          <label class="field"><span>结束章</span><input v-model.number="batchForm.end_chapter_no" type="number" min="1" /></label>
+        </div>
+        <button class="primary-button" :disabled="loading || latestPlan.status !== 'locked'">一键生成小说内容</button>
+      </form>
+      <p v-if="latestBatchJob" class="empty-text">{{ batchJobSummary() }}</p>
+      <div v-if="latestBatchJob" class="inline-row">
+        <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !canPauseBatch" @click="emit('pause-batch', latestBatchJob.id)">暂停</button>
+        <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !canResumeBatch" @click="emit('resume-batch', latestBatchJob.id)">恢复</button>
+        <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !canRetryBatch" @click="emit('retry-batch', latestBatchJob.id)">重试</button>
+        <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !canCancelBatch" @click="emit('cancel-batch', latestBatchJob.id)">取消</button>
+      </div>
+      <div v-if="latestBatchJob?.chapter_tasks.length" class="card-list">
+        <div v-for="task in latestBatchJob.chapter_tasks" :key="task.id" class="memory-card">
+          <strong>第 {{ task.chapter_no }} 章：{{ statusLabel(task.status) }}</strong>
+          <span>{{ chapterTaskSummary(task) }}</span>
+        </div>
+      </div>
+      <div v-if="latestBatchJob?.events.length" class="card-list">
+        <div v-for="event in latestBatchJob.events.slice(-4)" :key="event.id" class="memory-card">
+          <strong>{{ eventLabel(event.event_type) }}<span>{{ eventTimeLabel(event.created_at) }}</span></strong>
+          <span>{{ event.message }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" v-if="state.draft_versions.length && isNovelMode">
+      <div class="panel-heading"><div><p class="panel-heading__kicker">章节版本</p><h2>批量生成草稿</h2></div></div>
+      <div class="longform-grid">
+        <div class="card-list">
+          <button
+            v-for="draft in state.draft_versions.slice(0, 12)"
+            :key="draft.id"
+            class="memory-card memory-card--button"
+            type="button"
+            @click="selectedDraftVersionId = draft.id"
+          >
+            <strong>v{{ draft.version_no }} {{ draft.title }}</strong>
+            <span>{{ statusLabel(draft.status) }}</span>
+            <span>{{ draftVersionSummary(draft) }}</span>
+            <em>{{ draft.summary }}</em>
+          </button>
+        </div>
+        <div class="form-stack" v-if="selectedDraftVersion">
+          <label class="field"><span>重写反馈</span><textarea v-model="draftFeedback" rows="4" maxlength="8000" /></label>
+          <button class="primary-button" :disabled="loading || !draftFeedback.trim()" @click="reviseSelectedDraft()">全章重写生成新版本</button>
+          <div class="inline-row">
+            <label class="field"><span>作者名</span><input v-model="canonicalForm.author_name" maxlength="100" /></label>
+            <label class="field">
+              <span>可见性</span>
+              <select v-model="canonicalForm.visibility">
+                <option value="private">私密</option>
+                <option value="public">公开</option>
+              </select>
+            </label>
+          </div>
+          <label class="field"><span>作品标语</span><input v-model="canonicalForm.tagline" maxlength="255" /></label>
+          <button class="ghost-button" type="button" :disabled="loading" @click="canonicalizeSelectedDraft()">定稿为正式章节</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel visual-style-panel" v-if="project && isVideoMode">
+      <div class="panel-heading">
+        <div>
+          <p class="panel-heading__kicker">视觉风格锁定</p>
+          <h2>{{ visualStyleSummary.title }}</h2>
+          <p class="panel-heading__desc">{{ visualStyleSummary.description }}</p>
+        </div>
+      </div>
+      <div class="style-chip-row">
+        <span v-for="chip in visualStyleSummary.chips" :key="chip" class="style-chip">{{ chip }}</span>
+      </div>
+      <form class="form-stack" @submit.prevent="saveVisualStyle()">
+        <label class="field field--check">
+          <input v-model="visualStyleForm.locked" type="checkbox" />
+          <span>生成图片和视频时强制使用这套视觉风格</span>
+        </label>
+        <div class="inline-row">
+          <label class="field">
+            <span>画面媒介</span>
+            <input v-model="visualStyleForm.medium" maxlength="80" placeholder="例如：二维动画电影、手绘漫画、水彩插画、写实电影；不需要就留空" />
+          </label>
+          <label class="field">
+            <span>风格参考</span>
+            <input v-model="visualStyleForm.artistsText" maxlength="1000" placeholder="例如：新海诚、CoMix Wave Films、雨天城市光影、夏日云层透光" />
+          </label>
+        </div>
+        <label class="field">
+          <span>项目级视觉约束说明</span>
+          <textarea
+            v-model="visualStyleForm.notes"
+            rows="5"
+            maxlength="4000"
+            placeholder="这里直接写这部项目自己的长期视觉约束，例如：\n- 画面以新海诚动画电影质感为主，不走写实真人路线\n- 强调暴雨、云缝天光、城市霓虹反光、潮湿空气感\n- 角色面部与服装保持少年少女动画设定，不要偏成熟写实\n- 镜头优先使用通透逆光、黄昏天台、都市高空与电车窗口等意象"
+          />
+        </label>
+        <button class="primary-button" :disabled="loading">保存视觉风格</button>
+      </form>
+    </section>
+
+    <section class="panel" v-if="isVideoMode">
       <div class="panel-heading">
         <div>
           <p class="panel-heading__kicker">视觉资产</p>
@@ -1065,98 +1294,30 @@ function generateTurnaround() {
       <p v-else class="empty-text">还没有视觉资产。建议先为主角生成三视图。</p>
     </section>
 
-    <section class="longform-grid">
-      <article class="panel" v-if="latestPlan">
-        <div class="panel-heading"><div><p class="panel-heading__kicker">批量正文</p><h2>顺序生成</h2></div></div>
-        <form class="form-stack" @submit.prevent="emit('batch-generate', { ...batchForm })">
-          <div class="inline-row">
-            <label class="field"><span>起始章</span><input v-model.number="batchForm.start_chapter_no" type="number" min="1" /></label>
-            <label class="field"><span>结束章</span><input v-model.number="batchForm.end_chapter_no" type="number" min="1" /></label>
-          </div>
-          <button class="primary-button" :disabled="loading || latestPlan.status !== 'locked'">一键生成小说内容</button>
-        </form>
-        <p v-if="latestBatchJob" class="empty-text">{{ batchJobSummary() }}</p>
-        <div v-if="latestBatchJob" class="inline-row">
-          <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !canPauseBatch" @click="emit('pause-batch', latestBatchJob.id)">暂停</button>
-          <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !canResumeBatch" @click="emit('resume-batch', latestBatchJob.id)">恢复</button>
-          <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !canRetryBatch" @click="emit('retry-batch', latestBatchJob.id)">重试</button>
-          <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !canCancelBatch" @click="emit('cancel-batch', latestBatchJob.id)">取消</button>
-        </div>
-        <div v-if="latestBatchJob?.chapter_tasks.length" class="card-list">
-          <div v-for="task in latestBatchJob.chapter_tasks" :key="task.id" class="memory-card">
-            <strong>第 {{ task.chapter_no }} 章：{{ statusLabel(task.status) }}</strong>
-            <span>{{ chapterTaskSummary(task) }}</span>
-          </div>
-        </div>
-        <div v-if="latestBatchJob?.events.length" class="card-list">
-          <div v-for="event in latestBatchJob.events.slice(-4)" :key="event.id" class="memory-card">
-            <strong>{{ eventLabel(event.event_type) }}<span>{{ eventTimeLabel(event.created_at) }}</span></strong>
-            <span>{{ event.message }}</span>
-          </div>
-        </div>
-      </article>
-
-      <article class="panel">
-        <div class="panel-heading"><div><p class="panel-heading__kicker">选章视频化</p><h2>读后短片分镜</h2></div></div>
-        <div class="form-stack">
-          <label class="field">
-            <span>已发布作品</span>
-            <select :value="currentNovel?.id || ''" @change="emit('open-novel', Number(($event.target as HTMLSelectElement).value))">
-              <option value="" disabled>选择作品</option>
-              <option v-for="novel in managedNovels" :key="novel.id" :value="novel.id">{{ novel.title }}</option>
-            </select>
+    <section class="panel" v-if="isVideoMode">
+      <div class="panel-heading"><div><p class="panel-heading__kicker">选章视频化</p><h2>读后短片分镜</h2></div></div>
+      <div class="form-stack">
+        <label class="field">
+          <span>已发布作品</span>
+          <select :value="currentNovel?.id || ''" @change="emit('open-novel', Number(($event.target as HTMLSelectElement).value))">
+            <option value="" disabled>选择作品</option>
+            <option v-for="novel in managedNovels" :key="novel.id" :value="novel.id">{{ novel.title }}</option>
+          </select>
+        </label>
+        <label class="field"><span>短片标题</span><input v-model="storyboardTitle" maxlength="255" /></label>
+        <div class="card-list" v-if="publishedChapters.length">
+          <label v-for="chapter in publishedChapters" :key="chapter.id" class="memory-card memory-card--select">
+            <input type="checkbox" :checked="selectedNovelChapterIds.includes(chapter.id)" @change="toggleChapter(chapter.id)" />
+            <strong>#{{ chapter.chapter_no }} {{ chapter.title }}</strong>
+            <span>{{ chapter.summary }}</span>
           </label>
-          <label class="field"><span>短片标题</span><input v-model="storyboardTitle" maxlength="255" /></label>
-          <div class="card-list" v-if="publishedChapters.length">
-            <label v-for="chapter in publishedChapters" :key="chapter.id" class="memory-card memory-card--select">
-              <input type="checkbox" :checked="selectedNovelChapterIds.includes(chapter.id)" @change="toggleChapter(chapter.id)" />
-              <strong>#{{ chapter.chapter_no }} {{ chapter.title }}</strong>
-              <span>{{ chapter.summary }}</span>
-            </label>
-          </div>
-          <p v-else class="empty-text">只有已发布/定稿章节可生成分镜。</p>
-          <button class="primary-button" :disabled="loading || !selectedNovelChapterIds.length" @click="emit('create-storyboard', { novel_chapter_ids: selectedNovelChapterIds, title: storyboardTitle.trim() })">生成分镜稿</button>
         </div>
-      </article>
-    </section>
-
-    <section class="panel" v-if="state.draft_versions.length">
-      <div class="panel-heading"><div><p class="panel-heading__kicker">章节版本</p><h2>批量生成草稿</h2></div></div>
-      <div class="longform-grid">
-        <div class="card-list">
-          <button
-            v-for="draft in state.draft_versions.slice(0, 12)"
-            :key="draft.id"
-            class="memory-card memory-card--button"
-            type="button"
-            @click="selectedDraftVersionId = draft.id"
-          >
-            <strong>v{{ draft.version_no }} {{ draft.title }}</strong>
-            <span>{{ statusLabel(draft.status) }}</span>
-            <span>{{ draftVersionSummary(draft) }}</span>
-            <em>{{ draft.summary }}</em>
-          </button>
-        </div>
-        <div class="form-stack" v-if="selectedDraftVersion">
-          <label class="field"><span>重写反馈</span><textarea v-model="draftFeedback" rows="4" maxlength="8000" /></label>
-          <button class="primary-button" :disabled="loading || !draftFeedback.trim()" @click="reviseSelectedDraft()">全章重写生成新版本</button>
-          <div class="inline-row">
-            <label class="field"><span>作者名</span><input v-model="canonicalForm.author_name" maxlength="100" /></label>
-            <label class="field">
-              <span>可见性</span>
-              <select v-model="canonicalForm.visibility">
-                <option value="private">私密</option>
-                <option value="public">公开</option>
-              </select>
-            </label>
-          </div>
-          <label class="field"><span>作品标语</span><input v-model="canonicalForm.tagline" maxlength="255" /></label>
-          <button class="ghost-button" type="button" :disabled="loading" @click="canonicalizeSelectedDraft()">定稿为正式章节</button>
-        </div>
+        <p v-else class="empty-text">只有已发布/定稿章节可生成分镜。</p>
+        <button class="primary-button" :disabled="loading || !selectedNovelChapterIds.length" @click="emit('create-storyboard', { novel_chapter_ids: selectedNovelChapterIds, title: storyboardTitle.trim() })">生成分镜稿</button>
       </div>
     </section>
 
-    <section class="panel" v-if="latestStoryboard">
+    <section class="panel" v-if="latestStoryboard && isVideoMode">
       <div class="panel-heading">
         <div><p class="panel-heading__kicker">分镜稿</p><h2>{{ latestStoryboard.title }}</h2></div>
         <div class="mode-switch">
@@ -1219,9 +1380,7 @@ function generateTurnaround() {
             <button class="ghost-button ghost-button--small" type="button" @click="moveShot(shot, -1)">上移</button>
             <button class="ghost-button ghost-button--small" type="button" @click="moveShot(shot, 1)">下移</button>
             <button class="ghost-button ghost-button--small" type="button" @click="beginEditShot(latestStoryboard.id, shot)">编辑</button>
-            <button class="ghost-button ghost-button--small" type="button" :disabled="loading" @click="emit('generate-shot-first-frame', { storyboardId: latestStoryboard.id, shotId: shot.id })">
-              生成首帧
-            </button>
+            <button class="ghost-button ghost-button--small" type="button" :disabled="loading" @click="emit('generate-shot-first-frame', { storyboardId: latestStoryboard.id, shotId: shot.id })">生成首帧</button>
             <button
               v-if="shotFirstFrameAsset(shot.id) && publicUrl(shotFirstFrameAsset(shot.id)!)"
               class="ghost-button ghost-button--small"
@@ -1301,7 +1460,8 @@ function generateTurnaround() {
         </article>
       </div>
     </section>
-    <section class="panel" v-if="videoOutputs.length">
+
+    <section class="panel" v-if="videoOutputs.length && isVideoMode">
       <div class="panel-heading"><div><p class="panel-heading__kicker">视频产物</p><h2>已完成输出</h2></div></div>
       <div class="longform-outline">
         <article v-for="task in videoOutputs" :key="task.id" class="memory-card">

@@ -1,6 +1,6 @@
 # ChenFlow Workbench 开发者说明
 
-ChenFlow Workbench 是一个本地优先的中文小说创作工作台。当前代码聚焦在项目设定、章节创作、长篇规划、正文修订、分镜生成和短片生成。
+ChenFlow Workbench 是一个本地优先的中文小说创作工作台。当前代码聚焦在项目设定、生成前校对、长篇规划、正文修订、分镜生成、短片生成，以及统一的草稿/已发布沉浸式阅读体验。
 
 仓库里仍保留部分 GraphRAG / Neo4j 阶段的文件和文档，用于追溯历史设计；它们已经不是当前主链路的运行前置。
 
@@ -51,6 +51,7 @@ MVP/
 
 ```text
 项目设定
+-> 生成前校对 / Context Pack 确认
 -> 视觉风格锁定
 -> 生成长篇概要
 -> 提交概要反馈
@@ -60,6 +61,16 @@ MVP/
 -> 从定稿章节生成分镜
 -> 编辑分镜镜头
 -> 创建视频任务
+```
+
+作品阅读与管理链路：
+
+```text
+小说创作 / 批量正文
+-> DraftVersion 草稿
+-> 作品管理（草稿 + 已发布作品统一入口）
+-> 沉浸式阅读页
+-> 可选：发布为作品 / 追加到已发布作品
 ```
 
 视频生成链路：
@@ -78,6 +89,44 @@ VideoTask queued
 ```
 
 如果没有配置即梦 key，后端会回退到旧的本地合成链路：图片生成 + TTS + 字幕文件 + FFmpeg。
+
+## 生成前校对 / Context Pack
+
+当前主链路已经引入 `生成前校对` 页面和 `Context Pack`：
+
+- 用户先确认项目设定、人物卡、参考作品使用方式
+- 系统生成一份可见、可确认、可追溯的上下文包
+- 后续概要、正文、分镜、视频预检、音频脚本、配音、视觉资产和视频任务都会绑定这份包
+- 人物卡或设定变更后，旧的上下文包会失效，需要重新校对确认
+
+校对页当前可见内容包括：
+
+- 冲突与风险提示
+- 用户改进建议
+- 版本选择问题
+- 待办任务
+- 小说链路和视频链路的真实喂料预览
+
+参考作品模式当前支持三种：
+
+- `风格参考`
+- `内容参考`
+- `内容和风格都参考`
+
+## 作品管理与阅读
+
+当前 `作品管理` 页面已经从“只管已发布作品”改成统一入口：
+
+- 长篇草稿会直接出现在作品管理列表中
+- 已发布作品也在同一入口管理
+- 草稿与已发布作品都可以进入同一套沉浸式阅读页
+
+沉浸式阅读页的设计目标是：
+
+- 去掉创作台左侧导航壳
+- 只保留章节号、章节标题、正文和底部目录/翻页
+- 草稿阅读不展示干扰阅读的技术状态和剧透式摘要
+- 已发布作品和草稿共用一套阅读体验
 
 ## 视觉风格锁定
 
@@ -149,13 +198,13 @@ AUTH_SECRET=replace-this-with-a-long-random-secret
 AUTH_EXP_HOURS=168
 ```
 
-即梦 3.0 720P 视频配置：
+即梦 3.0 1080P 视频配置：
 
 ```env
 JIMENG_ACCESS_KEY=your-volcengine-access-key
 JIMENG_SECRET_KEY=your-volcengine-secret-key
-JIMENG_VIDEO_REQ_KEY=jimeng_t2v_v30
-JIMENG_VIDEO_I2V_REQ_KEY=jimeng_i2v_first_v30
+JIMENG_VIDEO_REQ_KEY=jimeng_t2v_v30_1080p
+JIMENG_VIDEO_I2V_REQ_KEY=jimeng_i2v_first_v30_1080
 JIMENG_VIDEO_ASPECT_RATIO=16:9
 JIMENG_VIDEO_FRAMES=121
 JIMENG_POLL_INTERVAL_SECONDS=10
@@ -163,7 +212,7 @@ JIMENG_POLL_TIMEOUT_SECONDS=900
 CHENFLOW_FFMPEG_PATH=ffmpeg
 ```
 
-`JIMENG_VIDEO_FRAMES=121` 表示 5 秒，`241` 表示 10 秒。默认 `jimeng_t2v_v30` 对应即梦 AI 视频生成 3.0 文生视频；`JIMENG_VIDEO_I2V_REQ_KEY` 用于图生视频-首帧。
+`JIMENG_VIDEO_FRAMES=121` 表示 5 秒，`241` 表示 10 秒。当前默认 `jimeng_t2v_v30_1080p` 对应即梦 AI 视频生成 3.0 1080P 文生视频；`JIMENG_VIDEO_I2V_REQ_KEY` 用于 1080P 图生视频-首帧。
 
 即梦图片 4.0 配置，用于角色三视图、场景参考图、镜头首帧等视觉资产：
 

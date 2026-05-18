@@ -35,6 +35,7 @@ class AudioScriptService:
         narration_policy: str = "minimal",
         music_policy: str = "cue_only",
         sound_effect_policy: str = "cue_only",
+        context_pack_inputs: dict[str, Any] | None = None,
     ) -> Storyboard:
         shots = sorted(storyboard.shots, key=lambda item: item.shot_no)
         if not shots:
@@ -48,6 +49,7 @@ class AudioScriptService:
             narration_policy=narration_policy,
             music_policy=music_policy,
             sound_effect_policy=sound_effect_policy,
+            context_pack_inputs=context_pack_inputs,
         )
         scripts_by_no = {
             int(item.get("shot_no") or 0): self._normalize_audio_script(project=project, value=item.get("audio_script"))
@@ -78,7 +80,13 @@ class AudioScriptService:
         narration_policy: str,
         music_policy: str,
         sound_effect_policy: str,
+        context_pack_inputs: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        video_feed = context_pack_inputs.get("video_feed", {}) if isinstance(context_pack_inputs, dict) else {}
+        project_snapshot = context_pack_inputs.get("project_snapshot", {}) if isinstance(context_pack_inputs, dict) else {}
+        hard_constraints = context_pack_inputs.get("hard_constraints", []) if isinstance(context_pack_inputs, dict) else []
+        user_decisions = video_feed.get("user_decisions", {}) if isinstance(video_feed, dict) else {}
+        reference_constraints = video_feed.get("reference_constraints", {}) if isinstance(video_feed, dict) else {}
         chapter_text = "\n\n".join(
             f"第 {chapter.chapter_no} 章《{chapter.title}》\n摘要：{chapter.summary}\n正文：{chapter.content[:7000]}"
             for chapter in chapters
@@ -94,12 +102,18 @@ class AudioScriptService:
             """
         ).strip()
         prompt = f"""
-项目：{project.title}
-类型：{project.genre}
+项目：{project_snapshot.get("title") or project.title}
+类型：{project_snapshot.get("genre") or project.genre}
 分镜标题：{storyboard.title}
 
 世界设定：
-{project.world_brief or "暂无"}
+{project_snapshot.get("world_brief") or project.world_brief or "暂无"}
+
+已确认参考约束：
+{reference_constraints}
+
+用户已确认选择：
+{user_decisions}
 
 定稿小说正文：
 {chapter_text}
@@ -142,6 +156,7 @@ class AudioScriptService:
 - 必须覆盖输入中的每个镜头 shot_no。
 - 对白必须由小说正文、人物关系和镜头动作推导，不能让用户手动补齐。
 - 不要把大段叙述硬改成台词；没有合适对白时 dialogues 可以为空。
+- 必须遵守以下硬约束：{hard_constraints}
 - narration_policy=none 时 narration 必须留空；minimal 时只保留必要信息；cinematic 时可保留电影感旁白。
 - music_cue 只描述情绪、配器、节奏和氛围，不要写具体受版权保护的曲名或旋律。
 - sound_effects 只写镜头中可听见的环境音、动作音和空间音。

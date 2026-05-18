@@ -59,7 +59,7 @@ class ProjectCreateRequest(BaseModel):
     reference_work_narrative_constraints: list[str] = []
     reference_work_confidence_note: str = Field(default="", max_length=1000)
     visual_style_locked: bool = True
-    visual_style_medium: str = Field(default="二维动画电影", max_length=80)
+    visual_style_medium: str = Field(default="", max_length=80)
     visual_style_artists: list[str] = []
     visual_style_positive: list[str] = []
     visual_style_negative: list[str] = []
@@ -270,6 +270,7 @@ class ProjectDetailResponse(BaseModel):
     relationship_state_updates: list[RelationshipStateUpdateOut] = []
     story_events: list[StoryEventOut] = []
     world_perception_updates: list[WorldPerceptionUpdateOut] = []
+    context_pack: "ContextPackOut | None" = None
 
 
 class ProjectFolderCreateRequest(BaseModel):
@@ -302,7 +303,85 @@ class ReferenceWorkResolvedOut(BaseModel):
     style_traits: list[str]
     world_traits: list[str]
     narrative_constraints: list[str]
+    writing_style: list[str]
+    writing_constraints: list[str]
+    visual_style: list[str]
+    video_constraints: list[str]
+    visual_medium: str
+    visual_artists: list[str]
     confidence_note: str
+
+
+class ContextPackBuildRequest(BaseModel):
+    reference_mode: str = Field(default="hybrid_reference", pattern="^(style_reference|content_reference|hybrid_reference)$")
+    user_notes: str = Field(default="", max_length=4000)
+    confirm_after_build: bool = False
+    user_decisions: dict[str, str] = {}
+
+
+class ContextPackConflictOut(BaseModel):
+    severity: str
+    code: str
+    title: str
+    detail: str
+    related_items: list[str] = []
+
+
+class ContextPackGuidanceOut(BaseModel):
+    title: str
+    detail: str
+    suggested_action: str
+
+
+class ContextPackChoiceQuestionOut(BaseModel):
+    question_id: str
+    question: str
+    options: list[str] = []
+    recommendation: str = ""
+
+
+class ContextPackTodoTaskOut(BaseModel):
+    task_id: str = ""
+    title: str
+    detail: str
+    status: str = "todo"
+
+
+class ContextPackOut(BaseModel):
+    id: int
+    project_id: int
+    version_no: int
+    status: str
+    reference_mode: str
+    user_notes: str
+    source_fingerprint: str
+    project_snapshot: dict[str, Any] = {}
+    character_snapshot: list[dict[str, Any]] = []
+    reference_snapshot: dict[str, Any] = {}
+    source_snapshot: dict[str, Any] = {}
+    conflict_report: list[ContextPackConflictOut] = []
+    user_guidance: list[ContextPackGuidanceOut] = []
+    choice_questions: list[ContextPackChoiceQuestionOut] = []
+    todo_tasks: list[ContextPackTodoTaskOut] = []
+    derived_constraints: dict[str, Any] = {}
+    feed_preview: dict[str, Any] = {}
+    confirmed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ContextPackConfirmResponse(BaseModel):
+    status: str
+    context_pack: ContextPackOut
+
+
+class ContextPackDecisionRequest(BaseModel):
+    user_decisions: dict[str, str] = {}
+
+
+class ContextPackTodoUpdateRequest(BaseModel):
+    task_id: str = Field(..., min_length=1, max_length=120)
+    status: str = Field(..., pattern="^(todo|done|skipped)$")
 
 
 class ProjectFolderOut(BaseModel):
@@ -528,6 +607,7 @@ class DraftVersionOut(BaseModel):
     id: int
     project_id: int
     chapter_outline_id: int
+    chapter_no: int
     generation_run_id: int | None = None
     parent_version_id: int | None = None
     version_no: int

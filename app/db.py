@@ -17,6 +17,8 @@ LONGFORM_BATCH_QUEUE_SCHEMA_MIGRATION = "20260516_0006_longform_batch_queue_sche
 LONGFORM_ASYNC_METADATA_SCHEMA_MIGRATION = "20260516_0007_longform_async_metadata_schema"
 PROJECT_VISUAL_STYLE_FIELDS_MIGRATION = "20260517_0008_project_visual_style_fields"
 CHARACTER_CARD_VOICE_FIELDS_MIGRATION = "20260517_0009_character_card_voice_fields"
+LONGFORM_SCHEMA_PARITY_MIGRATION = "20260518_0010_longform_schema_parity"
+CONTEXT_PACK_SCHEMA_MIGRATION = "20260518_0011_context_pack_schema"
 
 
 settings = load_settings()
@@ -24,6 +26,7 @@ engine = create_engine(
     settings.sqlalchemy_database_url,
     future=True,
     pool_pre_ping=True,
+    connect_args={"charset": "utf8mb4", "init_command": "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"},
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
@@ -103,6 +106,18 @@ def _migrate_schema() -> None:
             CHARACTER_CARD_VOICE_FIELDS_MIGRATION,
             "Character-card voice provider, speaker, style, speed, and pitch fields",
             _migrate_character_card_voice_fields,
+        )
+        _run_schema_migration(
+            connection,
+            LONGFORM_SCHEMA_PARITY_MIGRATION,
+            "Backfill missing longform columns and enforce utf8mb4 defaults on current pipeline tables",
+            _migrate_longform_schema_parity,
+        )
+        _run_schema_migration(
+            connection,
+            CONTEXT_PACK_SCHEMA_MIGRATION,
+            "Context Pack snapshots and feed previews for pre-generation review",
+            _migrate_context_pack_schema,
         )
 
 
@@ -400,7 +415,7 @@ def _migrate_project_visual_style_fields(connection) -> None:
         connection.execute(text("UPDATE projects SET visual_style_locked = TRUE WHERE visual_style_locked IS NULL"))
     if "visual_style_medium" not in project_columns:
         connection.execute(text("ALTER TABLE projects ADD COLUMN visual_style_medium VARCHAR(80) NULL"))
-        connection.execute(text("UPDATE projects SET visual_style_medium = '二维动画电影' WHERE visual_style_medium IS NULL OR visual_style_medium = ''"))
+        connection.execute(text("UPDATE projects SET visual_style_medium = '' WHERE visual_style_medium IS NULL"))
     if "visual_style_artists_json" not in project_columns:
         connection.execute(text("ALTER TABLE projects ADD COLUMN visual_style_artists_json TEXT NULL"))
         connection.execute(text("UPDATE projects SET visual_style_artists_json = '[]' WHERE visual_style_artists_json IS NULL"))
@@ -414,7 +429,7 @@ def _migrate_project_visual_style_fields(connection) -> None:
         connection.execute(
             text(
                 "UPDATE projects SET visual_style_negative_json = "
-                "'[\"真人\", \"实拍\", \"三次元\", \"照片级写实\", \"文字\", \"水印\", \"logo\"]' "
+                "'[]' "
                 "WHERE visual_style_negative_json IS NULL"
             )
         )
@@ -442,6 +457,119 @@ def _migrate_character_card_voice_fields(connection) -> None:
     if "voice_pitch" not in character_columns:
         connection.execute(text("ALTER TABLE character_cards ADD COLUMN voice_pitch FLOAT NULL"))
         connection.execute(text("UPDATE character_cards SET voice_pitch = 0.0 WHERE voice_pitch IS NULL"))
+
+
+def _migrate_longform_schema_parity(connection) -> None:
+    tables = _table_names()
+
+    connection.execute(text("ALTER DATABASE CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"))
+
+    for table_name in (
+        "projects",
+        "storyboards",
+        "storyboard_shots",
+        "media_assets",
+        "video_tasks",
+        "task_events",
+        "series_plans",
+        "series_plan_versions",
+        "arc_plans",
+        "chapter_outlines",
+        "outline_feedback_items",
+        "outline_revision_plans",
+        "draft_versions",
+        "batch_generation_jobs",
+        "batch_generation_chapter_tasks",
+        "novels",
+        "novel_chapters",
+        "generation_runs",
+    ):
+        if table_name in tables:
+            connection.execute(text(f"ALTER TABLE {table_name} CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"))
+
+    if "storyboard_shots" in tables:
+        shot_columns = _column_names("storyboard_shots")
+        if "meta_json" not in shot_columns:
+            connection.execute(text("ALTER TABLE storyboard_shots ADD COLUMN meta_json TEXT NULL"))
+            connection.execute(text("UPDATE storyboard_shots SET meta_json = '{}' WHERE meta_json IS NULL"))
+            connection.execute(text("ALTER TABLE storyboard_shots MODIFY COLUMN meta_json TEXT NOT NULL"))
+
+    if "storyboards" in tables:
+        storyboard_columns = _column_names("storyboards")
+        if "worker_id" not in storyboard_columns:
+            connection.execute(text("ALTER TABLE storyboards ADD COLUMN worker_id VARCHAR(120) NOT NULL DEFAULT ''"))
+        if "worker_started_at" not in storyboard_columns:
+            connection.execute(text("ALTER TABLE storyboards ADD COLUMN worker_started_at DATETIME NULL"))
+        if "last_heartbeat_at" not in storyboard_columns:
+            connection.execute(text("ALTER TABLE storyboards ADD COLUMN last_heartbeat_at DATETIME NULL"))
+        if "error_message" not in storyboard_columns:
+            connection.execute(text("ALTER TABLE storyboards ADD COLUMN error_message TEXT NULL"))
+            connection.execute(text("UPDATE storyboards SET error_message = '' WHERE error_message IS NULL"))
+            connection.execute(text("ALTER TABLE storyboards MODIFY COLUMN error_message TEXT NOT NULL"))
+
+    if "task_events" in tables:
+        event_columns = _column_names("task_events")
+        if "storyboard_id" not in event_columns:
+            connection.execute(text("ALTER TABLE task_events ADD COLUMN storyboard_id INTEGER NULL"))
+        if "video_task_id" not in event_columns:
+            connection.execute(text("ALTER TABLE task_events ADD COLUMN video_task_id INTEGER NULL"))
+        if "chapter_task_id" not in event_columns:
+            connection.execute(text("ALTER TABLE task_events ADD COLUMN chapter_task_id INTEGER NULL"))
+        job_column = _column_specs("task_events").get("job_id")
+        if job_column is not None and not job_column.get("nullable", True):
+            connection.execute(text("ALTER TABLE task_events MODIFY COLUMN job_id INTEGER NULL"))
+
+    if "batch_generation_jobs" in tables:
+        job_columns = _column_names("batch_generation_jobs")
+        if "worker_id" not in job_columns:
+            connection.execute(text("ALTER TABLE batch_generation_jobs ADD COLUMN worker_id VARCHAR(120) NOT NULL DEFAULT ''"))
+        if "worker_started_at" not in job_columns:
+            connection.execute(text("ALTER TABLE batch_generation_jobs ADD COLUMN worker_started_at DATETIME NULL"))
+        if "last_heartbeat_at" not in job_columns:
+            connection.execute(text("ALTER TABLE batch_generation_jobs ADD COLUMN last_heartbeat_at DATETIME NULL"))
+
+    if "batch_generation_chapter_tasks" in tables:
+        chapter_task_columns = _column_names("batch_generation_chapter_tasks")
+        if "storyboard_id" not in chapter_task_columns:
+            connection.execute(text("ALTER TABLE batch_generation_chapter_tasks ADD COLUMN storyboard_id INTEGER NULL"))
+
+
+def _migrate_context_pack_schema(connection) -> None:
+    tables = _table_names()
+    if "context_packs" not in tables:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE context_packs (
+                    id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                    project_id INTEGER NOT NULL,
+                    version_no INTEGER NOT NULL,
+                    status VARCHAR(40) NOT NULL DEFAULT 'draft',
+                    reference_mode VARCHAR(40) NOT NULL DEFAULT 'hybrid_reference',
+                    user_notes TEXT NOT NULL,
+                    source_fingerprint VARCHAR(64) NOT NULL DEFAULT '',
+                    project_snapshot_json MEDIUMTEXT NOT NULL,
+                    character_snapshot_json MEDIUMTEXT NOT NULL,
+                    reference_snapshot_json MEDIUMTEXT NOT NULL,
+                    source_snapshot_json MEDIUMTEXT NOT NULL,
+                    conflict_report_json MEDIUMTEXT NOT NULL,
+                    user_decisions_json MEDIUMTEXT NOT NULL,
+                    derived_constraints_json MEDIUMTEXT NOT NULL,
+                    feed_preview_json MEDIUMTEXT NOT NULL,
+                    confirmed_at DATETIME NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uq_context_packs_project_version UNIQUE (project_id, version_no)
+                )
+                """
+            )
+        )
+        return
+    context_columns = _column_names("context_packs")
+    if "user_decisions_json" not in context_columns:
+        connection.execute(text("ALTER TABLE context_packs ADD COLUMN user_decisions_json MEDIUMTEXT NULL"))
+        connection.execute(text("UPDATE context_packs SET user_decisions_json = '{}' WHERE user_decisions_json IS NULL"))
+        connection.execute(text("ALTER TABLE context_packs MODIFY COLUMN user_decisions_json MEDIUMTEXT NOT NULL"))
 
 
 def _migrate_generation_run_mediumtext(connection) -> None:

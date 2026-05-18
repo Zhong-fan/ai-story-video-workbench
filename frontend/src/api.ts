@@ -31,6 +31,8 @@ import type {
   BatchGenerationJob,
   BatchGenerationPayload,
   CreateStoryboardPayload,
+  ContextPack,
+  ContextPackBuildPayload,
   GenerateSeriesPlanPayload,
   LongformState,
   OutlineRevisionResponse,
@@ -183,6 +185,37 @@ export const api = {
     request<Project>(`/api/projects/${projectId}`, { method: "DELETE", token, body: JSON.stringify(payload) }),
   projectDetail: (token: string, projectId: number) =>
     request<ProjectDetailResponse>(`/api/projects/${projectId}`, { token }),
+  contextPack: (token: string, projectId: number) =>
+    request<ContextPack | null>(`/api/projects/${projectId}/context-pack`, { token }),
+  buildContextPack: (token: string, projectId: number, payload: ContextPackBuildPayload) =>
+    request<ContextPack>(`/api/projects/${projectId}/context-pack/build`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  rebuildContextPack: (token: string, projectId: number, payload: ContextPackBuildPayload) =>
+    request<ContextPack>(`/api/projects/${projectId}/context-pack/rebuild`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  confirmContextPack: (token: string, projectId: number) =>
+    request<{ status: string; context_pack: ContextPack }>(`/api/projects/${projectId}/context-pack/confirm`, {
+      method: "POST",
+      token,
+    }),
+  updateContextPackDecisions: (token: string, projectId: number, user_decisions: Record<string, string>) =>
+    request<ContextPack>(`/api/projects/${projectId}/context-pack/decisions`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify({ user_decisions }),
+    }),
+  updateContextPackTodo: (token: string, projectId: number, task_id: string, status: string) =>
+    request<ContextPack>(`/api/projects/${projectId}/context-pack/todos`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify({ task_id, status }),
+    }),
   createProjectChapter: (token: string, projectId: number, payload: ProjectChapterPayload) =>
     request<ProjectChapter>(`/api/projects/${projectId}/chapters`, { method: "POST", token, body: JSON.stringify(payload) }),
   updateProjectChapter: (token: string, projectId: number, chapterId: number, payload: UpdateProjectChapterPayload) =>

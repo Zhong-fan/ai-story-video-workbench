@@ -27,6 +27,7 @@ class VisualAssetService:
         project: Project,
         storyboard: Storyboard,
         shot: StoryboardShot,
+        context_pack_inputs: dict[str, Any] | None = None,
     ) -> MediaAsset:
         self._require_jimeng_image_config()
         existing_assets = db.query(MediaAsset).filter(
@@ -106,6 +107,9 @@ class VisualAssetService:
                 "height": self.settings.jimeng_image_height,
                 "mime_type": "image/png",
                 "visual_style": project_visual_style_summary(project),
+                "context_pack_id": context_pack_inputs.get("context_pack_id") if isinstance(context_pack_inputs, dict) else None,
+                "context_pack_version": context_pack_inputs.get("context_pack_version") if isinstance(context_pack_inputs, dict) else None,
+                "context_pack_reference_mode": context_pack_inputs.get("reference_mode") if isinstance(context_pack_inputs, dict) else None,
             }
         )
         db.add(
@@ -129,6 +133,7 @@ class VisualAssetService:
         character: CharacterCard,
         chapter_no: int | None = None,
         prompt_note: str = "",
+        context_pack_inputs: dict[str, Any] | None = None,
     ) -> MediaAsset:
         self._require_jimeng_image_config()
         locked_existing = db.query(MediaAsset).filter(
@@ -201,6 +206,9 @@ class VisualAssetService:
                     "height": self.settings.jimeng_image_height,
                     "mime_type": "image/png",
                     "visual_style": project_visual_style_summary(project),
+                    "context_pack_id": context_pack_inputs.get("context_pack_id") if isinstance(context_pack_inputs, dict) else None,
+                    "context_pack_version": context_pack_inputs.get("context_pack_version") if isinstance(context_pack_inputs, dict) else None,
+                    "context_pack_reference_mode": context_pack_inputs.get("reference_mode") if isinstance(context_pack_inputs, dict) else None,
                 }
             ),
         )

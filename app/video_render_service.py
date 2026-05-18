@@ -27,10 +27,11 @@ class VideoRenderService:
 
     def render(self, *, db: Session, task: VideoTask) -> VideoTask:
         self._require_config()
+        context_pack_meta = self._context_pack_meta(task)
         task.task_status = "running"
         task.error_message = ""
-        self._set_progress(task, stage="running", message="视频生产开始。")
-        self._add_event(db, task=task, event_type="video_task_running", message="视频生产开始。")
+        self._set_progress(task, stage="running", message="视频生产开始。", extra=context_pack_meta)
+        self._add_event(db, task=task, event_type="video_task_running", message="视频生产开始。", payload=context_pack_meta)
         db.commit()
 
         output_dir = self._output_dir(db=db, task=task)
@@ -757,6 +758,23 @@ class VideoRenderService:
         if extra:
             payload.update(extra)
         task.progress_json = json_dumps(payload)
+
+    def _context_pack_meta(self, task: VideoTask) -> dict[str, Any]:
+        first_asset = next(iter(task.storyboard.media_assets), None) if task.storyboard is not None else None
+        if first_asset is None:
+            return {}
+        meta = json_loads_object(first_asset.meta_json)
+        context_pack_id = meta.get("context_pack_id")
+        context_pack_version = meta.get("context_pack_version")
+        reference_mode = meta.get("context_pack_reference_mode")
+        payload: dict[str, Any] = {}
+        if context_pack_id is not None:
+            payload["context_pack_id"] = context_pack_id
+        if context_pack_version is not None:
+            payload["context_pack_version"] = context_pack_version
+        if reference_mode:
+            payload["context_pack_reference_mode"] = reference_mode
+        return payload
 
     def _increment_progress_counter(self, task: VideoTask, key: str, amount: int = 1) -> None:
         payload = json_loads_object(task.progress_json)

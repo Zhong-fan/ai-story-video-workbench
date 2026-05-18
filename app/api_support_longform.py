@@ -97,6 +97,7 @@ def _draft_version_out(draft: DraftVersion) -> DraftVersionOut:
         id=draft.id,
         project_id=draft.project_id,
         chapter_outline_id=draft.chapter_outline_id,
+        chapter_no=draft.chapter_outline.chapter_no if draft.chapter_outline is not None else 0,
         generation_run_id=draft.generation_run_id,
         parent_version_id=draft.parent_version_id,
         version_no=draft.version_no,

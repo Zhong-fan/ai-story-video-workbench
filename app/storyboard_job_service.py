@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import Settings
+from .context_pack_service import ContextPackService
 from .json_utils import ensure_list, json_dumps
 from .models import Novel, NovelChapter, Project, Storyboard, StoryboardShot, TaskEvent
 from .storyboard_service import StoryboardService
@@ -20,6 +21,7 @@ class StoryboardJobService:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.context_pack_service = ContextPackService()
 
     def create_job(
         self,
@@ -121,10 +123,12 @@ class StoryboardJobService:
         db.commit()
 
         try:
+            context_pack_inputs = self.context_pack_service.resolved_inputs(self.context_pack_service.require_confirmed(db, project))
             generated = StoryboardService(self.settings).generate_storyboard(
                 project=project,
                 chapters=chapters,
                 title=storyboard.title,
+                context_pack_inputs=context_pack_inputs,
             )
             storyboard.title = str(generated.get("title") or storyboard.title).strip()
             storyboard.summary = str(generated.get("summary") or "").strip()

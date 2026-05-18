@@ -3,17 +3,19 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 
 import AuthModal from "./components/auth/AuthModal.vue";
-import LongformPipelinePanel from "./components/workspace/LongformPipelinePanel.vue";
 import NovelEditorPanel from "./components/workspace/NovelEditorPanel.vue";
+import NovelReaderPanel from "./components/workspace/NovelReaderPanel.vue";
+import NovelCreatePage from "./components/workspace/NovelCreatePage.vue";
+import VideoCreatePage from "./components/workspace/VideoCreatePage.vue";
 import GenerationTracePanel from "./components/workspace/GenerationTracePanel.vue";
+import ContextReviewPage from "./components/workspace/ContextReviewPage.vue";
 import ProjectContentLibraryPanel from "./components/workspace/ProjectContentLibraryPanel.vue";
 import ProjectCreateWizard from "./components/workspace/ProjectCreateWizard.vue";
-import ProjectWorkshopPanel from "./components/workspace/ProjectWorkshopPanel.vue";
 import ProjectSettingsPanel from "./components/workspace/ProjectSettingsPanel.vue";
 import StudioWorkspacePanel from "./components/workspace/StudioWorkspacePanel.vue";
 import { useAuthFlow } from "./composables/useAuthFlow";
 import { useWorkbenchStore } from "./stores/workbench";
-import type { CharacterCard, ProjectChapter, ProjectCreateDraft, ProjectPayload, ReferenceWorkResolved, TrashItem, ViewKey } from "./types";
+import type { CharacterCard, ProjectChapter, ProjectCreateDraft, ProjectPayload, ReaderEntry, ReferenceWorkResolved, TrashItem, ViewKey } from "./types";
 
 const store = useWorkbenchStore();
 const {
@@ -26,7 +28,9 @@ const {
   activeProject,
   currentGeneration,
   longformState,
+  contextPack,
   generationProgress,
+  longformRequestState,
   loading,
   error,
   success,
@@ -43,20 +47,28 @@ const workspacePageSize = ref(6);
 const hasRestoredViewState = ref(false);
 const mobileSidebarOpen = ref(false);
 let feedbackTimer: number | null = null;
-const persistedViewKey = "graph_mvp_current_view";
-const persistedProjectIdKey = "graph_mvp_active_project_id";
-const persistedProjectChapterIdKey = "graph_mvp_selected_project_chapter_id";
-const persistedNovelChapterIdKey = "graph_mvp_selected_novel_chapter_id";
-const generationPromptDraftPrefix = "graph_mvp_generation_prompt_";
+const persistedViewKey = "chenflow_current_view";
+const persistedProjectIdKey = "chenflow_active_project_id";
+const persistedProjectChapterIdKey = "chenflow_selected_project_chapter_id";
+const persistedNovelChapterIdKey = "chenflow_selected_novel_chapter_id";
+const generationPromptDraftPrefix = "chenflow_generation_prompt_";
+const legacyPersistedViewKey = "graph_mvp_current_view";
+const legacyPersistedProjectIdKey = "graph_mvp_active_project_id";
+const legacyPersistedProjectChapterIdKey = "graph_mvp_selected_project_chapter_id";
+const legacyPersistedNovelChapterIdKey = "graph_mvp_selected_novel_chapter_id";
+const legacyGenerationPromptDraftPrefix = "graph_mvp_generation_prompt_";
 const restorableViews: ViewKey[] = [
   "studio",
   "trash",
   "projectCreate",
   "projectSettings",
   "projectLibrary",
+  "contextReview",
   "characters",
-  "longform",
-  "workshop",
+  "novelCreate",
+  "videoCreate",
+  "novelReader",
+  "novelEditor",
 ];
 
 type GenreOptionCard = {
@@ -119,9 +131,14 @@ const styleProfileOptions = [
 function inferStyleProfileFromReference(payload: ReferenceWorkResolved): ProjectPayload["style_profile"] {
   const haystack = [
     payload.medium,
+    payload.visual_medium,
     payload.synopsis,
     payload.confidence_note,
     ...payload.style_traits,
+    ...payload.writing_style,
+    ...payload.writing_constraints,
+    ...payload.visual_style,
+    ...payload.video_constraints,
     ...payload.world_traits,
     ...payload.narrative_constraints,
   ]
@@ -139,9 +156,14 @@ function inferStyleProfileFromReference(payload: ReferenceWorkResolved): Project
 function inferGenreFromReference(payload: ReferenceWorkResolved): string {
   const haystack = [
     payload.medium,
+    payload.visual_medium,
     payload.synopsis,
     payload.confidence_note,
     ...payload.style_traits,
+    ...payload.writing_style,
+    ...payload.writing_constraints,
+    ...payload.visual_style,
+    ...payload.video_constraints,
     ...payload.world_traits,
     ...payload.narrative_constraints,
   ].join(" ");
@@ -159,6 +181,10 @@ function inferGenreFromReference(payload: ReferenceWorkResolved): string {
   return mappings.find((item) => item.pattern.test(haystack))?.genre ?? "现代都市";
 }
 
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.map((item) => item.trim()).filter(Boolean)));
+}
+
 function buildReferenceWorldBrief(payload: ReferenceWorkResolved): string {
   const worldTraits = payload.world_traits.slice(0, 4);
   const constraints = payload.narrative_constraints.slice(0, 2);
@@ -171,12 +197,23 @@ function buildReferenceWorldBrief(payload: ReferenceWorkResolved): string {
 }
 
 function buildReferenceWritingRules(payload: ReferenceWorkResolved): string {
-  const styleTraits = payload.style_traits.slice(0, 4);
-  const constraints = payload.narrative_constraints.slice(0, 3);
+  const styleTraits = uniqueStrings([...payload.style_traits, ...payload.writing_style]).slice(0, 6);
+  const constraints = uniqueStrings([...payload.narrative_constraints, ...payload.writing_constraints]).slice(0, 6);
   const parts = [
     styleTraits.length ? `文风默认参考这些方向：${styleTraits.join("；")}。` : "",
     "保留参考作品的节奏、情绪组织和人物互动方法，但不要直接复用角色名、剧情节点或专有设定名词。",
     constraints.length ? `写作边界：${constraints.join("；")}。` : "",
+  ].filter(Boolean);
+  return parts.join("\n\n");
+}
+
+function buildReferenceVisualStyleNotes(payload: ReferenceWorkResolved): string {
+  const visualTraits = uniqueStrings([...payload.visual_style, ...payload.video_constraints]);
+  const parts = [
+    payload.visual_medium ? `画面媒介：${payload.visual_medium}` : "",
+    payload.visual_artists.length ? `风格参考：${payload.visual_artists.join("；")}` : "",
+    visualTraits.length ? `项目级视觉与视频约束：${visualTraits.join("；")}。` : "",
+    "这里保存的是可迁移风格与镜头约束，不是要求模型直接模仿原作具体画面或角色。",
   ].filter(Boolean);
   return parts.join("\n\n");
 }
@@ -193,10 +230,10 @@ const emptyProject = (): ProjectPayload => ({
   reference_work_narrative_constraints: [],
   reference_work_confidence_note: "",
   visual_style_locked: true,
-  visual_style_medium: "二维动画电影",
+  visual_style_medium: "",
   visual_style_artists: [],
   visual_style_positive: [],
-  visual_style_negative: ["真人", "实拍", "三次元", "照片级写实", "文字", "水印", "logo"],
+  visual_style_negative: [],
   visual_style_notes: "",
   world_brief: "",
   writing_rules: "",
@@ -266,14 +303,15 @@ const draftForm = reactive({ title: "", summary: "", content: "", chapter_no: 1 
 const chapterEditForm = reactive({ title: "", summary: "", content: "", chapter_no: 1 });
 
 const selectedChapterId = ref<number | null>(null);
+const selectedReaderEntryId = ref<string | null>(null);
 const selectedDraftGenerationId = ref<number | null>(null);
 const selectedSettingsProjectId = ref<number | null>(null);
 const selectedProjectChapterId = ref<number | null>(null);
-const workshopMode = ref<"chapters" | "drafts">("chapters");
 const preferredSeriesPlanId = ref<number | null>(null);
 const preferredLongformDraftVersionId = ref<number | null>(null);
 const preferredStoryboardId = ref<number | null>(null);
 const preferredVideoTaskId = ref<number | null>(null);
+const chapterJumpNo = ref(1);
 
 const hasProject = computed(() => Boolean(activeProject.value));
 const filteredWorkspaceProjects = computed(() => {
@@ -307,9 +345,50 @@ const isManagingCurrentNovel = computed(() =>
   Boolean(currentNovel.value && myNovels.value.some((item) => item.id === currentNovel.value?.id)),
 );
 const sortedChapters = computed(() => [...(currentNovel.value?.chapters ?? [])].sort((a, b) => a.chapter_no - b.chapter_no));
-const selectedChapter = computed(() => {
+const readerEntries = computed<ReaderEntry[]>(() => {
+  const draftEntries = [...(longformState.value.draft_versions ?? [])]
+    .sort((a, b) => a.chapter_outline_id - b.chapter_outline_id || a.version_no - b.version_no)
+    .map((draft) => ({
+      id: `draft-${draft.id}`,
+      source_kind: "draft" as const,
+      source_id: draft.id,
+      work_title: activeProject.value?.project.title || "",
+      title: draft.title,
+      summary: "",
+      content: draft.content,
+      chapter_no: draft.chapter_no || 1,
+      meta: "",
+    }));
+  const publishedEntries = sortedChapters.value.map((chapter) => ({
+    id: `published-${chapter.id}`,
+    source_kind: "published" as const,
+      source_id: chapter.id,
+      work_title: currentNovel.value?.title || activeProject.value?.project.title || "",
+      title: chapter.title,
+      summary: "",
+      content: chapter.content,
+      chapter_no: chapter.chapter_no,
+      meta: "",
+    }));
+  return [...draftEntries, ...publishedEntries].sort((a, b) => a.chapter_no - b.chapter_no);
+});
+const selectedPublishedChapter = computed(() => {
   if (!sortedChapters.value.length) return null;
   return sortedChapters.value.find((chapter) => chapter.id === selectedChapterId.value) ?? sortedChapters.value[0] ?? null;
+});
+const selectedReaderEntry = computed(() => {
+  if (!readerEntries.value.length) return null;
+  return readerEntries.value.find((item) => item.id === selectedReaderEntryId.value) ?? readerEntries.value[0] ?? null;
+});
+const previousReaderEntry = computed(() => {
+  if (!selectedReaderEntry.value) return null;
+  const index = readerEntries.value.findIndex((item) => item.id === selectedReaderEntry.value?.id);
+  return index > 0 ? readerEntries.value[index - 1] : null;
+});
+const nextReaderEntry = computed(() => {
+  if (!selectedReaderEntry.value) return null;
+  const index = readerEntries.value.findIndex((item) => item.id === selectedReaderEntry.value?.id);
+  return index >= 0 && index < readerEntries.value.length - 1 ? readerEntries.value[index + 1] : null;
 });
 const projectChapters = computed(() =>
   [...(activeProject.value?.project_chapters ?? [])].sort((a, b) => a.chapter_no - b.chapter_no),
@@ -364,7 +443,7 @@ function goToView(view: ViewKey) {
     openAuthPanel("register", view);
     return;
   }
-  if (view !== "auth" && !isAuthenticated.value && ["studio", "trash", "projectSettings", "projectLibrary", "characters", "longform", "workshop", "generationTrace", "novelEditor"].includes(view)) {
+  if (view !== "auth" && !isAuthenticated.value && ["studio", "trash", "projectSettings", "projectLibrary", "contextReview", "characters", "novelCreate", "videoCreate", "novelReader", "generationTrace", "novelEditor"].includes(view)) {
     openAuthPanel("login", view);
     return;
   }
@@ -390,11 +469,15 @@ function projectStatusLabel(status: string | undefined) {
   return status;
 }
 
-function readPersistedNumber(key: string) {
-  const raw = localStorage.getItem(key);
+function readPersistedNumber(key: string, legacyKey?: string) {
+  const raw = localStorage.getItem(key) ?? (legacyKey ? localStorage.getItem(legacyKey) : null);
   if (!raw) return null;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function readPersistedView() {
+  return (localStorage.getItem(persistedViewKey) ?? localStorage.getItem(legacyPersistedViewKey)) as ViewKey | null;
 }
 
 function persistView(view: ViewKey) {
@@ -408,7 +491,7 @@ function generationPromptDraftKey(chapterId: number) {
 
 function loadGenerationPromptDraft(chapterId: number | null | undefined) {
   if (!chapterId) return "";
-  return localStorage.getItem(generationPromptDraftKey(chapterId)) ?? "";
+  return localStorage.getItem(generationPromptDraftKey(chapterId)) ?? localStorage.getItem(`${legacyGenerationPromptDraftPrefix}${chapterId}`) ?? "";
 }
 
 function saveGenerationPromptDraft() {
@@ -425,22 +508,22 @@ async function restoreViewState() {
     return;
   }
 
-  const persistedProjectId = readPersistedNumber(persistedProjectIdKey);
+  const persistedProjectId = readPersistedNumber(persistedProjectIdKey, legacyPersistedProjectIdKey);
   if (persistedProjectId && projects.value.some((project) => project.id === persistedProjectId)) {
     await store.selectProject(persistedProjectId, { showLoading: false, silent: true });
   }
 
-  const persistedProjectChapterId = readPersistedNumber(persistedProjectChapterIdKey);
+  const persistedProjectChapterId = readPersistedNumber(persistedProjectChapterIdKey, legacyPersistedProjectChapterIdKey);
   if (persistedProjectChapterId && projectChapters.value.some((chapter) => chapter.id === persistedProjectChapterId)) {
     selectedProjectChapterId.value = persistedProjectChapterId;
   }
 
-  const persistedNovelChapterId = readPersistedNumber(persistedNovelChapterIdKey);
+  const persistedNovelChapterId = readPersistedNumber(persistedNovelChapterIdKey, legacyPersistedNovelChapterIdKey);
   if (persistedNovelChapterId) {
     selectedChapterId.value = persistedNovelChapterId;
   }
 
-  const persistedView = localStorage.getItem(persistedViewKey) as ViewKey | null;
+  const persistedView = readPersistedView();
   if (persistedView && restorableViews.includes(persistedView)) {
     currentView.value = persistedView;
   }
@@ -531,6 +614,11 @@ function applyResolvedReferenceDefaults(payload: ReferenceWorkResolved) {
   if (!projectForm.writing_rules.trim()) {
     projectForm.writing_rules = buildReferenceWritingRules(payload);
   }
+  projectForm.visual_style_medium = payload.visual_medium || projectForm.visual_style_medium;
+  projectForm.visual_style_artists = uniqueStrings(payload.visual_artists);
+  if (!projectForm.visual_style_notes.trim()) {
+    projectForm.visual_style_notes = buildReferenceVisualStyleNotes(payload);
+  }
   projectForm.style_profile = inferStyleProfileFromReference(payload);
 }
 
@@ -551,12 +639,13 @@ async function resolveReferenceWork() {
   projectForm.reference_work_creator = result.creator;
   projectForm.reference_work_medium = result.medium;
   projectForm.reference_work_synopsis = result.synopsis;
-  projectForm.reference_work_style_traits = [...result.style_traits];
+  projectForm.reference_work_style_traits = uniqueStrings([...result.style_traits, ...result.writing_style]);
   projectForm.reference_work_world_traits = [...result.world_traits];
-  projectForm.reference_work_narrative_constraints = [...result.narrative_constraints];
+  projectForm.reference_work_narrative_constraints = uniqueStrings([...result.narrative_constraints, ...result.writing_constraints, ...result.video_constraints]);
   projectForm.reference_work_confidence_note = result.confidence_note;
-  projectForm.visual_style_positive = [...result.style_traits, ...result.world_traits].slice(0, 10);
-  if (!projectForm.visual_style_medium.trim()) projectForm.visual_style_medium = "二维动画电影";
+  projectForm.visual_style_medium = result.visual_medium;
+  projectForm.visual_style_artists = uniqueStrings(result.visual_artists);
+  projectForm.visual_style_notes = buildReferenceVisualStyleNotes(result);
   projectForm.reference_work_confirmed = false;
 }
 
@@ -576,12 +665,15 @@ async function reResolveProjectSettingsReferenceWork() {
   projectSettingsForm.reference_work_creator = result.creator;
   projectSettingsForm.reference_work_medium = result.medium;
   projectSettingsForm.reference_work_synopsis = result.synopsis;
-  projectSettingsForm.reference_work_style_traits = [...result.style_traits];
+  projectSettingsForm.reference_work_style_traits = uniqueStrings([...result.style_traits, ...result.writing_style]);
   projectSettingsForm.reference_work_world_traits = [...result.world_traits];
-  projectSettingsForm.reference_work_narrative_constraints = [...result.narrative_constraints];
+  projectSettingsForm.reference_work_narrative_constraints = uniqueStrings([...result.narrative_constraints, ...result.writing_constraints, ...result.video_constraints]);
   projectSettingsForm.reference_work_confidence_note = result.confidence_note;
-  projectSettingsForm.visual_style_positive = [...result.style_traits, ...result.world_traits].slice(0, 10);
-  if (!projectSettingsForm.visual_style_medium.trim()) projectSettingsForm.visual_style_medium = "二维动画电影";
+  projectSettingsForm.visual_style_medium = result.visual_medium;
+  projectSettingsForm.visual_style_artists = uniqueStrings(result.visual_artists);
+  if (!projectSettingsForm.visual_style_notes.trim()) {
+    projectSettingsForm.visual_style_notes = buildReferenceVisualStyleNotes(result);
+  }
 }
 
 function confirmReferenceWork() {
@@ -602,8 +694,11 @@ function clearReferenceWorkResolution() {
   projectForm.reference_work_world_traits = [];
   projectForm.reference_work_narrative_constraints = [];
   projectForm.reference_work_confidence_note = "";
+  projectForm.visual_style_medium = "";
   projectForm.visual_style_artists = [];
   projectForm.visual_style_positive = [];
+  projectForm.visual_style_negative = [];
+  projectForm.visual_style_notes = "";
   projectForm.reference_work_confirmed = false;
 }
 
@@ -687,6 +782,14 @@ function openProjectSettings() {
   currentView.value = "projectSettings";
 }
 
+async function openContextReview() {
+  if (!isAuthenticated.value) return openAuthPanel("login");
+  if (activeProject.value?.project.id) {
+    await store.loadContextPack(activeProject.value.project.id);
+  }
+  currentView.value = "contextReview";
+}
+
 async function selectSettingsProject(value: number | string) {
   const projectId = Number(value);
   if (!projectId) {
@@ -721,16 +824,48 @@ async function openProjectLibrary() {
   currentView.value = "projectLibrary";
 }
 
-async function openLongform() {
+async function openNovelCreate() {
   if (!isAuthenticated.value) return openAuthPanel("login");
+  if (!store.hasConfirmedContextPack()) {
+    await openContextReview();
+    return;
+  }
+  if (activeProject.value?.project.id) {
+    await store.loadLongformState(activeProject.value.project.id, { silent: true });
+  }
+  currentView.value = "novelCreate";
+}
+
+async function openVideoCreate() {
+  if (!isAuthenticated.value) return openAuthPanel("login");
+  if (!store.hasConfirmedContextPack()) {
+    await openContextReview();
+    return;
+  }
   if (activeProject.value?.project.id) {
     await store.loadLongformState(activeProject.value.project.id);
   }
-  currentView.value = "longform";
+  currentView.value = "videoCreate";
+}
+
+async function openGenerationTrace() {
+  if (!isAuthenticated.value) return openAuthPanel("login");
+  if (activeProject.value?.project.id) {
+    await store.loadLongformState(activeProject.value.project.id, { silent: true });
+  }
+  currentView.value = "generationTrace";
+}
+
+function openGenerationTraceImmediately() {
+  if (!isAuthenticated.value) return;
+  currentView.value = "generationTrace";
+  if (activeProject.value?.project.id) {
+    void store.loadLongformState(activeProject.value.project.id, { silent: true });
+  }
 }
 
 async function openContentLibraryItem(target: {
-  view: "projectSettings" | "characters" | "workshop" | "longform";
+  view: "projectSettings" | "characters" | "novelCreate" | "videoCreate";
   characterCardId?: number;
   projectChapterId?: number;
   seriesPlanId?: number;
@@ -748,21 +883,22 @@ async function openContentLibraryItem(target: {
     openCharacters();
     return;
   }
-  if (target.view === "workshop") {
+  if (target.view === "novelCreate") {
+    preferredSeriesPlanId.value = target.seriesPlanId ?? null;
+    preferredLongformDraftVersionId.value = target.draftVersionId ?? null;
+    preferredStoryboardId.value = null;
+    preferredVideoTaskId.value = null;
     if (typeof target.projectChapterId === "number") {
       selectedProjectChapterId.value = target.projectChapterId;
-      workshopMode.value = "drafts";
     }
-    if (activeProject.value?.project.id) {
-      await openWorkshop(activeProject.value.project.id);
-    }
+    await openNovelCreate();
     return;
   }
   preferredSeriesPlanId.value = target.seriesPlanId ?? null;
   preferredLongformDraftVersionId.value = target.draftVersionId ?? null;
   preferredStoryboardId.value = target.storyboardId ?? null;
   preferredVideoTaskId.value = target.videoTaskId ?? null;
-  await openLongform();
+  await openVideoCreate();
 }
 
 async function openNovelEditor(projectId?: number) {
@@ -770,9 +906,6 @@ async function openNovelEditor(projectId?: number) {
   const targetProjectId = projectId ?? activeProject.value?.project.id ?? projects.value[0]?.id ?? null;
   if (targetProjectId && activeProject.value?.project.id !== targetProjectId) {
     await store.selectProject(targetProjectId);
-  }
-  if ((!currentNovel.value || !isManagingCurrentNovel.value || currentNovel.value.project_id !== targetProjectId) && managedNovels.value.length === 1) {
-    await store.openNovel(managedNovels.value[0].id);
   }
   syncNovelManageForm();
   currentView.value = "novelEditor";
@@ -786,18 +919,29 @@ async function openManagedNovelEditor(novelId: number) {
   }
 }
 
-async function openWorkshop(projectId: number) {
-  await store.selectProject(projectId);
-  if (!error.value) currentView.value = "workshop";
+async function openNovelReader(projectId?: number) {
+  if (!isAuthenticated.value) return openAuthPanel("login");
+  const targetProjectId = projectId ?? activeProject.value?.project.id ?? projects.value[0]?.id ?? null;
+  if (targetProjectId && activeProject.value?.project.id !== targetProjectId) {
+    await store.selectProject(targetProjectId);
+  }
+  if ((!currentNovel.value || !isManagingCurrentNovel.value || currentNovel.value.project_id !== targetProjectId) && managedNovels.value.length) {
+    await store.openNovel(managedNovels.value[0].id);
+  }
+  chapterJumpNo.value = selectedReaderEntry.value?.chapter_no ?? 1;
+  currentView.value = "novelReader";
 }
 
-async function openWorkshopMode(mode: "chapters" | "drafts") {
-  workshopMode.value = mode;
-  if (activeProject.value?.project.id) {
-    await openWorkshop(activeProject.value.project.id);
-    return;
-  }
-  currentView.value = "workshop";
+async function openDraftReader(draftVersionId: number) {
+  if (!isAuthenticated.value) return openAuthPanel("login");
+  selectedReaderEntryId.value = `draft-${draftVersionId}`;
+  chapterJumpNo.value = selectedReaderEntry.value?.chapter_no ?? 1;
+  currentView.value = "novelReader";
+}
+
+function jumpToPublishedChapter() {
+  const target = readerEntries.value.find((entry) => entry.chapter_no === chapterJumpNo.value);
+  if (target) selectedReaderEntryId.value = target.id;
 }
 
 function previousWorkspacePage() {
@@ -903,10 +1047,10 @@ async function submitCreateProjectChapter() {
   });
   if (created) {
     selectedProjectChapterId.value = created.id;
-    workshopMode.value = "drafts";
     projectChapterForm.title = "";
     projectChapterForm.premise = "";
     projectChapterForm.chapter_no = (created.chapter_no ?? 0) + 1;
+    currentView.value = "novelCreate";
   }
 }
 
@@ -959,7 +1103,7 @@ async function submitAutoGenerate() {
     return;
   }
   currentView.value = "generationTrace";
-  await store.generate({
+  await store.generate({ 
     chapter_id: chapterId,
     prompt: idea,
     search_method: generationForm.search_method,
@@ -969,11 +1113,18 @@ async function submitAutoGenerate() {
     use_refiner: generationForm.use_refiner,
     write_evolution: generationForm.write_evolution,
   });
-  if (!error.value) workshopMode.value = "drafts";
+  if (!error.value) currentView.value = "novelCreate";
 }
 
 async function submitGenerateSeriesPlan(payload: { target_chapter_count: number; user_brief: string }) {
+  if (!store.hasConfirmedContextPack()) {
+    await openContextReview();
+    return;
+  }
   await store.generateSeriesPlan(payload);
+  if (error.value.includes("上下文包") || error.value.includes("校对")) {
+    await openContextReview();
+  }
 }
 
 async function submitOutlineFeedback(payload: {
@@ -987,12 +1138,19 @@ async function submitOutlineFeedback(payload: {
     authError.value = "请先写下概要修改意见。";
     return;
   }
+  if (!store.hasConfirmedContextPack()) {
+    await openContextReview();
+    return;
+  }
   await store.submitOutlineFeedback(payload);
+  if (error.value.includes("上下文包") || error.value.includes("校对")) {
+    await openContextReview();
+  }
 }
 
 async function submitBatchGeneration(payload: { series_plan_id: number; start_chapter_no: number; end_chapter_no: number }) {
+  openGenerationTraceImmediately();
   await store.runBatchGeneration(payload);
-  if (!error.value) workshopMode.value = "drafts";
 }
 
 async function submitRestorePlanVersion(payload: { seriesPlanId: number; versionId: number }) {
@@ -1000,8 +1158,8 @@ async function submitRestorePlanVersion(payload: { seriesPlanId: number; version
 }
 
 async function submitRetryBatch(jobId: number) {
+  openGenerationTraceImmediately();
   await store.retryBatchGeneration(jobId);
-  if (!error.value) workshopMode.value = "drafts";
 }
 
 async function submitPauseBatch(jobId: number) {
@@ -1016,8 +1174,20 @@ async function submitCancelBatch(jobId: number) {
   await store.cancelBatchGeneration(jobId);
 }
 
+async function redirectToContextReviewOnContextError() {
+  if (error.value.includes("上下文包") || error.value.includes("校对")) {
+    await openContextReview();
+  }
+}
+
 async function submitCreateStoryboard(payload: { novel_chapter_ids: number[]; title: string }) {
+  if (!store.hasConfirmedContextPack()) {
+    await openContextReview();
+    return;
+  }
+  openGenerationTraceImmediately();
   await store.createStoryboard(payload);
+  await redirectToContextReviewOnContextError();
 }
 
 async function openNovelForLongform(novelId: number) {
@@ -1083,15 +1253,19 @@ async function submitUpdateAsset(payload: { assetId: number; uri: string; status
 }
 
 async function submitGenerateCharacterTurnaround(payload: { character_card_id: number; chapter_no?: number | null; prompt_note: string }) {
+  openGenerationTraceImmediately();
   await store.generateCharacterTurnaround({
     character_card_id: payload.character_card_id,
     chapter_no: payload.chapter_no ?? null,
     prompt_note: payload.prompt_note,
   });
+  await redirectToContextReviewOnContextError();
 }
 
 async function submitGenerateShotFirstFrame(payload: { storyboardId: number; shotId: number }) {
+  openGenerationTraceImmediately();
   await store.generateShotFirstFrame(payload.storyboardId, payload.shotId);
+  await redirectToContextReviewOnContextError();
 }
 
 async function submitCreateShot(payload: {
@@ -1162,7 +1336,7 @@ async function submitPublishNovel() {
   });
   if (created) {
     showPublishPanel.value = false;
-    currentView.value = "novelEditor";
+    currentView.value = "novelReader";
   }
 }
 
@@ -1208,8 +1382,8 @@ async function submitAppendChapter() {
 }
 
 async function submitUpdateChapter() {
-  if (!currentNovel.value || !selectedChapter.value) return;
-  const chapterId = selectedChapter.value.id;
+  if (!currentNovel.value || !selectedPublishedChapter.value) return;
+  const chapterId = selectedPublishedChapter.value.id;
   await store.updateNovelChapter(currentNovel.value.id, chapterId, {
     title: chapterEditForm.title.trim(),
     summary: chapterEditForm.summary.trim(),
@@ -1265,7 +1439,7 @@ watch(filteredWorkspaceProjects, () => {
   }
 }, { immediate: true });
 
-watch(selectedChapter, (next) => {
+watch(selectedPublishedChapter, (next) => {
   if (!next) {
     chapterEditForm.title = "";
     chapterEditForm.summary = "";
@@ -1302,6 +1476,12 @@ watch(selectedChapterId, (next) => {
   if (next) localStorage.setItem(persistedNovelChapterIdKey, String(next));
   else localStorage.removeItem(persistedNovelChapterIdKey);
 });
+
+watch(selectedReaderEntry, (next) => {
+  if (next) {
+    chapterJumpNo.value = next.chapter_no;
+  }
+}, { immediate: true });
 
 watch(() => [authError.value, error.value, success.value], ([nextAuthError, nextError, nextSuccess]) => {
   if (feedbackTimer !== null) window.clearTimeout(feedbackTimer);
@@ -1354,7 +1534,24 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
       />
     </template>
 
-    <template v-else-if="['novelEditor', 'projectSettings', 'characters', 'longform', 'workshop', 'generationTrace'].includes(currentView)">
+    <template v-else-if="currentView === 'novelReader'">
+      <NovelReaderPanel
+        v-if="selectedReaderEntry"
+        :work-title="selectedReaderEntry.work_title"
+        :chapter="selectedReaderEntry"
+        :chapters="readerEntries"
+        :previous-chapter="previousReaderEntry"
+        :next-chapter="nextReaderEntry"
+        :has-navigation="readerEntries.length > 1"
+        :chapter-jump-no="chapterJumpNo"
+        @back="openNovelEditor(activeProject?.project.id)"
+        @select-chapter="selectedReaderEntryId = $event"
+        @jump="jumpToPublishedChapter()"
+        @update:chapter-jump-no="chapterJumpNo = $event"
+      />
+    </template>
+
+    <template v-else-if="['novelEditor', 'projectSettings', 'contextReview', 'characters', 'novelCreate', 'videoCreate', 'generationTrace'].includes(currentView)">
       <div class="editor-shell">
         <aside class="editor-sidebar panel panel--paper">
           <div class="brand brand--sidebar">
@@ -1366,12 +1563,12 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
           </div>
           <nav class="sidebar-nav" aria-label="Editor">
             <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'projectSettings' }" @click="openProjectSettings()">项目设定</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'contextReview' }" @click="openContextReview()">生成前校对</button>
             <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'characters' }" @click="openCharacters()">人物卡</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'longform' }" @click="openLongform()">长篇流水线</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'workshop' && workshopMode === 'chapters' }" @click="openWorkshopMode('chapters')">新增章节</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'workshop' && workshopMode === 'drafts' }" @click="openWorkshopMode('drafts')">草稿箱</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'generationTrace' }" @click="currentView = 'generationTrace'">生成过程</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'novelEditor' }" @click="openNovelEditor(activeProject?.project.id)">已发布作品</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'novelCreate' }" @click="openNovelCreate()">小说创作</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'videoCreate' }" @click="openVideoCreate()">视频创作</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'generationTrace' }" @click="openGenerationTrace()">生成过程</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'novelEditor' }" @click="openNovelEditor(activeProject?.project.id)">作品管理</button>
           </nav>
         </aside>
 
@@ -1418,6 +1615,22 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
             />
           </template>
 
+          <template v-else-if="currentView === 'contextReview'">
+            <ContextReviewPage
+              v-if="isAuthenticated && hasProject"
+              :project="activeProject?.project"
+              :context-pack="contextPack"
+              :loading="loading"
+              @build="store.buildContextPack"
+              @rebuild="store.rebuildContextPack"
+              @confirm="store.confirmContextPack"
+              @save-decisions="store.updateContextPackDecisions"
+              @update-todo="({ task_id, status }) => store.updateContextPackTodo(task_id, status)"
+              @open-settings="openProjectSettings()"
+              @open-characters="openCharacters()"
+            />
+          </template>
+
           <template v-else-if="currentView === 'projectLibrary'">
             <ProjectContentLibraryPanel
               v-if="isAuthenticated && hasProject"
@@ -1430,8 +1643,8 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               :loading="loading"
               @open-settings="openProjectSettings()"
               @open-characters="openCharacters()"
-              @open-workshop="activeProject?.project.id && openWorkshop(activeProject.project.id)"
-              @open-longform="openLongform()"
+              @open-novel-create="openNovelCreate()"
+              @open-video-create="openVideoCreate()"
               @open-item="openContentLibraryItem"
             />
           </template>
@@ -1493,58 +1706,42 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
             </main>
           </template>
 
-          <template v-else-if="currentView === 'workshop'">
-            <ProjectWorkshopPanel
-              v-if="isAuthenticated && hasProject"
-              :mode="workshopMode"
-              :project-title="activeProject?.project.title"
-              :loading="loading"
-              :generation-progress="generationProgress"
-              :current-step="currentStep"
-              :chapters="projectChapters"
-              :selected-chapter-id="selectedProjectChapterId"
-              :selected-chapter="selectedProjectChapter"
-              :chapter-drafts="chapterDrafts"
-              :selected-draft-generation="selectedDraftGeneration"
-              :draft-word-count="draftWordCount"
-              :chapter-form="projectChapterForm"
-              :chapter-edit-form="projectChapterEditForm"
-              :generation-form="generationForm"
-              :draft-form="draftForm"
-              :publish-form="publishForm"
-              :append-chapter-form="appendChapterForm"
-              :show-publish-panel="showPublishPanel"
-              :show-append-panel="showAppendPanel"
-              :current-novel="currentNovel"
-              :has-published-novel="hasPublishedNovelForProject"
-              :published-novel-title="activeProjectNovel?.title"
-              @update:chapter-form="Object.assign(projectChapterForm, $event)"
-              @update:chapter-edit-form="Object.assign(projectChapterEditForm, $event)"
-              @update:generation-form="Object.assign(generationForm, $event)"
-              @update:draft-form="Object.assign(draftForm, $event)"
-              @update:publish-form="Object.assign(publishForm, $event)"
-              @update:append-chapter-form="Object.assign(appendChapterForm, $event)"
-              @update:show-publish-panel="showPublishPanel = $event"
-              @update:show-append-panel="showAppendPanel = $event"
-              @select-chapter="selectedProjectChapterId = $event"
-              @select-draft="selectedDraftGenerationId = $event"
-              @create-chapter="submitCreateProjectChapter()"
-              @save-chapter="submitUpdateProjectChapter()"
-              @save-prompt="saveGenerationPromptDraft()"
-              @generate-draft="submitAutoGenerate()"
-              @continue-draft="store.refreshGenerationEvolution($event)"
-              @publish-draft="submitPublishNovel()"
-              @append-draft="submitAppendChapter()"
-            />
-          </template>
-
-          <template v-else-if="currentView === 'longform'">
-            <LongformPipelinePanel
+          <template v-else-if="currentView === 'novelCreate'">
+            <NovelCreatePage
               v-if="isAuthenticated && hasProject"
               :project="activeProject?.project"
               :project-title="activeProject?.project.title"
               :loading="loading"
               :state="longformState"
+              :context-pack="contextPack"
+              :character-cards="activeProject?.character_cards || []"
+              :managed-novels="managedNovels"
+              :current-novel="currentNovel"
+              :preferred-series-plan-id="preferredSeriesPlanId"
+              :preferred-draft-version-id="preferredLongformDraftVersionId"
+              @generate-plan="submitGenerateSeriesPlan"
+              @submit-feedback="submitOutlineFeedback"
+              @lock-plan="store.lockSeriesPlan"
+              @restore-plan-version="submitRestorePlanVersion"
+              @batch-generate="submitBatchGeneration"
+              @retry-batch="submitRetryBatch"
+              @pause-batch="submitPauseBatch"
+              @resume-batch="submitResumeBatch"
+              @cancel-batch="submitCancelBatch"
+              @revise-draft="submitReviseDraft"
+              @canonicalize-draft="submitCanonicalizeDraft"
+              @update-outline="submitUpdateOutline"
+            />
+          </template>
+
+          <template v-else-if="currentView === 'videoCreate'">
+            <VideoCreatePage
+              v-if="isAuthenticated && hasProject"
+              :project="activeProject?.project"
+              :project-title="activeProject?.project.title"
+              :loading="loading"
+              :state="longformState"
+              :context-pack="contextPack"
               :character-cards="activeProject?.character_cards || []"
               :managed-novels="managedNovels"
               :current-novel="currentNovel"
@@ -1565,16 +1762,16 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @create-storyboard="submitCreateStoryboard"
               @revise-draft="submitReviseDraft"
               @canonicalize-draft="submitCanonicalizeDraft"
-              @create-video-task="store.createVideoTask"
+              @create-video-task="(storyboardId) => { openGenerationTraceImmediately(); return store.createVideoTask(storyboardId); }"
               @update-outline="submitUpdateOutline"
               @update-shot="submitUpdateShot"
               @update-asset="submitUpdateAsset"
               @generate-character-turnaround="submitGenerateCharacterTurnaround"
               @generate-shot-first-frame="submitGenerateShotFirstFrame"
-              @generate-audio-scripts="store.generateStoryboardAudioScripts"
-              @generate-storyboard-voice="(storyboardId) => store.generateStoryboardVoice(storyboardId, { voice_role: 'dialogue' })"
-              @prepare-video-production="(storyboardId) => store.prepareVideoProduction(storyboardId, { generate_character_turnarounds: true, generate_audio_scripts: true, generate_dialogue_audio: true, create_video_task: true })"
-              @generate-shot-voice="({ storyboardId, shotId, voice_role, character_card_id, dialogue_text, voice_profile, emotion }) => store.generateShotVoice(storyboardId, shotId, { voice_role, character_card_id, dialogue_text, voice_profile, emotion })"
+              @generate-audio-scripts="(storyboardId) => { openGenerationTraceImmediately(); return store.generateStoryboardAudioScripts(storyboardId); }"
+              @generate-storyboard-voice="(storyboardId) => { openGenerationTraceImmediately(); return store.generateStoryboardVoice(storyboardId, { voice_role: 'dialogue' }); }"
+              @prepare-video-production="(storyboardId) => { openGenerationTraceImmediately(); return store.prepareVideoProduction(storyboardId, { generate_character_turnarounds: true, generate_audio_scripts: true, generate_dialogue_audio: true, create_video_task: true }); }"
+              @generate-shot-voice="({ storyboardId, shotId, voice_role, character_card_id, dialogue_text, voice_profile, emotion }) => { openGenerationTraceImmediately(); return store.generateShotVoice(storyboardId, shotId, { voice_role, character_card_id, dialogue_text, voice_profile, emotion }); }"
               @create-shot="submitCreateShot"
               @delete-shot="submitDeleteShot"
               @reorder-shots="submitReorderShots"
@@ -1589,14 +1786,17 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               :chapter-title="selectedProjectChapter?.title"
               :loading="loading"
               :progress="generationProgress"
+              :longform-state="longformState"
+              :longform-request-state="longformRequestState"
             />
           </template>
 
           <template v-else-if="currentView === 'novelEditor'">
             <NovelEditorPanel
               :managed-novels="managedNovels"
+              :draft-versions="longformState.draft_versions"
               :novel="currentNovel && isManagingCurrentNovel ? currentNovel : null"
-              :selected-chapter="selectedChapter"
+              :selected-chapter="sortedChapters.find((chapter) => chapter.id === selectedChapterId) ?? null"
               :sorted-chapters="sortedChapters"
               :manage-title="manageNovelForm.title"
               :manage-author-name="manageNovelForm.author_name"
@@ -1615,8 +1815,9 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               :selected-draft-generation="selectedDraftGeneration"
               :loading="loading"
               @open-novel="openManagedNovelEditor"
-              @open-detail="goToView('workshop')"
-              @open-workshop="activeProject?.project.id && openWorkshop(activeProject.project.id)"
+              @open-published-reader="openNovelReader(activeProject?.project.id)"
+              @open-draft-reader="openDraftReader"
+              @open-novel-create="openNovelCreate()"
               @update:manage-title="manageNovelForm.title = $event"
               @update:manage-author-name="manageNovelForm.author_name = $event"
               @update:manage-summary="manageNovelForm.summary = $event"
@@ -1635,7 +1836,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @delete-novel="deleteCurrentNovel()"
               @save-chapter="submitUpdateChapter()"
               @append-chapter="submitAppendChapter()"
-              @back="goToView('workshop')"
+              @back="openNovelCreate()"
             />
           </template>
         </main>
@@ -1692,7 +1893,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               :loading="loading"
               @update:workspace-search="workspaceSearch = $event"
               @open-project-create="openProjectCreate()"
-              @open-project="openWorkshop"
+              @open-project="openNovelCreate"
               @delete-project="deleteProjectToTrash"
               @previous-page="previousWorkspacePage()"
               @next-page="nextWorkspacePage()"

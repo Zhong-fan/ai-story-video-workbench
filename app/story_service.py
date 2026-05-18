@@ -40,6 +40,10 @@ class StoryGenerationService:
         project_title: str,
         genre: str,
         reference_work: str,
+        reference_work_synopsis: str = "",
+        reference_work_style_traits: list[str] | None = None,
+        reference_work_world_traits: list[str] | None = None,
+        reference_work_narrative_constraints: list[str] | None = None,
         premise: str,
         world_brief: str,
         writing_rules: str,
@@ -49,22 +53,55 @@ class StoryGenerationService:
         scene_card: str,
         memories: list[dict[str, str]],
         use_refiner: bool,
+        context_pack_inputs: dict[str, Any] | None = None,
         progress: Callable[..., None] | None = None,
         trace: dict | None = None,
     ) -> tuple[str, str, str]:
+        story_feed = context_pack_inputs.get("story_feed", {}) if isinstance(context_pack_inputs, dict) else {}
+        project_core = story_feed.get("project_core", {}) if isinstance(story_feed, dict) else {}
+        character_constraints = story_feed.get("character_constraints", []) if isinstance(story_feed, dict) else []
+        reference_constraints = story_feed.get("reference_constraints", {}) if isinstance(story_feed, dict) else {}
+        user_decisions = story_feed.get("user_decisions", {}) if isinstance(story_feed, dict) else {}
+        hard_constraints = story_feed.get("hard_constraints", []) if isinstance(story_feed, dict) else []
+        memory_source = story_feed.get("supporting_memories") if isinstance(story_feed, dict) else None
         memory_lines = "\n".join(
+            f"- {item.get('title', '')}：{item.get('content', '')}" for item in (memory_source or [])[:10] if isinstance(item, dict)
+        ) or "\n".join(
             f"- {item['title']}：{item['content']}" for item in memories[:10]
         ) or "- 暂无额外长期设定。"
-        reference_guidance = self._reference_guidance(reference_work)
+        reference_guidance = self._reference_guidance(
+            reference_work=str(reference_constraints.get("reference_work") or reference_work),
+            reference_work_synopsis=str(reference_constraints.get("synopsis") or reference_work_synopsis),
+            reference_work_style_traits=list(reference_constraints.get("style_traits") or reference_work_style_traits or []),
+            reference_work_world_traits=list(reference_constraints.get("world_traits") or reference_work_world_traits or []),
+            reference_work_narrative_constraints=list(reference_constraints.get("narrative_constraints") or reference_work_narrative_constraints or []),
+        )
 
         system_prompt = story_generation_system_prompt(style_instructions(style_profile), writing_rules)
         prompt = story_generation_user_prompt(
-            project_title=project_title,
-            genre=genre,
-            reference_work=reference_work,
+            project_title=str(project_core.get("title") or project_title),
+            genre=str(project_core.get("genre") or genre),
+            reference_work=str(reference_constraints.get("reference_work") or reference_work),
             premise=premise,
-            world_brief=world_brief,
-            user_prompt=user_prompt,
+            world_brief=str(project_core.get("world_brief") or world_brief),
+            user_prompt="\n".join(
+                [
+                    user_prompt,
+                    "",
+                    "已确认人物约束：",
+                    *[
+                        f"- {item.get('name', '')} / {item.get('story_role', '')} / {item.get('gender', '')} / {item.get('background', '')}"
+                        for item in character_constraints[:12]
+                        if isinstance(item, dict)
+                    ],
+                    "",
+                    "已确认硬约束：",
+                    *[f"- {item}" for item in hard_constraints],
+                    "",
+                    "用户已确认的版本选择：",
+                    *[f"- {key}: {value}" for key, value in user_decisions.items()],
+                ]
+            ).strip(),
             response_type=response_type,
             memory_lines=memory_lines,
             reference_guidance=reference_guidance,
@@ -353,9 +390,32 @@ class StoryGenerationService:
             )
         return next_title, next_summary, next_content
 
-    def _reference_guidance(self, reference_work: str) -> str:
+    def _reference_guidance(
+        self,
+        reference_work: str,
+        *,
+        reference_work_synopsis: str = "",
+        reference_work_style_traits: list[str] | None = None,
+        reference_work_world_traits: list[str] | None = None,
+        reference_work_narrative_constraints: list[str] | None = None,
+    ) -> str:
         if not reference_work.strip():
             return ""
+        structured_parts: list[str] = []
+        if reference_work_synopsis.strip():
+            structured_parts.append(f"- 作品概况：{reference_work_synopsis.strip()}")
+        style_traits = [item.strip() for item in (reference_work_style_traits or []) if item and item.strip()]
+        if style_traits:
+            structured_parts.append(f"- 文风线索：{'；'.join(style_traits[:8])}")
+        world_traits = [item.strip() for item in (reference_work_world_traits or []) if item and item.strip()]
+        if world_traits:
+            structured_parts.append(f"- 世界特征：{'；'.join(world_traits[:8])}")
+        constraints = [item.strip() for item in (reference_work_narrative_constraints or []) if item and item.strip()]
+        if constraints:
+            structured_parts.append(f"- 写作与改编约束：{'；'.join(constraints[:8])}")
+        if structured_parts:
+            structured_parts.append("- 这些内容用于提炼可迁移约束，不允许直接照搬原作角色、剧情节点、专有名词和关键设定。")
+            return "\n".join(structured_parts)
         system_prompt = dedent(
             """
             你是小说参考作品分析助手。

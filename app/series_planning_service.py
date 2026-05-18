@@ -31,16 +31,33 @@ class SeriesPlanningService:
         project: Project,
         target_chapter_count: int,
         user_brief: str,
+        context_pack_inputs: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        story_feed = context_pack_inputs.get("story_feed", {}) if isinstance(context_pack_inputs, dict) else {}
+        character_snapshot = context_pack_inputs.get("character_snapshot", []) if isinstance(context_pack_inputs, dict) else []
+        project_snapshot = context_pack_inputs.get("project_snapshot", {}) if isinstance(context_pack_inputs, dict) else {}
+        reference_snapshot = context_pack_inputs.get("reference_snapshot", {}) if isinstance(context_pack_inputs, dict) else {}
+        hard_constraints = context_pack_inputs.get("hard_constraints", []) if isinstance(context_pack_inputs, dict) else []
+
+        memory_items = story_feed.get("supporting_memories") if isinstance(story_feed, dict) else None
+        source_items = story_feed.get("supporting_sources") if isinstance(story_feed, dict) else None
         memory_lines = "\n".join(
+            f"- {item.get('title', '')}：{item.get('content', '')}" for item in (memory_items or [])[:12] if isinstance(item, dict)
+        ) or "\n".join(
             f"- {item.title}：{item.content}" for item in sorted(project.memories, key=lambda item: item.importance, reverse=True)[:12]
         ) or "- 暂无长期资料。"
         character_lines = "\n".join(
+            f"- {item.get('name', '')} / {item.get('story_role', '')}：{item.get('personality', '')} {item.get('background', '')}"
+            for item in character_snapshot[:20]
+            if isinstance(item, dict) and str(item.get("name") or "").strip()
+        ) or "\n".join(
             f"- {item.name} / {item.story_role}：{item.personality} {item.background}"
             for item in project.character_cards
             if item.deleted_at is None
         ) or "- 暂无人物卡。"
-        source_lines = "\n".join(f"- {item.title}：{item.content[:700]}" for item in project.source_documents[:6]) or "- 暂无参考资料。"
+        source_lines = "\n".join(
+            f"- {item.get('title', '')}：{str(item.get('content', ''))[:700]}" for item in (source_items or [])[:6] if isinstance(item, dict)
+        ) or "\n".join(f"- {item.title}：{item.content[:700]}" for item in project.source_documents[:6]) or "- 暂无参考资料。"
 
         system_prompt = dedent(
             """
@@ -50,18 +67,18 @@ class SeriesPlanningService:
             """
         ).strip()
         prompt = f"""
-项目标题：{project.title}
-类型：{project.genre}
+项目标题：{project_snapshot.get("title") or project.title}
+类型：{project_snapshot.get("genre") or project.genre}
 目标章节数：{target_chapter_count}
 
-参考作品：
-{project.reference_work or "无"}
+参考作品结构化约束：
+{self._reference_block(project, reference_snapshot=reference_snapshot)}
 
 世界设定：
-{project.world_brief or "暂无"}
+{project_snapshot.get("world_brief") or project.world_brief or "暂无"}
 
 写作规则：
-{project.writing_rules or "暂无"}
+{project_snapshot.get("writing_rules") or project.writing_rules or "暂无"}
 
 人物卡：
 {character_lines}
@@ -74,6 +91,9 @@ class SeriesPlanningService:
 
 用户额外要求：
 {user_brief or "无"}
+
+必须严格遵守的硬约束：
+{chr(10).join(f"- {item}" for item in hard_constraints) or "- 已确认人物姓名、身份和世界规则不得漂移。"}
 
 请按三层规划输出 JSON：
 {{
@@ -130,6 +150,20 @@ class SeriesPlanningService:
         payload = parse_json_object(response.text)
         self._validate_payload(payload, target_chapter_count=target_chapter_count)
         return payload
+
+    def _reference_block(self, project: Project, *, reference_snapshot: dict[str, Any] | None = None) -> str:
+        snapshot = reference_snapshot or {}
+        reference_work = str(snapshot.get("reference_work") or project.reference_work).strip()
+        if not reference_work:
+            return "无"
+        parts = [
+            f"- 作品名：{reference_work}",
+            f"- 作品概况：{snapshot.get('synopsis') or project.reference_work_synopsis or '无'}",
+            f"- 写作风格线索：{'；'.join(snapshot.get('style_traits') or project.reference_work_style_traits) or '无'}",
+            f"- 世界特征：{'；'.join(snapshot.get('world_traits') or project.reference_work_world_traits) or '无'}",
+            f"- 写作与改编约束：{'；'.join(snapshot.get('narrative_constraints') or project.reference_work_narrative_constraints) or '无'}",
+        ]
+        return "\n".join(parts)
 
     def _validate_payload(self, payload: dict[str, Any], *, target_chapter_count: int) -> None:
         series = payload.get("series")

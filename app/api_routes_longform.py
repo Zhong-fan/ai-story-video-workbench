@@ -22,6 +22,7 @@ from .audio_script_service import AudioScriptService
 from .auth import get_current_user
 from .batch_generation_service import BatchGenerationService
 from .config import Settings
+from .context_pack_service import ContextPackService
 from .contracts import (
     BatchGenerationJobOut,
     BatchGenerationRequest,
@@ -86,6 +87,8 @@ from .voice_service import VoiceService
 
 
 def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
+    context_pack_service = ContextPackService()
+
     @router.get("/api/projects/{project_id}/longform", response_model=SeriesPlanningStateOut)
     def longform_state(
         project_id: int,
@@ -104,10 +107,15 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
     ) -> SeriesPlanOut:
         project = _project_or_404(db, current_user.id, project_id)
         try:
+            context_pack = context_pack_service.require_confirmed(db, project)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        try:
             generated = SeriesPlanningService(settings).generate_plan(
                 project=project,
                 target_chapter_count=payload.target_chapter_count,
                 user_brief=payload.user_brief,
+                context_pack_inputs=context_pack_service.resolved_inputs(context_pack),
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -125,6 +133,10 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         current_user: User = Depends(get_current_user),
     ) -> OutlineRevisionResponse:
         project = _project_or_404(db, current_user.id, project_id)
+        try:
+            context_pack = context_pack_service.require_confirmed(db, project)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         series_plan = _series_plan_for_feedback(db, project, payload.target_type, payload.target_id)
         current_payload = (
             json_loads_object(series_plan.current_version.summary_json)
@@ -148,6 +160,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                 current_plan=current_payload,
                 feedback_text=payload.feedback_text,
                 target_type=payload.target_type,
+                context_pack_inputs=context_pack_service.resolved_inputs(context_pack),
             )
         except RuntimeError as exc:
             feedback.status = "failed"
@@ -533,6 +546,10 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         current_user: User = Depends(get_current_user),
     ) -> StoryboardOut:
         project = _project_or_404(db, current_user.id, project_id)
+        try:
+            context_pack_service.require_confirmed(db, project)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         title = payload.title.strip() or f"{project.title} 读后短片"
         try:
             storyboard = StoryboardJobService(settings).create_job(
@@ -554,6 +571,10 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         current_user: User = Depends(get_current_user),
     ) -> VideoTaskOut:
         project = _project_or_404(db, current_user.id, project_id)
+        try:
+            context_pack_service.require_confirmed(db, project)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         storyboard = db.scalar(select(Storyboard).where(Storyboard.project_id == project.id, Storyboard.id == storyboard_id))
         if storyboard is None:
             raise HTTPException(status_code=404, detail="分镜稿不存在。")
@@ -651,6 +672,11 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         current_user: User = Depends(get_current_user),
     ) -> SeriesPlanningStateOut:
         project = _project_or_404(db, current_user.id, project_id)
+        try:
+            context_pack = context_pack_service.require_confirmed(db, project)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        context_pack_inputs = context_pack_service.resolved_inputs(context_pack)
         storyboard = _storyboard_or_404(db, project.id, storyboard_id)
         preflight_summary: dict[str, Any] = {
             "generated_character_turnarounds": [],
@@ -659,6 +685,9 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
             "skipped_locked_audio_scripts": False,
             "generated_dialogue_audio": 0,
             "skipped_locked_dialogue_audio": 0,
+            "context_pack_id": context_pack_inputs.get("context_pack_id"),
+            "context_pack_version": context_pack_inputs.get("context_pack_version"),
+            "context_pack_reference_mode": context_pack_inputs.get("reference_mode"),
         }
 
         if payload.generate_character_turnarounds:
@@ -690,6 +719,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                         character=character,
                         chapter_no=None,
                         prompt_note="视频生产前置资产：请生成角色三视图，保持项目视觉风格一致。",
+                        context_pack_inputs=context_pack_inputs,
                     )
                     preflight_summary["generated_character_turnarounds"].append(character.name)
                 except RuntimeError as exc:
@@ -730,6 +760,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                         project=project,
                         storyboard=storyboard,
                         chapters=chapters,
+                        context_pack_inputs=context_pack_inputs,
                     )
                 except RuntimeError as exc:
                     db.rollback()
@@ -761,6 +792,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                     voice_profile=payload.fallback_voice_profile.strip(),
                     provider="",
                     voice_role="dialogue",
+                    context_pack_inputs=context_pack_inputs,
                 )
             except RuntimeError as exc:
                 db.rollback()
@@ -981,6 +1013,10 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         current_user: User = Depends(get_current_user),
     ) -> MediaAssetOut:
         project = _project_or_404(db, current_user.id, project_id)
+        try:
+            context_pack = context_pack_service.require_confirmed(db, project)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         character = db.scalar(
             select(CharacterCard).where(
                 CharacterCard.project_id == project.id,
@@ -997,6 +1033,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                 character=character,
                 chapter_no=payload.chapter_no,
                 prompt_note=payload.prompt_note,
+                context_pack_inputs=context_pack_service.resolved_inputs(context_pack),
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -1011,6 +1048,10 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         current_user: User = Depends(get_current_user),
     ) -> list[MediaAssetOut]:
         project = _project_or_404(db, current_user.id, project_id)
+        try:
+            context_pack = context_pack_service.require_confirmed(db, project)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         storyboard = _storyboard_or_404(db, project.id, storyboard_id)
         try:
             assets = VoiceService(settings).generate_storyboard_voice(
@@ -1023,6 +1064,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                 speed=payload.speed,
                 emotion=payload.emotion.strip(),
                 text_override="",
+                context_pack_inputs=context_pack_service.resolved_inputs(context_pack),
             )
         except RuntimeError as exc:
             db.rollback()
@@ -1041,6 +1083,10 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         current_user: User = Depends(get_current_user),
     ) -> StoryboardOut:
         project = _project_or_404(db, current_user.id, project_id)
+        try:
+            context_pack = context_pack_service.require_confirmed(db, project)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         storyboard = _storyboard_or_404(db, project.id, storyboard_id)
         chapter_ids = [int(item) for item in json_loads_list(storyboard.source_chapter_ids_json) if str(item).isdigit()]
         chapters = db.scalars(
@@ -1065,6 +1111,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                 narration_policy=payload.narration_policy.strip() or "minimal",
                 music_policy=payload.music_policy.strip() or "cue_only",
                 sound_effect_policy=payload.sound_effect_policy.strip() or "cue_only",
+                context_pack_inputs=context_pack_service.resolved_inputs(context_pack),
             )
         except RuntimeError as exc:
             db.rollback()
@@ -1083,6 +1130,10 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         current_user: User = Depends(get_current_user),
     ) -> MediaAssetOut:
         project = _project_or_404(db, current_user.id, project_id)
+        try:
+            context_pack = context_pack_service.require_confirmed(db, project)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         storyboard = _storyboard_or_404(db, project.id, storyboard_id)
         shot = db.scalar(select(StoryboardShot).where(StoryboardShot.storyboard_id == storyboard.id, StoryboardShot.id == shot_id))
         if shot is None:
@@ -1112,6 +1163,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                 speed=payload.speed,
                 emotion=payload.emotion.strip(),
                 text_override=payload.text_override.strip(),
+                context_pack_inputs=context_pack_service.resolved_inputs(context_pack),
             )
         except RuntimeError as exc:
             db.rollback()
@@ -1129,6 +1181,10 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         current_user: User = Depends(get_current_user),
     ) -> MediaAssetOut:
         project = _project_or_404(db, current_user.id, project_id)
+        try:
+            context_pack = context_pack_service.require_confirmed(db, project)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         storyboard = _storyboard_or_404(db, project.id, storyboard_id)
         shot = db.scalar(select(StoryboardShot).where(StoryboardShot.storyboard_id == storyboard.id, StoryboardShot.id == shot_id))
         if shot is None:
@@ -1139,6 +1195,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                 project=project,
                 storyboard=storyboard,
                 shot=shot,
+                context_pack_inputs=context_pack_service.resolved_inputs(context_pack),
             )
         except RuntimeError as exc:
             db.rollback()

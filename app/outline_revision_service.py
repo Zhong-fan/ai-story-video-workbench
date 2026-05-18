@@ -30,7 +30,15 @@ class OutlineRevisionService:
         current_plan: dict[str, Any],
         feedback_text: str,
         target_type: str,
+        context_pack_inputs: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        character_snapshot = context_pack_inputs.get("character_snapshot", []) if isinstance(context_pack_inputs, dict) else []
+        hard_constraints = context_pack_inputs.get("hard_constraints", []) if isinstance(context_pack_inputs, dict) else []
+        user_decisions = (
+            context_pack_inputs.get("story_feed", {}).get("user_decisions")
+            if isinstance(context_pack_inputs, dict) and isinstance(context_pack_inputs.get("story_feed"), dict)
+            else {}
+        )
         system_prompt = dedent(
             """
             你是长篇小说概要反馈解析与修订助手。
@@ -46,6 +54,15 @@ class OutlineRevisionService:
 
 用户反馈：
 {feedback_text}
+
+当前已确认人物：
+{character_snapshot}
+
+当前硬约束：
+{hard_constraints}
+
+当前用户已确认选择：
+{user_decisions}
 
 请输出：
 {{
@@ -71,6 +88,7 @@ class OutlineRevisionService:
 - 保留未受反馈影响的稳定设定。
 - 不要把反馈原样塞进正文提示，要体现在概要结构里。
 - revised_plan 必须仍包含 series、arcs、chapters 三层。
+- 已确认人物姓名、身份、关系和用户已选择的版本方向不得漂移。
 """.strip()
         response = self.llm.generate(
             model=self.settings.utility_model,

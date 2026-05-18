@@ -65,7 +65,7 @@ class Project(Base, TimestampMixin):
     reference_work_narrative_constraints_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     reference_work_confidence_note: Mapped[str] = mapped_column(Text, default="", nullable=False)
     visual_style_locked: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    visual_style_medium: Mapped[str] = mapped_column(String(80), default="二维动画电影", nullable=False)
+    visual_style_medium: Mapped[str] = mapped_column(String(80), default="", nullable=False)
     visual_style_artists_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     visual_style_positive_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     visual_style_negative_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
@@ -132,6 +132,7 @@ class Project(Base, TimestampMixin):
     )
     task_events: Mapped[list["TaskEvent"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     storyboards: Mapped[list["Storyboard"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    context_packs: Mapped[list["ContextPack"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
     @property
     def reference_work_style_traits(self) -> list[str]:
@@ -254,6 +255,30 @@ class SourceDocument(Base, TimestampMixin):
     source_kind: Mapped[str] = mapped_column(String(60), default="reference", nullable=False)
 
     project: Mapped["Project"] = relationship(back_populates="source_documents")
+
+
+class ContextPack(Base, TimestampMixin):
+    __tablename__ = "context_packs"
+    __table_args__ = (UniqueConstraint("project_id", "version_no", name="uq_context_packs_project_version"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(String(40), default="draft", nullable=False)
+    reference_mode: Mapped[str] = mapped_column(String(40), default="hybrid_reference", nullable=False)
+    user_notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    source_fingerprint: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    project_snapshot_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    character_snapshot_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    reference_snapshot_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    source_snapshot_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    conflict_report_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    user_decisions_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    derived_constraints_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    feed_preview_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    project: Mapped["Project"] = relationship(back_populates="context_packs")
 
 
 class ProjectChapter(Base, TimestampMixin):

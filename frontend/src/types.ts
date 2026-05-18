@@ -4,9 +4,11 @@ export type ViewKey =
   | "projectCreate"
   | "projectSettings"
   | "projectLibrary"
+  | "contextReview"
   | "characters"
-  | "longform"
-  | "workshop"
+  | "novelCreate"
+  | "videoCreate"
+  | "novelReader"
   | "generationTrace"
   | "novelEditor"
   | "auth";
@@ -118,6 +120,12 @@ export interface ReferenceWorkResolved {
   style_traits: string[];
   world_traits: string[];
   narrative_constraints: string[];
+  writing_style: string[];
+  writing_constraints: string[];
+  visual_style: string[];
+  video_constraints: string[];
+  visual_medium: string;
+  visual_artists: string[];
   confidence_note: string;
 }
 
@@ -275,6 +283,66 @@ export interface ProjectDetailResponse {
   relationship_state_updates: RelationshipStateUpdate[];
   story_events: StoryEventItem[];
   world_perception_updates: WorldPerceptionUpdate[];
+  context_pack?: ContextPack | null;
+}
+
+export interface ContextPackConflict {
+  severity: string;
+  code: string;
+  title: string;
+  detail: string;
+  related_items: string[];
+}
+
+export interface ContextPackGuidance {
+  title: string;
+  detail: string;
+  suggested_action: string;
+}
+
+export interface ContextPackChoiceQuestion {
+  question_id: string;
+  question: string;
+  options: string[];
+  recommendation: string;
+}
+
+export interface ContextPackTodoTask {
+  task_id: string;
+  title: string;
+  detail: string;
+  status: string;
+}
+
+export interface ContextPack {
+  id: number;
+  project_id: number;
+  version_no: number;
+  status: string;
+  reference_mode: "style_reference" | "content_reference" | "hybrid_reference";
+  user_notes: string;
+  source_fingerprint: string;
+  project_snapshot: Record<string, unknown>;
+  character_snapshot: Array<Record<string, unknown>>;
+  reference_snapshot: Record<string, unknown>;
+  source_snapshot: Record<string, unknown>;
+  conflict_report: ContextPackConflict[];
+  user_decisions: Record<string, string>;
+  user_guidance: ContextPackGuidance[];
+  choice_questions: ContextPackChoiceQuestion[];
+  todo_tasks: ContextPackTodoTask[];
+  derived_constraints: Record<string, unknown>;
+  feed_preview: Record<string, unknown>;
+  confirmed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContextPackBuildPayload {
+  reference_mode: "style_reference" | "content_reference" | "hybrid_reference";
+  user_notes: string;
+  confirm_after_build: boolean;
+  user_decisions?: Record<string, string>;
 }
 
 export interface SeriesPlanVersion {
@@ -320,6 +388,7 @@ export interface DraftVersion {
   id: number;
   project_id: number;
   chapter_outline_id: number;
+  chapter_no: number;
   generation_run_id?: number | null;
   parent_version_id?: number | null;
   version_no: number;
@@ -637,6 +706,18 @@ export interface NovelCard {
 
 export interface NovelDetail extends NovelCard {
   chapters: NovelChapter[];
+}
+
+export interface ReaderEntry {
+  id: string;
+  source_kind: "published" | "draft";
+  source_id: number;
+  work_title: string;
+  title: string;
+  summary: string;
+  content: string;
+  chapter_no: number;
+  meta: string;
 }
 
 export interface NovelComment {

@@ -23,6 +23,11 @@ from .api_support import (
 from .auth import get_current_user
 from .contracts import (
     CharacterCardCreateRequest,
+    ContextPackBuildRequest,
+    ContextPackConfirmResponse,
+    ContextPackDecisionRequest,
+    ContextPackTodoUpdateRequest,
+    ContextPackOut,
     CharacterCardOut,
     CharacterCardUpdateRequest,
     DeleteCharacterCardRequest,
@@ -51,9 +56,12 @@ from .contracts import (
 )
 from .db import get_db
 from .config import load_settings
+from .context_pack_service import ContextPackService
+from .json_utils import json_loads_object
 from .models import (
     CharacterCard,
     CharacterStateUpdate,
+    ContextPack,
     GenerationRun,
     Memory,
     Novel,
@@ -82,7 +90,7 @@ def _apply_reference_work_payload(project: Project, payload: ProjectCreateReques
 
 def _apply_visual_style_payload(project: Project, payload: ProjectCreateRequest | ProjectUpdateRequest) -> None:
     project.visual_style_locked = bool(payload.visual_style_locked)
-    project.visual_style_medium = payload.visual_style_medium.strip() or "二维动画电影"
+    project.visual_style_medium = payload.visual_style_medium.strip()
     project.visual_style_artists = payload.visual_style_artists
     project.visual_style_positive = payload.visual_style_positive
     project.visual_style_negative = payload.visual_style_negative
@@ -90,6 +98,8 @@ def _apply_visual_style_payload(project: Project, payload: ProjectCreateRequest 
 
 
 def register_project_routes(router: APIRouter) -> None:
+    context_pack_service = ContextPackService()
+
     @router.get("/api/projects", response_model=list[ProjectOut])
     def list_projects(
         db: Session = Depends(get_db),
@@ -370,6 +380,7 @@ def register_project_routes(router: APIRouter) -> None:
         current_user: User = Depends(get_current_user),
     ) -> ProjectDetailResponse:
         project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.latest_for_project(db, project.id)
         generations = db.scalars(
             select(GenerationRun).where(GenerationRun.project_id == project.id).order_by(GenerationRun.created_at.desc())
         ).all()
@@ -390,7 +401,144 @@ def register_project_routes(router: APIRouter) -> None:
             relationship_state_updates=[_relationship_state_out(item) for item in relationship_updates[:20]],
             story_events=[_story_event_out(item) for item in story_events[:20]],
             world_perception_updates=[_world_perception_out(item) for item in world_updates[:20]],
+            context_pack=ContextPackOut(**context_pack_service.as_dict(context_pack)) if context_pack is not None else None,
         )
+
+    @router.get("/api/projects/{project_id}/context-pack", response_model=ContextPackOut | None)
+    def get_context_pack(
+        project_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackOut | None:
+        project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.latest_for_project(db, project.id)
+        if context_pack is None:
+            return None
+        if context_pack_service.is_stale(context_pack, project) and context_pack.status == "confirmed":
+            context_pack.status = "stale"
+            db.commit()
+            db.refresh(context_pack)
+        return ContextPackOut(**context_pack_service.as_dict(context_pack))
+
+    @router.post("/api/projects/{project_id}/context-pack/build", response_model=ContextPackOut)
+    def build_context_pack(
+        project_id: int,
+        payload: ContextPackBuildRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.build(
+            db,
+            project=project,
+            reference_mode=payload.reference_mode,
+            user_notes=payload.user_notes,
+            user_decisions=payload.user_decisions,
+            confirm_after_build=payload.confirm_after_build,
+        )
+        db.commit()
+        db.refresh(context_pack)
+        return ContextPackOut(**context_pack_service.as_dict(context_pack))
+
+    @router.post("/api/projects/{project_id}/context-pack/rebuild", response_model=ContextPackOut)
+    def rebuild_context_pack(
+        project_id: int,
+        payload: ContextPackBuildRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        latest = context_pack_service.latest_for_project(db, project.id)
+        if latest is None:
+            context_pack = context_pack_service.build(
+                db,
+                project=project,
+                reference_mode=payload.reference_mode,
+                user_notes=payload.user_notes,
+                user_decisions=payload.user_decisions,
+                confirm_after_build=payload.confirm_after_build,
+            )
+        else:
+            context_pack_service.update_user_decisions(latest, payload.user_decisions)
+            context_pack = context_pack_service.rebuild(
+                db,
+                project=project,
+                existing=latest,
+                confirm_after_build=payload.confirm_after_build,
+            )
+        db.commit()
+        db.refresh(context_pack)
+        return ContextPackOut(**context_pack_service.as_dict(context_pack))
+
+    @router.post("/api/projects/{project_id}/context-pack/confirm", response_model=ContextPackConfirmResponse)
+    def confirm_context_pack(
+        project_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackConfirmResponse:
+        project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.latest_for_project(db, project.id)
+        if context_pack is None:
+            raise HTTPException(status_code=404, detail="当前项目还没有生成前校对稿。")
+        if context_pack_service.is_stale(context_pack, project):
+            context_pack.status = "stale"
+            db.commit()
+            raise HTTPException(status_code=409, detail="项目设定已变化，需要重新生成校对稿。")
+        context_pack_service.confirm(context_pack)
+        db.commit()
+        db.refresh(context_pack)
+        return ContextPackConfirmResponse(
+            status="confirmed",
+            context_pack=ContextPackOut(**context_pack_service.as_dict(context_pack)),
+        )
+
+    @router.put("/api/projects/{project_id}/context-pack/decisions", response_model=ContextPackOut)
+    def update_context_pack_decisions(
+        project_id: int,
+        payload: ContextPackDecisionRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.latest_for_project(db, project.id)
+        if context_pack is None:
+            raise HTTPException(status_code=404, detail="当前项目还没有生成前校对稿。")
+        context_pack_service.update_user_decisions(context_pack, payload.user_decisions)
+        rebuilt = context_pack_service.build(
+            db,
+            project=project,
+            reference_mode=context_pack.reference_mode,
+            user_notes=context_pack.user_notes,
+            user_decisions=json_loads_object(context_pack.user_decisions_json),
+            confirm_after_build=context_pack.status == "confirmed",
+        )
+        db.commit()
+        db.refresh(rebuilt)
+        return ContextPackOut(**context_pack_service.as_dict(rebuilt))
+
+    @router.put("/api/projects/{project_id}/context-pack/todos", response_model=ContextPackOut)
+    def update_context_pack_todo(
+        project_id: int,
+        payload: ContextPackTodoUpdateRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.latest_for_project(db, project.id)
+        if context_pack is None:
+            raise HTTPException(status_code=404, detail="当前项目还没有生成前校对稿。")
+        context_pack_service.update_user_decisions(context_pack, {f"task:{payload.task_id}": payload.status})
+        rebuilt = context_pack_service.build(
+            db,
+            project=project,
+            reference_mode=context_pack.reference_mode,
+            user_notes=context_pack.user_notes,
+            user_decisions=json_loads_object(context_pack.user_decisions_json),
+            confirm_after_build=context_pack.status == "confirmed",
+        )
+        db.commit()
+        db.refresh(rebuilt)
+        return ContextPackOut(**context_pack_service.as_dict(rebuilt))
 
     @router.post("/api/projects/{project_id}/dirty-evolution/trash")
     def trash_dirty_evolution_for_project(

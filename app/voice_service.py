@@ -58,6 +58,7 @@ class VoiceService:
         speed: float = 1.0,
         emotion: str = "",
         text_override: str = "",
+        context_pack_inputs: dict[str, Any] | None = None,
     ) -> list[MediaAsset]:
         self.require_config()
         assets: list[MediaAsset] = []
@@ -84,6 +85,7 @@ class VoiceService:
                         emotion=emotion or str(item.get("emotion") or ""),
                         text_override="",
                         dialogue_index=int(item.get("dialogue_index") or 0),
+                        context_pack_inputs=context_pack_inputs,
                     )
                     meta = json_loads_object(asset.meta_json)
                     meta["character_name"] = str(item.get("character_name") or "")
@@ -105,6 +107,7 @@ class VoiceService:
                     speed=speed,
                     emotion=emotion,
                     text_override=text_override,
+                    context_pack_inputs=context_pack_inputs,
                 )
                 assets.append(asset)
         if not assets:
@@ -127,6 +130,7 @@ class VoiceService:
         emotion: str = "",
         text_override: str = "",
         dialogue_index: int = 0,
+        context_pack_inputs: dict[str, Any] | None = None,
     ) -> MediaAsset:
         self.require_config()
         normalized_role = (voice_role or "narrator").strip().lower()
@@ -174,6 +178,9 @@ class VoiceService:
                 "emotion": emotion,
                 "mime_type": "audio/mpeg",
                 "dialogue_index": dialogue_index if dialogue_index > 0 else None,
+                "context_pack_id": context_pack_inputs.get("context_pack_id") if isinstance(context_pack_inputs, dict) else None,
+                "context_pack_version": context_pack_inputs.get("context_pack_version") if isinstance(context_pack_inputs, dict) else None,
+                "context_pack_reference_mode": context_pack_inputs.get("reference_mode") if isinstance(context_pack_inputs, dict) else None,
             }
         )
         db.flush()
