@@ -20,6 +20,10 @@ CHARACTER_CARD_VOICE_FIELDS_MIGRATION = "20260517_0009_character_card_voice_fiel
 LONGFORM_SCHEMA_PARITY_MIGRATION = "20260518_0010_longform_schema_parity"
 CONTEXT_PACK_SCHEMA_MIGRATION = "20260518_0011_context_pack_schema"
 MEDIA_ASSET_META_MEDIUMTEXT_MIGRATION = "20260519_0012_media_asset_meta_mediumtext"
+STORY_BOUNDARY_SCHEMA_MIGRATION = "20260519_0013_story_boundary_schema"
+REFERENCE_POLICY_SCHEMA_MIGRATION = "20260519_0014_reference_policy_schema"
+REFERENCE_FACT_SCHEMA_MIGRATION = "20260519_0015_reference_fact_schema"
+REFERENCE_IMAGE_ASSET_SCHEMA_MIGRATION = "20260519_0016_reference_image_asset_schema"
 
 
 settings = load_settings()
@@ -125,6 +129,30 @@ def _migrate_schema() -> None:
             MEDIA_ASSET_META_MEDIUMTEXT_MIGRATION,
             "Upgrade media_assets.meta_json to MEDIUMTEXT for local media metadata",
             _migrate_media_asset_meta_mediumtext,
+        )
+        _run_schema_migration(
+            connection,
+            STORY_BOUNDARY_SCHEMA_MIGRATION,
+            "Project-level story boundary text and structured rule storage",
+            _migrate_story_boundary_schema,
+        )
+        _run_schema_migration(
+            connection,
+            REFERENCE_POLICY_SCHEMA_MIGRATION,
+            "Project-level reference inheritance policy and rewrite-start fields",
+            _migrate_reference_policy_schema,
+        )
+        _run_schema_migration(
+            connection,
+            REFERENCE_FACT_SCHEMA_MIGRATION,
+            "Derived reference facts for inherited reference-work constraints",
+            _migrate_reference_fact_schema,
+        )
+        _run_schema_migration(
+            connection,
+            REFERENCE_IMAGE_ASSET_SCHEMA_MIGRATION,
+            "Reference image candidates and approval state",
+            _migrate_reference_image_asset_schema,
         )
 
 
@@ -591,6 +619,86 @@ def _migrate_media_asset_meta_mediumtext(connection) -> None:
         return
     connection.execute(text("UPDATE media_assets SET meta_json = '{}' WHERE meta_json IS NULL"))
     connection.execute(text("ALTER TABLE media_assets MODIFY COLUMN meta_json MEDIUMTEXT NOT NULL"))
+
+
+def _migrate_story_boundary_schema(connection) -> None:
+    if "projects" not in _table_names():
+        return
+    project_columns = _column_names("projects")
+    if "story_boundary_text" not in project_columns:
+        connection.execute(text("ALTER TABLE projects ADD COLUMN story_boundary_text MEDIUMTEXT NULL"))
+        connection.execute(text("UPDATE projects SET story_boundary_text = '' WHERE story_boundary_text IS NULL"))
+        connection.execute(text("ALTER TABLE projects MODIFY COLUMN story_boundary_text MEDIUMTEXT NOT NULL"))
+    if "story_boundary_rules_json" not in project_columns:
+        connection.execute(text("ALTER TABLE projects ADD COLUMN story_boundary_rules_json MEDIUMTEXT NULL"))
+        connection.execute(text("UPDATE projects SET story_boundary_rules_json = '[]' WHERE story_boundary_rules_json IS NULL"))
+        connection.execute(text("ALTER TABLE projects MODIFY COLUMN story_boundary_rules_json MEDIUMTEXT NOT NULL"))
+
+
+def _migrate_reference_policy_schema(connection) -> None:
+    if "projects" not in _table_names():
+        return
+    project_columns = _column_names("projects")
+    if "reference_inheritance_mode" not in project_columns:
+        connection.execute(text("ALTER TABLE projects ADD COLUMN reference_inheritance_mode VARCHAR(40) NULL"))
+        connection.execute(text("UPDATE projects SET reference_inheritance_mode = 'style_only' WHERE reference_inheritance_mode IS NULL OR reference_inheritance_mode = ''"))
+        connection.execute(text("ALTER TABLE projects MODIFY COLUMN reference_inheritance_mode VARCHAR(40) NOT NULL"))
+    if "reference_rewrite_start" not in project_columns:
+        connection.execute(text("ALTER TABLE projects ADD COLUMN reference_rewrite_start TEXT NULL"))
+        connection.execute(text("UPDATE projects SET reference_rewrite_start = '' WHERE reference_rewrite_start IS NULL"))
+        connection.execute(text("ALTER TABLE projects MODIFY COLUMN reference_rewrite_start TEXT NOT NULL"))
+    if "reference_authorized_changes" not in project_columns:
+        connection.execute(text("ALTER TABLE projects ADD COLUMN reference_authorized_changes TEXT NULL"))
+        connection.execute(text("UPDATE projects SET reference_authorized_changes = '' WHERE reference_authorized_changes IS NULL"))
+        connection.execute(text("ALTER TABLE projects MODIFY COLUMN reference_authorized_changes TEXT NOT NULL"))
+
+
+def _migrate_reference_fact_schema(connection) -> None:
+    if "reference_facts" in _table_names():
+        return
+    connection.execute(
+        text(
+            """
+            CREATE TABLE reference_facts (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                project_id INTEGER NOT NULL,
+                fact_type VARCHAR(80) NOT NULL,
+                reference_key VARCHAR(255) NOT NULL,
+                chapter_effective_until INTEGER NULL,
+                payload_json MEDIUMTEXT NOT NULL,
+                status VARCHAR(40) NOT NULL DEFAULT 'active',
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_reference_facts_project_key_type (project_id, reference_key, fact_type)
+            )
+            """
+        )
+    )
+
+
+def _migrate_reference_image_asset_schema(connection) -> None:
+    if "reference_image_assets" in _table_names():
+        return
+    connection.execute(
+        text(
+            """
+            CREATE TABLE reference_image_assets (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                project_id INTEGER NOT NULL,
+                source_work VARCHAR(255) NOT NULL,
+                asset_kind VARCHAR(80) NOT NULL DEFAULT 'stills',
+                remote_url VARCHAR(1000) NOT NULL,
+                provider VARCHAR(80) NOT NULL DEFAULT 'manual',
+                source_page VARCHAR(1000) NOT NULL DEFAULT '',
+                mapped_character_name VARCHAR(120) NOT NULL DEFAULT '',
+                status VARCHAR(40) NOT NULL DEFAULT 'candidate',
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_reference_image_assets_project_url (project_id, remote_url)
+            )
+            """
+        )
+    )
 
 
 def _migrate_generation_run_mediumtext(connection) -> None:

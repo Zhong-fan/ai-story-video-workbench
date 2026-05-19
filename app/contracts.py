@@ -58,6 +58,10 @@ class ProjectCreateRequest(BaseModel):
     reference_work_world_traits: list[str] = []
     reference_work_narrative_constraints: list[str] = []
     reference_work_confidence_note: str = Field(default="", max_length=1000)
+    reference_inheritance_mode: str = Field(default="style_only", pattern="^(style_only|characters_and_world|strict_inherit)$")
+    reference_rewrite_start: str = Field(default="", max_length=4000)
+    reference_authorized_changes: str = Field(default="", max_length=4000)
+    story_boundary_text: str = Field(default="", max_length=12000)
     visual_style_locked: bool = True
     visual_style_medium: str = Field(default="", max_length=80)
     visual_style_artists: list[str] = []
@@ -88,6 +92,11 @@ class ProjectOut(BaseModel):
     reference_work_world_traits: list[str] = []
     reference_work_narrative_constraints: list[str] = []
     reference_work_confidence_note: str
+    reference_inheritance_mode: str
+    reference_rewrite_start: str
+    reference_authorized_changes: str
+    story_boundary_text: str
+    story_boundary_rules: list[dict[str, Any]] = []
     visual_style_locked: bool
     visual_style_medium: str
     visual_style_artists: list[str] = []
@@ -310,6 +319,74 @@ class ReferenceWorkResolvedOut(BaseModel):
     visual_medium: str
     visual_artists: list[str]
     confidence_note: str
+
+
+class StoryBoundaryRuleOut(BaseModel):
+    rule_id: str
+    scope_type: str
+    start_chapter_no: int | None = None
+    end_chapter_no: int | None = None
+    rule_type: str
+    subjects: list[str] = []
+    predicate: str
+    instruction: str
+    priority: str = "hard"
+    status: str = "active"
+
+
+class StoryBoundaryParseRequest(BaseModel):
+    story_boundary_text: str = Field(..., min_length=1, max_length=12000)
+
+
+class StoryBoundaryParseResponse(BaseModel):
+    story_boundary_text: str
+    rules: list[StoryBoundaryRuleOut] = []
+
+
+class StoryBoundaryUpdateRequest(BaseModel):
+    story_boundary_text: str = Field(default="", max_length=12000)
+    rules: list[StoryBoundaryRuleOut] = []
+
+
+class ReferenceImageCandidateIn(BaseModel):
+    remote_url: str = Field(..., min_length=1, max_length=1000)
+    asset_kind: str = Field(default="stills", max_length=80)
+    provider: str = Field(default="manual", max_length=80)
+    source_page: str = Field(default="", max_length=1000)
+    mapped_character_name: str = Field(default="", max_length=120)
+
+
+class ReferenceImageDiscoverRequest(BaseModel):
+    candidates: list[ReferenceImageCandidateIn] = []
+
+
+class ReferenceImageAssetOut(BaseModel):
+    id: int
+    project_id: int
+    source_work: str
+    asset_kind: str
+    remote_url: str
+    provider: str
+    source_page: str
+    mapped_character_name: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReferenceImageAssetUpdateRequest(BaseModel):
+    status: str = Field(..., pattern="^(candidate|approved|rejected)$")
+    mapped_character_name: str = Field(default="", max_length=120)
+
+
+class ReferenceAssetWorkflowStateOut(BaseModel):
+    status: str
+    total_candidates: int
+    pending_count: int
+    approved_count: int
+    rejected_count: int
 
 
 class ContextPackBuildRequest(BaseModel):

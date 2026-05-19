@@ -14,6 +14,9 @@ from .prompts import (
     story_generation_user_prompt,
     style_instructions,
 )
+from .reference_policy_service import ReferencePolicyService
+from .story_boundary_service import StoryBoundaryService
+from .violation_check_service import ViolationCheckService
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,9 @@ class StoryGenerationService:
             max_attempts=settings.llm_max_attempts,
             retry_max_sleep_seconds=settings.llm_retry_max_sleep_seconds,
         )
+        self.reference_policy_service = ReferencePolicyService()
+        self.story_boundary_service = StoryBoundaryService()
+        self.violation_check_service = ViolationCheckService()
 
     def generate(
         self,
@@ -63,6 +69,11 @@ class StoryGenerationService:
         reference_constraints = story_feed.get("reference_constraints", {}) if isinstance(story_feed, dict) else {}
         user_decisions = story_feed.get("user_decisions", {}) if isinstance(story_feed, dict) else {}
         hard_constraints = story_feed.get("hard_constraints", []) if isinstance(story_feed, dict) else []
+        active_story_boundary_rules = (
+            context_pack_inputs.get("active_story_boundary_rules", [])
+            if isinstance(context_pack_inputs, dict)
+            else []
+        )
         memory_source = story_feed.get("supporting_memories") if isinstance(story_feed, dict) else None
         memory_lines = "\n".join(
             f"- {item.get('title', '')}：{item.get('content', '')}" for item in (memory_source or [])[:10] if isinstance(item, dict)
@@ -97,6 +108,12 @@ class StoryGenerationService:
                     "",
                     "已确认硬约束：",
                     *[f"- {item}" for item in hard_constraints],
+                    "",
+                    "参考作品继承策略：",
+                    self.reference_policy_service.prompt_block(reference_constraints) or "- 无",
+                    "",
+                    "当前章节故事边界：",
+                    *[f"- {item}" for item in self.story_boundary_service.prompt_lines(active_story_boundary_rules)],
                     "",
                     "用户已确认的版本选择：",
                     *[f"- {key}: {value}" for key, value in user_decisions.items()],
@@ -196,6 +213,21 @@ class StoryGenerationService:
             title=title,
             summary=summary,
             content=refined_content,
+            trace=trace,
+            progress=progress,
+        )
+        title, summary, refined_content = self._enforce_story_boundary_rules(
+            project_title=project_title,
+            genre=genre,
+            premise=premise,
+            world_brief=world_brief,
+            writing_rules=writing_rules,
+            user_prompt=user_prompt,
+            scene_card=scene_card,
+            title=title,
+            summary=summary,
+            content=refined_content,
+            active_story_boundary_rules=active_story_boundary_rules,
             trace=trace,
             progress=progress,
         )
@@ -435,6 +467,112 @@ class StoryGenerationService:
             user_prompt=user_prompt,
         )
         return response.text.strip()
+
+    def _enforce_story_boundary_rules(
+        self,
+        *,
+        project_title: str,
+        genre: str,
+        premise: str,
+        world_brief: str,
+        writing_rules: str,
+        user_prompt: str,
+        scene_card: str,
+        title: str,
+        summary: str,
+        content: str,
+        active_story_boundary_rules: list[dict[str, Any]],
+        trace: dict | None = None,
+        progress: Callable[..., None] | None = None,
+    ) -> tuple[str, str, str]:
+        if not active_story_boundary_rules:
+            return title, summary, content
+        violations = self.violation_check_service.check_content(content, active_story_boundary_rules)
+        if not violations:
+            return title, summary, content
+
+        violation_messages = [str(item.get("message") or "违反故事边界。") for item in violations]
+        if progress:
+            progress("boundary_violation", "检测到故事边界违规，正在尝试修正", details={"violations": violation_messages})
+
+        system_prompt = (
+            "你是中文小说硬约束修订助手。"
+            "你的任务是在不偏离章节前提和已有写作目标的前提下，修正正文中违反故事边界硬约束的部分。"
+            "输出必须是严格 JSON，字段只包含 title、summary、content、fixed、reason。"
+        )
+        user_prompt_text = f"""
+项目：{project_title}
+类型：{genre}
+章节前提：
+{premise}
+
+世界设定：
+{world_brief or "暂无额外世界设定。"}
+
+项目自定义偏好：
+{writing_rules or "保持轻盈、自然、叙事连续，以人物互动推动场景。"}
+
+本章目标：
+{user_prompt}
+
+写作上下文卡：
+{scene_card}
+
+当前生效的故事边界硬约束：
+{chr(10).join(f"- {item}" for item in self.story_boundary_service.prompt_lines(active_story_boundary_rules))}
+
+检测到的违规：
+{chr(10).join(f"- {item}" for item in violation_messages)}
+
+当前标题：
+{title}
+
+当前摘要：
+{summary}
+
+当前正文：
+{content}
+
+任务：
+1. 修掉违反故事边界硬约束的内容。
+2. 不要把违规事件改写成含糊擦边的“几乎发生了”。
+3. 保留章节目标、情绪和推进方向。
+
+输出格式：
+{{
+  "title": "...",
+  "summary": "...",
+  "content": "...",
+  "fixed": true,
+  "reason": "..."
+}}
+""".strip()
+        response = self.llm.generate(
+            model=self.settings.utility_model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt_text,
+            json_mode=True,
+            event_callback=self._model_event_callback(progress, "boundary_repair"),
+        )
+        payload = self._parse_json(response.text)
+        next_title = str(payload.get("title", "")).strip() or title
+        next_summary = str(payload.get("summary", "")).strip() or summary
+        next_content = self._normalize_dialogue(str(payload.get("content", "")).strip() or content)
+        next_violations = self.violation_check_service.check_content(next_content, active_story_boundary_rules)
+        if trace is not None:
+            trace["boundary_repair"] = {
+                "status": "succeeded" if not next_violations else "failed",
+                "model": self.settings.utility_model,
+                "violations_before": violation_messages,
+                "violations_after": next_violations,
+                "raw_output": response.text,
+            }
+        if next_violations:
+            messages = "；".join(str(item.get("message") or "违反故事边界。") for item in next_violations)
+            raise RuntimeError(f"草稿违反故事边界且修正失败：{messages}")
+        if progress:
+            progress("boundary_repair_done", "故事边界违规已修正", details={"violations": violation_messages})
+        return next_title, next_summary, next_content
 
     def _model_event_callback(
         self,

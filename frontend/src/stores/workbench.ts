@@ -17,6 +17,8 @@ import type {
   Project,
   ProjectPayload,
   ReferenceWorkResolved,
+  StoryBoundaryParseResponse,
+  StoryBoundaryRule,
   ProjectSuggestionResponse,
   ProjectDetailResponse,
   RestoreTrashPayload,
@@ -847,6 +849,53 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     }
   }
 
+  async function parseStoryBoundaries(story_boundary_text: string): Promise<StoryBoundaryParseResponse | null> {
+    if (!token.value || !activeProject.value) {
+      error.value = "请先选择项目。";
+      return null;
+    }
+    loading.value = true;
+    error.value = "";
+    success.value = "";
+    try {
+      return await api.parseStoryBoundaries(token.value, activeProject.value.project.id, { story_boundary_text });
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : "解析故事边界失败。";
+      return null;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function updateStoryBoundaries(story_boundary_text: string, rules: StoryBoundaryRule[]) {
+    if (!token.value || !activeProject.value) {
+      error.value = "请先选择项目。";
+      return null;
+    }
+    loading.value = true;
+    error.value = "";
+    success.value = "";
+    try {
+      const project = await api.updateStoryBoundaries(token.value, activeProject.value.project.id, {
+        story_boundary_text,
+        rules,
+      });
+      activeProject.value.project = project;
+      contextPack.value = contextPack.value ? { ...contextPack.value, status: "stale" } : null;
+      activeProject.value.context_pack = contextPack.value;
+      syncProjectSummary(project);
+      await refreshWorkspace();
+      success.value = "故事边界已保存。";
+      await selectProject(project.id, { showLoading: false, silent: true });
+      return project;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : "保存故事边界失败。";
+      return null;
+    } finally {
+      loading.value = false;
+    }
+  }
+
   async function buildContextPack(payload: ContextPackBuildPayload) {
     if (!token.value || !activeProject.value) return null;
     loading.value = true;
@@ -1516,6 +1565,8 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     prepareVideoProduction,
     updateVideoTask,
     updateProject,
+    parseStoryBoundaries,
+    updateStoryBoundaries,
     resolveReferenceWork,
     suggestProjectBriefing,
     createProjectChapter,

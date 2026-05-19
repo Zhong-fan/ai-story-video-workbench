@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
@@ -67,6 +68,11 @@ class Project(Base, TimestampMixin):
     reference_work_world_traits_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     reference_work_narrative_constraints_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     reference_work_confidence_note: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    reference_inheritance_mode: Mapped[str] = mapped_column(String(40), default="style_only", nullable=False)
+    reference_rewrite_start: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    reference_authorized_changes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    story_boundary_text: Mapped[str] = mapped_column(LONG_TEXT, default="", nullable=False)
+    story_boundary_rules_json: Mapped[str] = mapped_column(LONG_TEXT, default="[]", nullable=False)
     visual_style_locked: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     visual_style_medium: Mapped[str] = mapped_column(String(80), default="", nullable=False)
     visual_style_artists_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
@@ -136,6 +142,8 @@ class Project(Base, TimestampMixin):
     task_events: Mapped[list["TaskEvent"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     storyboards: Mapped[list["Storyboard"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     context_packs: Mapped[list["ContextPack"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    reference_facts: Mapped[list["ReferenceFact"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    reference_image_assets: Mapped[list["ReferenceImageAsset"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
     @property
     def reference_work_style_traits(self) -> list[str]:
@@ -160,6 +168,19 @@ class Project(Base, TimestampMixin):
     @reference_work_narrative_constraints.setter
     def reference_work_narrative_constraints(self, value: list[str]) -> None:
         self.reference_work_narrative_constraints_json = json.dumps(_normalize_text_list(value), ensure_ascii=False)
+
+    @property
+    def story_boundary_rules(self) -> list[dict[str, Any]]:
+        return _json_object_list(self.story_boundary_rules_json)
+
+    @story_boundary_rules.setter
+    def story_boundary_rules(self, value: list[dict[str, Any]]) -> None:
+        normalized: list[dict[str, Any]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            normalized.append(item)
+        self.story_boundary_rules_json = json.dumps(normalized, ensure_ascii=False)
 
     @property
     def visual_style_artists(self) -> list[str]:
@@ -198,6 +219,20 @@ def _json_text_list(value: str) -> list[str]:
 
 def _normalize_text_list(value: list[str]) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _json_object_list(value: str) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(value or "[]")
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in payload:
+        if isinstance(item, dict):
+            result.append(item)
+    return result
 
 
 class ProjectFolder(Base, TimestampMixin):
@@ -282,6 +317,50 @@ class ContextPack(Base, TimestampMixin):
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     project: Mapped["Project"] = relationship(back_populates="context_packs")
+
+
+class ReferenceFact(Base, TimestampMixin):
+    __tablename__ = "reference_facts"
+    __table_args__ = (UniqueConstraint("project_id", "reference_key", "fact_type", name="uq_reference_facts_project_key_type"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    fact_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    reference_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    chapter_effective_until: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payload_json: Mapped[str] = mapped_column(LONG_TEXT, default="{}", nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="active", nullable=False)
+
+    project: Mapped["Project"] = relationship(back_populates="reference_facts")
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        try:
+            value = json.loads(self.payload_json or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    @payload.setter
+    def payload(self, value: dict[str, Any]) -> None:
+        self.payload_json = json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False)
+
+
+class ReferenceImageAsset(Base, TimestampMixin):
+    __tablename__ = "reference_image_assets"
+    __table_args__ = (UniqueConstraint("project_id", "remote_url", name="uq_reference_image_assets_project_url"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    source_work: Mapped[str] = mapped_column(String(255), nullable=False)
+    asset_kind: Mapped[str] = mapped_column(String(80), default="stills", nullable=False)
+    remote_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    provider: Mapped[str] = mapped_column(String(80), default="manual", nullable=False)
+    source_page: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    mapped_character_name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="candidate", nullable=False)
+
+    project: Mapped["Project"] = relationship(back_populates="reference_image_assets")
 
 
 class ProjectChapter(Base, TimestampMixin):

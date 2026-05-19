@@ -53,6 +53,11 @@ export interface Project {
   reference_work_world_traits: string[];
   reference_work_narrative_constraints: string[];
   reference_work_confidence_note: string;
+  reference_inheritance_mode: "style_only" | "characters_and_world" | "strict_inherit";
+  reference_rewrite_start: string;
+  reference_authorized_changes: string;
+  story_boundary_text: string;
+  story_boundary_rules: StoryBoundaryRule[];
   visual_style_locked: boolean;
   visual_style_medium: string;
   visual_style_artists: string[];
@@ -79,6 +84,10 @@ export interface ProjectPayload {
   reference_work_world_traits: string[];
   reference_work_narrative_constraints: string[];
   reference_work_confidence_note: string;
+  reference_inheritance_mode: "style_only" | "characters_and_world" | "strict_inherit";
+  reference_rewrite_start: string;
+  reference_authorized_changes: string;
+  story_boundary_text: string;
   visual_style_locked: boolean;
   visual_style_medium: string;
   visual_style_artists: string[];
@@ -127,6 +136,33 @@ export interface ReferenceWorkResolved {
   visual_medium: string;
   visual_artists: string[];
   confidence_note: string;
+}
+
+export interface StoryBoundaryRule {
+  rule_id: string;
+  scope_type: "series" | "chapter_range" | "chapter";
+  start_chapter_no?: number | null;
+  end_chapter_no?: number | null;
+  rule_type: string;
+  subjects: string[];
+  predicate: string;
+  instruction: string;
+  priority: string;
+  status: string;
+}
+
+export interface StoryBoundaryParsePayload {
+  story_boundary_text: string;
+}
+
+export interface StoryBoundaryParseResponse {
+  story_boundary_text: string;
+  rules: StoryBoundaryRule[];
+}
+
+export interface StoryBoundaryUpdatePayload {
+  story_boundary_text: string;
+  rules: StoryBoundaryRule[];
 }
 
 export interface ProjectChapter {

@@ -15,7 +15,7 @@ import ProjectSettingsPanel from "./components/workspace/ProjectSettingsPanel.vu
 import StudioWorkspacePanel from "./components/workspace/StudioWorkspacePanel.vue";
 import { useAuthFlow } from "./composables/useAuthFlow";
 import { useWorkbenchStore } from "./stores/workbench";
-import type { CharacterCard, ProjectChapter, ProjectCreateDraft, ProjectPayload, ReaderEntry, ReferenceWorkResolved, TrashItem, ViewKey } from "./types";
+import type { CharacterCard, ProjectChapter, ProjectCreateDraft, ProjectPayload, ReaderEntry, ReferenceWorkResolved, StoryBoundaryRule, TrashItem, ViewKey } from "./types";
 
 const store = useWorkbenchStore();
 const {
@@ -229,6 +229,10 @@ const emptyProject = (): ProjectPayload => ({
   reference_work_world_traits: [],
   reference_work_narrative_constraints: [],
   reference_work_confidence_note: "",
+  reference_inheritance_mode: "style_only",
+  reference_rewrite_start: "",
+  reference_authorized_changes: "",
+  story_boundary_text: "",
   visual_style_locked: true,
   visual_style_medium: "",
   visual_style_artists: [],
@@ -255,6 +259,7 @@ const assistantSeedWorld = ref("");
 const assistantSeedWriting = ref("");
 const worldSuggestions = ref<string[]>([]);
 const writingSuggestions = ref<string[]>([]);
+const parsedStoryBoundaryRules = ref<StoryBoundaryRule[]>([]);
 const projectChapterForm = reactive({ title: "", premise: "", chapter_no: 1 });
 const projectChapterEditForm = reactive({ title: "", premise: "", chapter_no: 1 });
 
@@ -548,6 +553,10 @@ function syncProjectSettingsForm() {
   projectSettingsForm.reference_work_world_traits = [...project.reference_work_world_traits];
   projectSettingsForm.reference_work_narrative_constraints = [...project.reference_work_narrative_constraints];
   projectSettingsForm.reference_work_confidence_note = project.reference_work_confidence_note;
+  projectSettingsForm.reference_inheritance_mode = project.reference_inheritance_mode;
+  projectSettingsForm.reference_rewrite_start = project.reference_rewrite_start;
+  projectSettingsForm.reference_authorized_changes = project.reference_authorized_changes;
+  projectSettingsForm.story_boundary_text = project.story_boundary_text;
   projectSettingsForm.visual_style_locked = project.visual_style_locked;
   projectSettingsForm.visual_style_medium = project.visual_style_medium;
   projectSettingsForm.visual_style_artists = [...project.visual_style_artists];
@@ -557,6 +566,7 @@ function syncProjectSettingsForm() {
   projectSettingsForm.world_brief = project.world_brief;
   projectSettingsForm.writing_rules = project.writing_rules;
   projectSettingsForm.style_profile = project.style_profile;
+  parsedStoryBoundaryRules.value = [...project.story_boundary_rules];
 }
 
 function appendOrReplaceField(target: ProjectPayload, key: "world_brief" | "writing_rules", text: string, mode: "replace" | "append") {
@@ -674,6 +684,32 @@ async function reResolveProjectSettingsReferenceWork() {
   if (!projectSettingsForm.visual_style_notes.trim()) {
     projectSettingsForm.visual_style_notes = buildReferenceVisualStyleNotes(result);
   }
+}
+
+async function parseProjectStoryBoundaries() {
+  const text = projectSettingsForm.story_boundary_text.trim();
+  if (!text) {
+    authError.value = "请先写下系列级故事边界。";
+    return;
+  }
+  authError.value = "";
+  store.clearFeedback();
+  const result = await store.parseStoryBoundaries(text);
+  if (!result) return;
+  projectSettingsForm.story_boundary_text = result.story_boundary_text;
+  parsedStoryBoundaryRules.value = result.rules;
+}
+
+async function saveProjectStoryBoundaries() {
+  if (!parsedStoryBoundaryRules.value.length) {
+    authError.value = "请先解析故事边界规则。";
+    return;
+  }
+  authError.value = "";
+  store.clearFeedback();
+  const updated = await store.updateStoryBoundaries(projectSettingsForm.story_boundary_text, parsedStoryBoundaryRules.value);
+  if (!updated) return;
+  parsedStoryBoundaryRules.value = [...updated.story_boundary_rules];
 }
 
 function confirmReferenceWork() {
@@ -972,6 +1008,10 @@ async function submitCreateProject() {
     reference_work_world_traits: projectForm.reference_work_confirmed ? [...projectForm.reference_work_world_traits] : [],
     reference_work_narrative_constraints: projectForm.reference_work_confirmed ? [...projectForm.reference_work_narrative_constraints] : [],
     reference_work_confidence_note: projectForm.reference_work_confirmed ? projectForm.reference_work_confidence_note : "",
+    reference_inheritance_mode: projectForm.reference_inheritance_mode,
+    reference_rewrite_start: projectForm.reference_rewrite_start,
+    reference_authorized_changes: projectForm.reference_authorized_changes,
+    story_boundary_text: projectForm.story_boundary_text,
     visual_style_locked: projectForm.visual_style_locked,
     visual_style_medium: projectForm.visual_style_medium,
     visual_style_artists: [...projectForm.visual_style_artists],
@@ -1016,6 +1056,10 @@ async function submitUpdateVisualStyle(payload: {
     reference_work_world_traits: [...project.reference_work_world_traits],
     reference_work_narrative_constraints: [...project.reference_work_narrative_constraints],
     reference_work_confidence_note: project.reference_work_confidence_note,
+    reference_inheritance_mode: project.reference_inheritance_mode,
+    reference_rewrite_start: project.reference_rewrite_start,
+    reference_authorized_changes: project.reference_authorized_changes,
+    story_boundary_text: project.story_boundary_text,
     visual_style_locked: payload.locked,
     visual_style_medium: payload.medium,
     visual_style_artists: payload.artists,
@@ -1590,6 +1634,8 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               :assistant-seed-writing="assistantSeedWriting"
               :world-suggestions="worldSuggestions"
               :writing-suggestions="writingSuggestions"
+              :story-boundary-rules="activeProject?.project.story_boundary_rules || []"
+              :parsed-story-boundary-rules="parsedStoryBoundaryRules"
               @select-project="selectSettingsProject"
               @open-characters="openCharacters()"
               @submit="submitUpdateProject()"
@@ -1604,11 +1650,17 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @update:reference-work-world-traits="projectSettingsForm.reference_work_world_traits = $event"
               @update:reference-work-narrative-constraints="projectSettingsForm.reference_work_narrative_constraints = $event"
               @update:reference-work-confidence-note="projectSettingsForm.reference_work_confidence_note = $event"
+              @update:reference-inheritance-mode="projectSettingsForm.reference_inheritance_mode = $event as ProjectPayload['reference_inheritance_mode']"
+              @update:reference-rewrite-start="projectSettingsForm.reference_rewrite_start = $event"
+              @update:reference-authorized-changes="projectSettingsForm.reference_authorized_changes = $event"
+              @update:story-boundary-text="projectSettingsForm.story_boundary_text = $event"
               @update:world-brief="projectSettingsForm.world_brief = $event"
               @update:writing-rules="projectSettingsForm.writing_rules = $event"
               @update:style-profile="projectSettingsForm.style_profile = $event"
               @update:assistant-seed-world="assistantSeedWorld = $event"
               @update:assistant-seed-writing="assistantSeedWriting = $event"
+              @parse-story-boundaries="parseProjectStoryBoundaries()"
+              @save-story-boundaries="saveProjectStoryBoundaries()"
               @generate-suggestion="generateProjectSuggestion($event, projectSettingsForm)"
               @use-suggestion="appendOrReplaceField(projectSettingsForm, $event.kind, $event.text, $event.mode)"
               @open-content-library="openProjectLibrary()"

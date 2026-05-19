@@ -48,9 +48,17 @@ from .contracts import (
     ProjectFolderOut,
     ProjectOut,
     ProjectUpdateRequest,
+    ReferenceAssetWorkflowStateOut,
+    ReferenceImageAssetOut,
+    ReferenceImageAssetUpdateRequest,
+    ReferenceImageDiscoverRequest,
     ReferenceWorkResolveRequest,
     ReferenceWorkResolvedOut,
     RestoreTrashItemRequest,
+    StoryBoundaryParseRequest,
+    StoryBoundaryParseResponse,
+    StoryBoundaryRuleOut,
+    StoryBoundaryUpdateRequest,
     SourceCreateRequest,
     SourceOut,
 )
@@ -75,6 +83,9 @@ from .models import (
     WorldPerceptionUpdate,
 )
 from .project_briefing_service import ProjectBriefingService
+from .reference_asset_service import ReferenceAssetService
+from .reference_policy_service import ReferencePolicyService
+from .story_boundary_service import StoryBoundaryService
 
 
 def _apply_reference_work_payload(project: Project, payload: ProjectCreateRequest | ProjectUpdateRequest) -> None:
@@ -86,6 +97,10 @@ def _apply_reference_work_payload(project: Project, payload: ProjectCreateReques
     project.reference_work_world_traits = payload.reference_work_world_traits
     project.reference_work_narrative_constraints = payload.reference_work_narrative_constraints
     project.reference_work_confidence_note = payload.reference_work_confidence_note.strip()
+    project.reference_inheritance_mode = payload.reference_inheritance_mode
+    project.reference_rewrite_start = payload.reference_rewrite_start.strip()
+    project.reference_authorized_changes = payload.reference_authorized_changes.strip()
+    project.story_boundary_text = payload.story_boundary_text.strip()
 
 
 def _apply_visual_style_payload(project: Project, payload: ProjectCreateRequest | ProjectUpdateRequest) -> None:
@@ -99,6 +114,9 @@ def _apply_visual_style_payload(project: Project, payload: ProjectCreateRequest 
 
 def register_project_routes(router: APIRouter) -> None:
     context_pack_service = ContextPackService()
+    story_boundary_service = StoryBoundaryService()
+    reference_asset_service = ReferenceAssetService()
+    reference_policy_service = ReferencePolicyService()
 
     @router.get("/api/projects", response_model=list[ProjectOut])
     def list_projects(
@@ -191,6 +209,95 @@ def register_project_routes(router: APIRouter) -> None:
         result = service.resolve_reference_work(query=payload.query, genre=payload.genre)
         return ReferenceWorkResolvedOut(**result)
 
+    @router.post("/api/projects/{project_id}/story-boundaries/parse", response_model=StoryBoundaryParseResponse)
+    def parse_story_boundaries(
+        project_id: int,
+        payload: StoryBoundaryParseRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> StoryBoundaryParseResponse:
+        _project_or_404(db, current_user.id, project_id)
+        rules = story_boundary_service.parse_rules(payload.story_boundary_text)
+        return StoryBoundaryParseResponse(
+            story_boundary_text=payload.story_boundary_text.strip(),
+            rules=[StoryBoundaryRuleOut(**item) for item in rules],
+        )
+
+    @router.put("/api/projects/{project_id}/story-boundaries", response_model=ProjectOut)
+    def update_story_boundaries(
+        project_id: int,
+        payload: StoryBoundaryUpdateRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ProjectOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        project.story_boundary_text = payload.story_boundary_text.strip()
+        project.story_boundary_rules = [item.model_dump() for item in payload.rules]
+        db.commit()
+        db.refresh(project)
+        return ProjectOut.model_validate(project)
+
+    @router.post("/api/projects/{project_id}/reference-images/discover", response_model=list[ReferenceImageAssetOut])
+    def discover_reference_images(
+        project_id: int,
+        payload: ReferenceImageDiscoverRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> list[ReferenceImageAssetOut]:
+        project = _project_or_404(db, current_user.id, project_id)
+        assets = reference_asset_service.discover_candidates(
+            db,
+            project=project,
+            candidates=[item.model_dump() for item in payload.candidates],
+        )
+        db.commit()
+        for asset in assets:
+            db.refresh(asset)
+        return [ReferenceImageAssetOut.model_validate(item) for item in assets]
+
+    @router.get("/api/projects/{project_id}/reference-images", response_model=list[ReferenceImageAssetOut])
+    def list_reference_images(
+        project_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> list[ReferenceImageAssetOut]:
+        project = _project_or_404(db, current_user.id, project_id)
+        return [ReferenceImageAssetOut.model_validate(item) for item in reference_asset_service.list_assets(db, project=project)]
+
+    @router.put("/api/projects/{project_id}/reference-images/{asset_id}", response_model=ReferenceImageAssetOut)
+    def update_reference_image(
+        project_id: int,
+        asset_id: int,
+        payload: ReferenceImageAssetUpdateRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ReferenceImageAssetOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        try:
+            asset = reference_asset_service.update_asset_status(
+                db,
+                project=project,
+                asset_id=asset_id,
+                status=payload.status,
+                mapped_character_name=payload.mapped_character_name,
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="参考图候选不存在。") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        db.commit()
+        db.refresh(asset)
+        return ReferenceImageAssetOut.model_validate(asset)
+
+    @router.get("/api/projects/{project_id}/reference-images/workflow-state", response_model=ReferenceAssetWorkflowStateOut)
+    def reference_image_workflow_state(
+        project_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ReferenceAssetWorkflowStateOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        return ReferenceAssetWorkflowStateOut(**reference_asset_service.workflow_state(db, project))
+
     @router.post("/api/projects", response_model=ProjectOut)
     def create_project(
         payload: ProjectCreateRequest,
@@ -210,6 +317,8 @@ def register_project_routes(router: APIRouter) -> None:
         _apply_reference_work_payload(project, payload)
         _apply_visual_style_payload(project, payload)
         db.add(project)
+        db.flush()
+        reference_policy_service.sync_project_reference_facts(db, project)
         db.commit()
         db.refresh(project)
         return ProjectOut.model_validate(project)
@@ -250,6 +359,7 @@ def register_project_routes(router: APIRouter) -> None:
         project.world_brief = payload.world_brief.strip()
         project.writing_rules = payload.writing_rules.strip()
         project.style_profile = payload.style_profile
+        reference_policy_service.sync_project_reference_facts(db, project)
         db.commit()
         db.refresh(project)
         return ProjectOut.model_validate(project)

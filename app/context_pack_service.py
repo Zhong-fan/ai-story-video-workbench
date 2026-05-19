@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from .json_utils import json_dumps, json_loads_list, json_loads_object
 from .models import ContextPack, Project
+from .reference_policy_service import ReferencePolicyService
+from .story_boundary_service import StoryBoundaryService
 
 
 def _compact_text(value: str, *, fallback: str = "未填写") -> str:
@@ -17,6 +19,10 @@ def _compact_text(value: str, *, fallback: str = "未填写") -> str:
 
 
 class ContextPackService:
+    def __init__(self) -> None:
+        self.story_boundary_service = StoryBoundaryService()
+        self.reference_policy_service = ReferencePolicyService()
+
     def build(
         self,
         db: Session,
@@ -103,6 +109,7 @@ class ContextPackService:
             "video_feed": video_feed if isinstance(video_feed, dict) else {},
             "hard_constraints": payload.get("derived_constraints", {}).get("hard_constraints", []),
             "soft_constraints": payload.get("derived_constraints", {}).get("soft_constraints", []),
+            "story_boundary_rules": payload.get("derived_constraints", {}).get("story_boundary_rules", []),
             "character_snapshot": payload.get("character_snapshot", []),
             "reference_snapshot": payload.get("reference_snapshot", {}),
             "project_snapshot": payload.get("project_snapshot", {}),
@@ -158,6 +165,9 @@ class ContextPackService:
                 "reference_work_world_traits": project.reference_work_world_traits,
                 "reference_work_narrative_constraints": project.reference_work_narrative_constraints,
                 "reference_work_confidence_note": project.reference_work_confidence_note,
+                "reference_inheritance_mode": project.reference_inheritance_mode,
+                "reference_rewrite_start": project.reference_rewrite_start,
+                "reference_authorized_changes": project.reference_authorized_changes,
                 "visual_style_locked": project.visual_style_locked,
                 "visual_style_medium": project.visual_style_medium,
                 "visual_style_artists": project.visual_style_artists,
@@ -167,6 +177,8 @@ class ContextPackService:
                 "world_brief": project.world_brief,
                 "writing_rules": project.writing_rules,
                 "style_profile": project.style_profile,
+                "story_boundary_text": project.story_boundary_text,
+                "story_boundary_rules": project.story_boundary_rules,
             },
             "characters": [
                 {
@@ -201,6 +213,8 @@ class ContextPackService:
             "genre": project.genre,
             "world_brief": _compact_text(project.world_brief),
             "writing_rules": _compact_text(project.writing_rules),
+            "story_boundary_text": project.story_boundary_text.strip(),
+            "story_boundary_rules": project.story_boundary_rules,
             "style_profile": project.style_profile,
             "visual_style_locked": project.visual_style_locked,
             "visual_style_medium": _compact_text(project.visual_style_medium, fallback="未指定"),
@@ -238,7 +252,21 @@ class ContextPackService:
             "world_traits": project.reference_work_world_traits,
             "narrative_constraints": project.reference_work_narrative_constraints,
             "confidence_note": project.reference_work_confidence_note.strip(),
+            "inheritance_mode": project.reference_inheritance_mode,
+            "rewrite_start": project.reference_rewrite_start.strip(),
+            "authorized_changes": project.reference_authorized_changes.strip(),
         }
+        reference_facts = self.reference_policy_service.facts_snapshot(list(getattr(project, "reference_facts", [])))
+        reference_snapshot["reference_facts"] = self.reference_policy_service.mark_fact_conflicts(
+            reference_facts,
+            project.story_boundary_rules,
+            authorized_changes=project.reference_authorized_changes,
+        )
+        reference_snapshot["authorized_overrides"] = [
+            item["summary"]
+            for item in reference_snapshot["reference_facts"]
+            if item.get("status") == "authorized_override" and str(item.get("summary") or "").strip()
+        ]
 
         source_snapshot = {
             "memories": [
@@ -372,6 +400,11 @@ class ContextPackService:
         user_decisions: dict[str, str],
     ) -> dict[str, Any]:
         character_names = [item["name"] for item in character_snapshot if item.get("name")]
+        story_boundary_rules = (
+            project_snapshot.get("story_boundary_rules", [])
+            if isinstance(project_snapshot.get("story_boundary_rules"), list)
+            else []
+        )
         hard_constraints = [
             "已确认人物姓名不得漂移或替换。",
             "已确认人物性别、身份、角色定位不得与人物卡冲突。",
@@ -379,6 +412,19 @@ class ContextPackService:
         ]
         if reference_snapshot.get("mode") in {"content_reference", "hybrid_reference"}:
             hard_constraints.append("内容参考模式下，确认过的参考作品核心设定不能被随意违背。")
+        hard_constraints.extend(self.reference_policy_service.hard_constraints(reference_snapshot))
+        for fact in reference_snapshot.get("reference_facts", []):
+            if not isinstance(fact, dict):
+                continue
+            summary = str(fact.get("summary") or "").strip()
+            status = str(fact.get("status") or "").strip()
+            if status == "conflict":
+                hard_constraints.append(f"参考事实冲突待确认：{summary}")
+            elif status == "authorized_override":
+                hard_constraints.append(f"参考事实已授权改写：{summary}")
+            elif summary:
+                hard_constraints.append(f"默认继承参考事实：{summary}")
+        hard_constraints.extend(self.story_boundary_service.prompt_lines(story_boundary_rules))
         soft_constraints = [
             f"风格档位：{project_snapshot.get('style_profile')}",
             "参考作品默认只提供可迁移的风格、叙事与镜头约束。",
@@ -392,6 +438,7 @@ class ContextPackService:
         return {
             "hard_constraints": hard_constraints,
             "soft_constraints": soft_constraints,
+            "story_boundary_rules": story_boundary_rules,
             "locked_character_names": character_names,
             "locked_reference_mode": reference_snapshot.get("mode") or "style_reference",
             "user_decisions": user_decisions,
@@ -531,7 +578,9 @@ class ContextPackService:
                     "genre": project_snapshot.get("genre"),
                     "world_brief": project_snapshot.get("world_brief"),
                     "writing_rules": project_snapshot.get("writing_rules"),
-                },
+                "story_boundary_text": project_snapshot.get("story_boundary_text"),
+                "reference_policy": self.reference_policy_service.prompt_block(reference_snapshot),
+            },
                 "character_constraints": character_snapshot[:12],
                 "reference_constraints": reference_snapshot,
                 "supporting_memories": source_snapshot.get("memories", [])[:12],
@@ -539,6 +588,7 @@ class ContextPackService:
                 "user_decisions": user_decisions,
                 "hard_constraints": derived_constraints.get("hard_constraints", []),
                 "soft_constraints": derived_constraints.get("soft_constraints", []),
+                "story_boundary_rules": derived_constraints.get("story_boundary_rules", []),
             },
             "video_generation": {
                 "visual_style_medium": project_snapshot.get("visual_style_medium"),

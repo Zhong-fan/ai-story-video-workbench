@@ -28,6 +28,7 @@ from .models import (
     TaskEvent,
 )
 from .story_service import StoryGenerationService
+from .story_boundary_service import StoryBoundaryService
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class BatchGenerationService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.context_pack_service = ContextPackService()
+        self.story_boundary_service = StoryBoundaryService()
 
     ACTIVE_JOB_STATUSES = ("queued", "retry_queued", "running", "pause_requested", "paused", "cancel_requested")
 
@@ -372,10 +374,22 @@ class BatchGenerationService:
     ) -> tuple[GenerationRun, DraftVersion]:
         outline_payload = json_loads_object(outline.outline_json)
         project_chapter = self._ensure_project_chapter(db, project, outline, outline_payload)
-        scene_card = self._build_outline_scene_card(db, project, series_plan, outline, outline_payload)
-        user_prompt = self._outline_to_prompt(outline_payload)
-        memories = [{"title": item.title, "content": item.content} for item in project.memories]
         context_pack_inputs = self.context_pack_service.resolved_inputs(self.context_pack_service.require_confirmed(db, project))
+        active_story_boundary_rules = self.story_boundary_service.active_rules_for_chapter(
+            context_pack_inputs.get("story_boundary_rules", []),
+            outline.chapter_no,
+        )
+        scene_card = self._build_outline_scene_card(
+            db,
+            project,
+            series_plan,
+            outline,
+            outline_payload,
+            active_story_boundary_rules=active_story_boundary_rules,
+        )
+        user_prompt = self._outline_to_prompt(outline_payload, active_story_boundary_rules=active_story_boundary_rules)
+        memories = [{"title": item.title, "content": item.content} for item in project.memories]
+        context_pack_inputs = {**context_pack_inputs, "active_story_boundary_rules": active_story_boundary_rules}
         title, summary, content = writer.generate(
             project_title=project.title,
             genre=project.genre,
@@ -641,6 +655,7 @@ class BatchGenerationService:
         series_plan: SeriesPlan,
         outline: ChapterOutline,
         outline_payload: dict[str, Any],
+        active_story_boundary_rules: list[dict[str, Any]] | None = None,
     ) -> str:
         character_updates, relationship_updates, story_events, world_updates = _canonical_project_evolution(db, project)
         recent_events = "\n".join(f"- {item.title}: {item.impact_summary or item.summary}" for item in story_events[:8]) or "- 暂无"
@@ -650,6 +665,9 @@ class BatchGenerationService:
             or "- 暂无"
         )
         recent_world = "\n".join(f"- {item.observer_group} 对 {item.subject_name}: {item.change_summary}" for item in world_updates[:8]) or "- 暂无"
+        active_story_boundary_lines = "\n".join(
+            f"- {item}" for item in self.story_boundary_service.prompt_lines(active_story_boundary_rules or [])
+        ) or "- 暂无"
         return "\n".join(
             [
                 "长篇批量生成场景卡",
@@ -657,7 +675,10 @@ class BatchGenerationService:
                 f"章节：第 {outline.chapter_no} 章 / {outline.title}",
                 "",
                 "章节概要",
-                self._outline_to_prompt(outline_payload),
+                self._outline_to_prompt(outline_payload, active_story_boundary_rules=active_story_boundary_rules),
+                "",
+                "当前故事边界硬约束",
+                active_story_boundary_lines,
                 "",
                 "最近关键事件",
                 recent_events,
@@ -673,16 +694,24 @@ class BatchGenerationService:
             ]
         )
 
-    def _outline_to_prompt(self, outline_payload: dict[str, Any]) -> str:
-        return "\n".join(
-            [
-                f"本章目标：{outline_payload.get('chapter_goal', '')}",
-                f"主要冲突：{outline_payload.get('conflict', '')}",
-                f"情绪基调：{outline_payload.get('emotion_tone', '')}",
-                f"必须发生：{outline_payload.get('must_happen', [])}",
-                f"禁止发生：{outline_payload.get('must_not_happen', [])}",
-                f"角色推进：{outline_payload.get('character_progress', [])}",
-                f"结尾钩子：{outline_payload.get('ending_hook', '')}",
-                f"预计篇幅：{outline_payload.get('estimated_length', '')}",
-            ]
-        ).strip()
+    def _outline_to_prompt(
+        self,
+        outline_payload: dict[str, Any],
+        *,
+        active_story_boundary_rules: list[dict[str, Any]] | None = None,
+    ) -> str:
+        lines = [
+            f"本章目标：{outline_payload.get('chapter_goal', '')}",
+            f"主要冲突：{outline_payload.get('conflict', '')}",
+            f"情绪基调：{outline_payload.get('emotion_tone', '')}",
+            f"必须发生：{outline_payload.get('must_happen', [])}",
+            f"禁止发生：{outline_payload.get('must_not_happen', [])}",
+            f"角色推进：{outline_payload.get('character_progress', [])}",
+            f"结尾钩子：{outline_payload.get('ending_hook', '')}",
+            f"预计篇幅：{outline_payload.get('estimated_length', '')}",
+        ]
+        story_boundary_lines = self.story_boundary_service.prompt_lines(active_story_boundary_rules or [])
+        if story_boundary_lines:
+            lines.append("当前故事边界硬约束：")
+            lines.extend(f"- {item}" for item in story_boundary_lines)
+        return "\n".join(lines).strip()

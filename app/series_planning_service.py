@@ -7,6 +7,9 @@ from .config import Settings
 from .json_utils import ensure_list, parse_json_object
 from .llm import OpenAIResponsesLLM
 from .models import Project
+from .reference_policy_service import ReferencePolicyService
+from .story_boundary_service import StoryBoundaryService
+from .violation_check_service import ViolationCheckService
 
 
 class SeriesPlanningService:
@@ -24,6 +27,9 @@ class SeriesPlanningService:
             max_attempts=settings.llm_max_attempts,
             retry_max_sleep_seconds=settings.llm_retry_max_sleep_seconds,
         )
+        self.reference_policy_service = ReferencePolicyService()
+        self.story_boundary_service = StoryBoundaryService()
+        self.violation_check_service = ViolationCheckService()
 
     def generate_plan(
         self,
@@ -38,6 +44,7 @@ class SeriesPlanningService:
         project_snapshot = context_pack_inputs.get("project_snapshot", {}) if isinstance(context_pack_inputs, dict) else {}
         reference_snapshot = context_pack_inputs.get("reference_snapshot", {}) if isinstance(context_pack_inputs, dict) else {}
         hard_constraints = context_pack_inputs.get("hard_constraints", []) if isinstance(context_pack_inputs, dict) else []
+        story_boundary_rules = context_pack_inputs.get("story_boundary_rules", []) if isinstance(context_pack_inputs, dict) else []
 
         memory_items = story_feed.get("supporting_memories") if isinstance(story_feed, dict) else None
         source_items = story_feed.get("supporting_sources") if isinstance(story_feed, dict) else None
@@ -82,6 +89,12 @@ class SeriesPlanningService:
 
 人物卡：
 {character_lines}
+
+故事边界硬约束：
+{chr(10).join(f"- {item}" for item in self.story_boundary_service.prompt_lines(story_boundary_rules)) or "- 无"}
+
+参考作品继承策略：
+{self.reference_policy_service.prompt_block(reference_snapshot) or "无"}
 
 长期资料：
 {memory_lines}
@@ -140,6 +153,7 @@ class SeriesPlanningService:
 - chapters 数量必须等于目标章节数。
 - Arc 建议每 5 到 10 章一段，覆盖所有章节且不重叠。
 - 每章概要必须能直接驱动正文生成，避免空泛。
+- 如果某章处在故事边界硬约束区间内，`must_not_happen` 必须显式体现对应禁区。
 """.strip()
         response = self.llm.generate(
             model=self.settings.writer_model,
@@ -149,6 +163,13 @@ class SeriesPlanningService:
         )
         payload = parse_json_object(response.text)
         self._validate_payload(payload, target_chapter_count=target_chapter_count)
+        self._attach_constraint_snapshots(
+            payload,
+            story_boundary_rules=story_boundary_rules,
+            reference_facts=ensure_list(reference_snapshot.get("reference_facts")),
+            authorized_overrides=ensure_list(reference_snapshot.get("authorized_overrides")),
+        )
+        self._validate_story_boundaries(payload, story_boundary_rules)
         return payload
 
     def _reference_block(self, project: Project, *, reference_snapshot: dict[str, Any] | None = None) -> str:
@@ -175,3 +196,71 @@ class SeriesPlanningService:
             raise RuntimeError("规划模型没有返回阶段概要。")
         if len(chapters) != target_chapter_count:
             raise RuntimeError(f"规划模型返回了 {len(chapters)} 章概要，目标是 {target_chapter_count} 章。")
+
+    def _attach_constraint_snapshots(
+        self,
+        payload: dict[str, Any],
+        *,
+        story_boundary_rules: list[dict[str, Any]],
+        reference_facts: list[Any] | None = None,
+        authorized_overrides: list[Any] | None = None,
+    ) -> None:
+        for chapter_payload in ensure_list(payload.get("chapters")):
+            if not isinstance(chapter_payload, dict):
+                continue
+            chapter_no = self._coerce_int(chapter_payload.get("chapter_no"))
+            if chapter_no is None:
+                continue
+            active_rules = self.story_boundary_service.active_rules_for_chapter(story_boundary_rules, chapter_no)
+            chapter_payload["constraint_snapshot"] = {
+                "hard_constraints": active_rules,
+                "reference_facts": [item for item in ensure_list(reference_facts) if isinstance(item, dict)],
+                "authorized_overrides": [str(item) for item in ensure_list(authorized_overrides) if str(item).strip()],
+                "forbidden_events": [
+                    item
+                    for item in active_rules
+                    if item.get("rule_type") == "forbid_event" and str(item.get("predicate") or "").strip()
+                ],
+            }
+            self._merge_forbidden_rules_into_must_not_happen(chapter_payload, active_rules)
+
+    def _merge_forbidden_rules_into_must_not_happen(
+        self,
+        chapter_payload: dict[str, Any],
+        active_rules: list[dict[str, Any]],
+    ) -> None:
+        must_not_happen = ensure_list(chapter_payload.get("must_not_happen"))
+        normalized_existing = {str(item).strip() for item in must_not_happen}
+        for rule in active_rules:
+            if rule.get("rule_type") != "forbid_event":
+                continue
+            line = self.story_boundary_service.summary_line(rule)
+            if line and line not in normalized_existing:
+                must_not_happen.append(line)
+                normalized_existing.add(line)
+        chapter_payload["must_not_happen"] = must_not_happen
+
+    def _validate_story_boundaries(self, payload: dict[str, Any], story_boundary_rules: list[dict[str, Any]]) -> None:
+        if not story_boundary_rules:
+            return
+        for chapter_payload in ensure_list(payload.get("chapters")):
+            if not isinstance(chapter_payload, dict):
+                continue
+            chapter_no = int(chapter_payload.get("chapter_no") or 0)
+            if chapter_no <= 0:
+                continue
+            active_rules = self.story_boundary_service.active_rules_for_chapter(story_boundary_rules, chapter_no)
+            if not active_rules:
+                continue
+            violations = self.violation_check_service.check_outline(chapter_payload, active_rules)
+            if violations:
+                details = "；".join(str(item.get("message") or "违反故事边界。") for item in violations)
+                raise RuntimeError(f"第 {chapter_no} 章概要违反故事边界：{details}")
+
+    def _coerce_int(self, value: Any) -> int | None:
+        try:
+            if value is None or value == "":
+                return None
+            return int(value)
+        except (TypeError, ValueError):
+            return None

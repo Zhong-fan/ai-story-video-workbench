@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ProjectBasicsForm from "./ProjectBasicsForm.vue";
 import TraitTagEditor from "./TraitTagEditor.vue";
-import type { Project, ProjectPayload } from "../../types";
+import type { Project, ProjectPayload, StoryBoundaryRule } from "../../types";
 
 const props = defineProps<{
   projects: Project[];
@@ -18,6 +18,8 @@ const props = defineProps<{
   assistantSeedWriting: string;
   worldSuggestions: string[];
   writingSuggestions: string[];
+  storyBoundaryRules: StoryBoundaryRule[];
+  parsedStoryBoundaryRules: StoryBoundaryRule[];
 }>();
 
 const emit = defineEmits<{
@@ -35,12 +37,18 @@ const emit = defineEmits<{
   (e: "update:referenceWorkWorldTraits", value: string[]): void;
   (e: "update:referenceWorkNarrativeConstraints", value: string[]): void;
   (e: "update:referenceWorkConfidenceNote", value: string): void;
+  (e: "update:referenceInheritanceMode", value: string): void;
+  (e: "update:referenceRewriteStart", value: string): void;
+  (e: "update:referenceAuthorizedChanges", value: string): void;
+  (e: "update:storyBoundaryText", value: string): void;
   (e: "update:worldBrief", value: string): void;
   (e: "update:writingRules", value: string): void;
   (e: "update:styleProfile", value: string): void;
   (e: "update:assistantSeedWorld", value: string): void;
   (e: "update:assistantSeedWriting", value: string): void;
   (e: "reResolveReferenceWork"): void;
+  (e: "parseStoryBoundaries"): void;
+  (e: "saveStoryBoundaries"): void;
   (e: "generateSuggestion", kind: "world_brief" | "writing_rules"): void;
   (e: "useSuggestion", payload: { kind: "world_brief" | "writing_rules"; text: string; mode: "replace" | "append" }): void;
 }>();
@@ -124,6 +132,54 @@ function formatDateTime(value: string | null | undefined) {
         @use-suggestion="emit('useSuggestion', $event)"
       />
 
+      <section class="panel panel--paper">
+        <div class="panel-heading">
+          <div>
+            <p class="panel-heading__kicker">故事边界</p>
+            <h2>一次性写清跨章节硬约束</h2>
+            <p class="panel-heading__desc">这里写的是系列级硬约束。系统会先把自然语言解析成规则，再用于概要和正文生成，不再只当成模糊提示。</p>
+          </div>
+          <div class="mode-switch">
+            <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !form.story_boundary_text.trim()" @click="emit('parseStoryBoundaries')">解析规则</button>
+            <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !parsedStoryBoundaryRules.length" @click="emit('saveStoryBoundaries')">确认保存</button>
+          </div>
+        </div>
+        <div class="form-stack">
+          <label class="field">
+            <span>系列规则输入</span>
+            <textarea
+              :value="form.story_boundary_text"
+              rows="5"
+              maxlength="12000"
+              placeholder="例如：第1到10章男女主不要相遇，先分别讲清楚他们相遇之前的故事。第11章才第一次正式见面。"
+              @input="emit('update:storyBoundaryText', ($event.target as HTMLTextAreaElement).value)"
+            />
+          </label>
+
+          <div v-if="parsedStoryBoundaryRules.length" class="assistant-suggestions">
+            <article v-for="rule in parsedStoryBoundaryRules" :key="rule.rule_id" class="assistant-suggestion assistant-suggestion--reference">
+              <strong>{{ rule.instruction }}</strong>
+              <p class="field-hint">
+                范围：{{ rule.scope_type === 'chapter_range' ? `第 ${rule.start_chapter_no}-${rule.end_chapter_no} 章` : rule.scope_type === 'chapter' ? `第 ${rule.start_chapter_no} 章` : '全书' }}
+                · 类型：{{ rule.rule_type }}
+              </p>
+            </article>
+          </div>
+
+          <div v-if="storyBoundaryRules.length" class="assistant-suggestion assistant-suggestion--reference">
+            <div class="assistant-panel__header">
+              <div>
+                <strong>已保存的故事边界规则</strong>
+                <p>这些规则会进入生成前校对、概要生成和正文质检。</p>
+              </div>
+            </div>
+            <ul class="choice-card__bullets">
+              <li v-for="rule in storyBoundaryRules" :key="`saved-${rule.rule_id}`">{{ rule.instruction }}</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
       <section v-if="form.reference_work" class="panel panel--paper">
         <div class="panel-heading">
           <div>
@@ -175,6 +231,34 @@ function formatDateTime(value: string | null | undefined) {
               :value="form.reference_work_confidence_note"
               rows="3"
               @input="emit('update:referenceWorkConfidenceNote', ($event.target as HTMLTextAreaElement).value)"
+            />
+          </label>
+          <div class="inline-row">
+            <label class="field">
+              <span>原作继承模式</span>
+              <select :value="form.reference_inheritance_mode" @change="emit('update:referenceInheritanceMode', ($event.target as HTMLSelectElement).value)">
+                <option value="style_only">只继承风格</option>
+                <option value="characters_and_world">继承角色与世界</option>
+                <option value="strict_inherit">原作事实默认继承</option>
+              </select>
+            </label>
+          </div>
+          <label class="field">
+            <span>改写起点</span>
+            <textarea
+              :value="form.reference_rewrite_start"
+              rows="3"
+              placeholder="例如：电影结尾之后续写 / 第 8 章后开始分叉"
+              @input="emit('update:referenceRewriteStart', ($event.target as HTMLTextAreaElement).value)"
+            />
+          </label>
+          <label class="field">
+            <span>授权改写</span>
+            <textarea
+              :value="form.reference_authorized_changes"
+              rows="3"
+              placeholder="例如：允许改写后续剧情，但不允许篡改原作既有事实和角色身份。"
+              @input="emit('update:referenceAuthorizedChanges', ($event.target as HTMLTextAreaElement).value)"
             />
           </label>
         </div>

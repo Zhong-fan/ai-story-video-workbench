@@ -18,6 +18,9 @@ import type {
   ProjectPayload,
   ReferenceWorkResolveRequest,
   ReferenceWorkResolved,
+  StoryBoundaryParsePayload,
+  StoryBoundaryParseResponse,
+  StoryBoundaryUpdatePayload,
   ProjectSuggestionRequest,
   ProjectSuggestionResponse,
   SourceItem,
@@ -213,6 +216,18 @@ export const api = {
   resolveReferenceWork: (token: string, payload: ReferenceWorkResolveRequest) =>
     request<ReferenceWorkResolved>("/api/projects/reference-work/resolve", {
       method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  parseStoryBoundaries: (token: string, projectId: number, payload: StoryBoundaryParsePayload) =>
+    request<StoryBoundaryParseResponse>(`/api/projects/${projectId}/story-boundaries/parse`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  updateStoryBoundaries: (token: string, projectId: number, payload: StoryBoundaryUpdatePayload) =>
+    request<Project>(`/api/projects/${projectId}/story-boundaries`, {
+      method: "PUT",
       token,
       body: JSON.stringify(payload),
     }),
