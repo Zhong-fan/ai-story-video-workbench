@@ -1770,7 +1770,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @generate-shot-first-frame="submitGenerateShotFirstFrame"
               @generate-audio-scripts="(storyboardId) => { openGenerationTraceImmediately(); return store.generateStoryboardAudioScripts(storyboardId); }"
               @generate-storyboard-voice="(storyboardId) => { openGenerationTraceImmediately(); return store.generateStoryboardVoice(storyboardId, { voice_role: 'dialogue' }); }"
-              @prepare-video-production="(storyboardId) => { openGenerationTraceImmediately(); return store.prepareVideoProduction(storyboardId, { generate_character_turnarounds: true, generate_audio_scripts: true, generate_dialogue_audio: true, create_video_task: true }); }"
+              @prepare-video-production="(storyboardId) => { openGenerationTraceImmediately(); return store.prepareVideoProduction(storyboardId, { generate_character_turnarounds: true, generate_audio_scripts: false, generate_dialogue_audio: false, create_video_task: true }); }"
               @generate-shot-voice="({ storyboardId, shotId, voice_role, character_card_id, dialogue_text, voice_profile, emotion }) => { openGenerationTraceImmediately(); return store.generateShotVoice(storyboardId, shotId, { voice_role, character_card_id, dialogue_text, voice_profile, emotion }); }"
               @create-shot="submitCreateShot"
               @delete-shot="submitDeleteShot"

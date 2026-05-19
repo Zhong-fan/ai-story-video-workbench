@@ -129,7 +129,7 @@ function formatDateTime(value: string | null | undefined) {
           <div>
             <p class="panel-heading__kicker">参考作品确认卡</p>
             <h2>{{ form.reference_work }}</h2>
-            <p class="panel-heading__desc">这里保存的是创建项目时确认下来的参考作品理解结果，之后也可以继续人工修正。</p>
+            <p class="panel-heading__desc">这里保存的是参考作品拆解后的结构化约束。后续写作和视频化应优先继承这些内容，而不是只拿作品名做模糊提示。</p>
           </div>
         </div>
         <div class="form-stack">
@@ -154,7 +154,7 @@ function formatDateTime(value: string | null | undefined) {
           </label>
           <div class="assistant-trait-grid">
             <TraitTagEditor
-              label="风格特征"
+              label="写作风格线索"
               :values="form.reference_work_style_traits"
               @update:values="emit('update:referenceWorkStyleTraits', $event)"
             />
@@ -165,7 +165,7 @@ function formatDateTime(value: string | null | undefined) {
             />
           </div>
           <TraitTagEditor
-            label="叙事约束"
+            label="写作与改编约束"
             :values="form.reference_work_narrative_constraints"
             @update:values="emit('update:referenceWorkNarrativeConstraints', $event)"
           />

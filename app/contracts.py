@@ -856,9 +856,9 @@ class GenerateAudioScriptsRequest(BaseModel):
 
 class VideoProductionPreflightRequest(BaseModel):
     generate_character_turnarounds: bool = True
-    generate_audio_scripts: bool = True
+    generate_audio_scripts: bool = False
     refresh_audio_scripts: bool = False
-    generate_dialogue_audio: bool = True
+    generate_dialogue_audio: bool = False
     create_video_task: bool = True
     fallback_voice_profile: str = Field(default="", max_length=120)
 

@@ -270,7 +270,7 @@ cd ..
 python -m app.api
 ```
 
-后端会把 `frontend/dist` 里的 SPA 挂在 `http://127.0.0.1:8000`。
+后端会把 `frontend/dist` 里的 SPA 挂在 `http://127.0.0.1:8500`。
 
 也可以使用封装脚本：
 
@@ -455,7 +455,7 @@ POST /api/projects/{project_id}/storyboards/{storyboard_id}/video-tasks
 后端启动后可以查看 OpenAPI：
 
 ```text
-http://127.0.0.1:8000/docs
+http://127.0.0.1:8500/docs
 ```
 
 ## 开发注意事项

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import socket
 import threading
 from datetime import datetime
@@ -28,6 +29,8 @@ from .models import (
 )
 from .story_service import StoryGenerationService
 
+logger = logging.getLogger(__name__)
+
 
 class BatchGenerationService:
     def __init__(self, settings: Settings) -> None:
@@ -45,6 +48,13 @@ class BatchGenerationService:
         start_chapter_no: int,
         end_chapter_no: int,
     ) -> BatchGenerationJob:
+        logger.info(
+            "创建批量正文任务：project_id=%s series_plan_id=%s chapter_range=%s-%s",
+            project.id,
+            series_plan.id,
+            start_chapter_no,
+            end_chapter_no,
+        )
         active_job = db.scalar(
             select(BatchGenerationJob)
             .where(
@@ -56,6 +66,7 @@ class BatchGenerationService:
             .limit(1)
         )
         if active_job is not None:
+            logger.warning("创建批量正文任务被拒绝：已有活跃任务 job_id=%s status=%s", active_job.id, active_job.job_status)
             raise RuntimeError(f"已有未结束的批量正文任务（#{active_job.id}），请先完成、取消或重试该任务。")
 
         outlines = db.scalars(
@@ -68,9 +79,11 @@ class BatchGenerationService:
             .order_by(ChapterOutline.chapter_no.asc())
         ).all()
         if not outlines:
+            logger.warning("创建批量正文任务被拒绝：章节范围内没有概要 project_id=%s series_plan_id=%s", project.id, series_plan.id)
             raise RuntimeError("没有找到可生成的章节概要。")
         missing_locked = [item.chapter_no for item in outlines if item.status != "outline_locked"]
         if missing_locked:
+            logger.warning("创建批量正文任务被拒绝：章节概要未锁定 chapters=%s", missing_locked)
             raise RuntimeError("以下章节概要尚未锁定：" + "、".join(str(item) for item in missing_locked))
 
         job = BatchGenerationJob(
@@ -103,6 +116,7 @@ class BatchGenerationService:
         self._update_job_summary(job, generated=[], failed=[])
         db.commit()
         db.refresh(job)
+        logger.info("批量正文任务已创建：job_id=%s task_count=%s", job.id, len(outlines))
         return job
 
     def run_next_queued_job(self, *, db: Session) -> bool:
@@ -114,16 +128,19 @@ class BatchGenerationService:
         )
         if job is None:
             return False
+        logger.info("取到待执行批量正文任务：job_id=%s status=%s", job.id, job.job_status)
         self.run_job(db=db, job=job)
         return True
 
     def run_job(self, *, db: Session, job: BatchGenerationJob) -> BatchGenerationJob:
         if job.job_status in ("paused", "pause_requested", "canceled", "cancel_requested", "completed"):
+            logger.info("跳过批量正文任务：job_id=%s status=%s", job.id, job.job_status)
             return job
         writer = StoryGenerationService(self.settings)
         evolution = EvolutionService(self.settings)
         self._touch_worker(job, started=True)
         job.job_status = "running"
+        logger.info("批量正文任务开始执行：job_id=%s project_id=%s chapter_range=%s-%s", job.id, job.project_id, job.start_chapter_no, job.end_chapter_no)
         self._add_event(db, job=job, event_type="job_started", message="批量生成任务开始执行。")
         self._update_job_summary(job, generated=[], failed=[])
         db.commit()
@@ -144,6 +161,7 @@ class BatchGenerationService:
             outline = task.chapter_outline
             existing_draft = self._latest_draft_for_outline(db, outline.id)
             if existing_draft is not None and task.status not in ("failed", "running"):
+                logger.info("章节已有草稿，标记为完成：job_id=%s chapter_no=%s draft_version_id=%s", job.id, outline.chapter_no, existing_draft.id)
                 task.status = "completed"
                 task.draft_version_id = existing_draft.id
                 task.generation_run_id = existing_draft.generation_run_id
@@ -179,6 +197,7 @@ class BatchGenerationService:
             )
             self._update_job_summary(job, generated, failed)
             db.commit()
+            logger.info("章节正文开始生成：job_id=%s chapter_no=%s outline_id=%s", job.id, outline.chapter_no, outline.id)
             try:
                 generation, draft = self._generate_one(
                     db=db,
@@ -213,7 +232,15 @@ class BatchGenerationService:
                     payload={"chapter_no": outline.chapter_no, "generation_id": generation.id, "draft_version_id": draft.id},
                 )
                 db.commit()
+                logger.info(
+                    "章节正文生成完成：job_id=%s chapter_no=%s generation_id=%s draft_version_id=%s",
+                    job.id,
+                    outline.chapter_no,
+                    generation.id,
+                    draft.id,
+                )
             except Exception as exc:
+                logger.exception("章节正文生成失败：job_id=%s chapter_no=%s", job.id, outline.chapter_no)
                 failure = {"chapter_no": outline.chapter_no, "outline_id": outline.id, "error": str(exc)}
                 failed.append(failure)
                 task.status = "failed"
@@ -242,6 +269,7 @@ class BatchGenerationService:
         self._add_event(db, job=job, event_type="job_completed", message="批量生成任务已完成。")
         db.commit()
         db.refresh(job)
+        logger.info("批量正文任务完成：job_id=%s generated=%s failed=%s", job.id, len(generated), len(failed))
         return job
 
     def retry_job(self, *, db: Session, job: BatchGenerationJob) -> BatchGenerationJob:

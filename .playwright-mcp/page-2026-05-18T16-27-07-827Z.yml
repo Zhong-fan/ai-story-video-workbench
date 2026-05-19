@@ -1,0 +1,31 @@
+- generic [ref=e35]:
+  - complementary [ref=e36]:
+    - generic [ref=e37]:
+      - paragraph [ref=e38]: ChenFlow
+      - heading "创作台" [level=1] [ref=e39]
+    - button "返回工作区" [ref=e41] [cursor=pointer]
+    - navigation "Editor" [ref=e42]:
+      - button "项目设定" [ref=e43] [cursor=pointer]
+      - button "生成前校对" [ref=e44] [cursor=pointer]
+      - button "人物卡" [ref=e45] [cursor=pointer]
+      - button "小说创作" [ref=e46] [cursor=pointer]
+      - button "视频创作" [ref=e47] [cursor=pointer]
+      - button "生成过程" [ref=e48] [cursor=pointer]
+      - button "作品管理" [active] [ref=e49] [cursor=pointer]
+  - main [ref=e50]:
+    - generic [ref=e52]:
+      - generic [ref=e53]:
+        - generic [ref=e54]:
+          - paragraph [ref=e55]: 作品管理
+          - heading "草稿与已发布作品统一管理" [level=2] [ref=e56]
+          - paragraph [ref=e57]: 这里同时管理未发布草稿和已发布作品。任何一项都可以直接进入沉浸式阅读。
+        - button "回到小说创作" [ref=e59] [cursor=pointer]
+      - button "草稿 v1 外滩重影 draft_generated / 2026-05-16T07:58:06 林深奉命清除外滩旧仓库中的回声，与保护回声的苏瑾对峙。冲突激化时回声源异变，闪现人影传递神秘坐标。官方下令封锁现场，两人被迫撤离，但都记住了对方，林深决定私下调查坐标。 batch_generation" [ref=e61] [cursor=pointer]:
+        - generic [ref=e62]:
+          - generic [ref=e63]: 草稿
+          - generic [ref=e64]: v1
+        - strong [ref=e65]: 外滩重影
+        - generic [ref=e66]: draft_generated / 2026-05-16T07:58:06
+        - generic [ref=e67]: 林深奉命清除外滩旧仓库中的回声，与保护回声的苏瑾对峙。冲突激化时回声源异变，闪现人影传递神秘坐标。官方下令封锁现场，两人被迫撤离，但都记住了对方，林深决定私下调查坐标。
+        - emphasis [ref=e68]: batch_generation
+      - paragraph [ref=e69]: 当前项目还没有已发布作品。

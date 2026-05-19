@@ -1,0 +1,176 @@
+- generic [ref=e49]:
+  - complementary [ref=e50]:
+    - generic [ref=e51]:
+      - paragraph [ref=e52]: ChenFlow
+      - heading "创作台" [level=1] [ref=e53]
+    - button "返回工作区" [ref=e55] [cursor=pointer]
+    - navigation "Editor" [ref=e56]:
+      - button "项目设定" [ref=e57] [cursor=pointer]
+      - button "人物卡" [ref=e58] [cursor=pointer]
+      - button "小说创作" [ref=e59] [cursor=pointer]
+      - button "视频创作" [ref=e60] [cursor=pointer]
+      - button "生成过程" [ref=e61] [cursor=pointer]
+      - button "已发布阅读" [ref=e62] [cursor=pointer]
+      - button "作品管理" [ref=e63] [cursor=pointer]
+  - main [ref=e64]:
+    - generic [ref=e65]:
+      - generic [ref=e68]:
+        - paragraph [ref=e69]: 小说创作
+        - heading "Playwright 长篇流水线验证 20260516" [level=2] [ref=e70]
+        - paragraph [ref=e71]: 这里现在只保留长篇小说主流程：概要、批量正文、章节修订和定稿。不再放旧的单章新建与单章生成路线。
+      - main [ref=e72]:
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - generic [ref=e75]:
+              - paragraph [ref=e76]: 小说主流程
+              - heading "Playwright 长篇流水线验证 20260516" [level=2] [ref=e77]
+              - paragraph [ref=e78]: 这里只保留小说主流程：先生成并锁定概要，再批量生成正文，再把章节修订成定稿。
+            - generic [ref=e79]:
+              - generic [ref=e80]: 概要 2
+              - generic [ref=e81]: 锁定 2/3
+              - generic [ref=e82]: 定稿 0
+          - generic [ref=e83]:
+            - generic [ref=e84]:
+              - generic [ref=e85]:
+                - generic [ref=e86]: 目标章节数
+                - spinbutton "目标章节数" [ref=e87]: "12"
+              - generic [ref=e88]:
+                - generic [ref=e89]: 补充方向
+                - textbox "补充方向" [ref=e90]:
+                  - /placeholder: 例如：慢热关系线，前十章不要和解
+            - button "一键生成小说概要" [ref=e91] [cursor=pointer]
+        - generic [ref=e92]:
+          - generic [ref=e94]:
+            - paragraph [ref=e95]: 主流程检查
+            - heading "概要、正文、定稿" [level=2] [ref=e96]
+            - paragraph [ref=e97]: 旧的单章创作流程不再放在主位。现在小说创作只保留长篇概要到批量正文这条主线。
+          - generic [ref=e98]:
+            - article [ref=e99]:
+              - strong [ref=e100]: 长篇概要 / 已就绪
+              - generic [ref=e101]: 2/3 章概要已生成，当前已锁定。
+            - article [ref=e102]:
+              - strong [ref=e103]: 批量正文 / 已就绪
+              - generic [ref=e104]: 最近任务：已完成 / 当前在处理第 1 章
+            - article [ref=e105]:
+              - strong [ref=e106]: 章节定稿 / 待补齐
+              - generic [ref=e107]: 批量生成后先挑章节修订，再定稿为正式章节。
+        - generic [ref=e108]:
+          - article [ref=e109]:
+            - generic [ref=e110]:
+              - generic [ref=e111]:
+                - paragraph [ref=e112]: 全书概要
+                - heading "回声双线" [level=2] [ref=e113]
+                - paragraph [ref=e114]: 真相的解释权与个体选择
+              - button "锁定概要" [disabled] [ref=e115]
+            - generic [ref=e116]:
+              - generic [ref=e117]:
+                - strong [ref=e118]: 核心冲突
+                - text: 官方试图控制异常回声的解释权，民间组织试图揭露真相，双主角在夹缝中寻找自己的道路
+              - generic [ref=e119]:
+                - strong [ref=e120]: 结局方向
+                - text: 双主角结成秘密同盟，开始主动调查回声真相，但更高层次的势力已盯上他们
+              - generic [ref=e121]:
+                - strong [ref=e122]: 状态
+                - text: 已锁定
+              - generic [ref=e123]:
+                - strong [ref=e124]: 版本
+                - text: "1"
+            - article [ref=e126]:
+              - strong [ref=e127]: 版本 1
+              - generic [ref=e128]: 初版规划：由于目标为3章试作，设计一个紧凑的单元弧，聚焦双主角的初遇、冲突、被迫合作与初步信任建立，同时引入系列宏观阴谋的线索，结尾为后续预留空间。每章均由对话和行动驱动双重冲突，结尾保持悬念。
+              - emphasis [ref=e129]: 2026-05-16T07:37:20
+              - button "恢复此版本" [disabled] [ref=e130]
+          - article [ref=e131]:
+            - generic [ref=e133]:
+              - paragraph [ref=e134]: 概要修订
+              - heading "反馈闭环" [level=2] [ref=e135]
+            - generic [ref=e136]:
+              - generic [ref=e137]:
+                - generic [ref=e138]:
+                  - generic [ref=e139]: 目标层级
+                  - combobox "目标层级" [ref=e140]:
+                    - option "全书" [selected]
+                    - option "阶段"
+                    - option "章节"
+                - generic [ref=e141]:
+                  - generic [ref=e142]: 目标对象
+                  - combobox "目标对象" [ref=e143]:
+                    - option "全书：回声双线" [selected]
+              - generic [ref=e144]:
+                - generic [ref=e145]: 修改意见
+                - textbox "修改意见" [ref=e146]
+              - button "按反馈生成新概要版本" [disabled] [ref=e147]
+        - generic [ref=e148]:
+          - generic [ref=e150]:
+            - paragraph [ref=e151]: 阶段与章节概要
+            - heading "3 章细纲" [level=2] [ref=e152]
+          - generic [ref=e153]:
+            - article [ref=e154]:
+              - strong [ref=e155]: 阶段 1：回声初现
+              - generic [ref=e156]: 第 1-3 章
+              - emphasis [ref=e157]: 揭开外滩异常回声事件真相，建立双主角初步信任
+            - article [ref=e158]:
+              - strong [ref=e159]: "#1 缝隙的回声"
+              - generic [ref=e160]: 已生成
+              - generic [ref=e161]: 引介双主角及其能力，展示外滩异常事件，两人在冲突中初遇并察觉隐藏意志
+              - emphasis [ref=e162]: 林深用异能看到旧仓库中的视觉化回声（如重复的影像）；苏瑾展示她与回声共鸣的安抚能力；两人动手后回声源突然增强，闪现一个人影传递模糊语句；官方下令封锁现场，两人被迫撤离但都记住了对方
+              - button "编辑概要" [ref=e163] [cursor=pointer]
+            - article [ref=e164]:
+              - strong [ref=e165]: "#2 共鸣与分歧"
+              - generic [ref=e166]: 已锁定
+              - generic [ref=e167]: 双主角被迫合作追踪坐标，观念冲突激化，林深违命保护证据并发现高层牵连
+              - emphasis [ref=e168]: 两人在坐标地点（废弃地铁站）再次相遇并短暂交手后休战；苏瑾用对话逼迫林深承认官方隐瞒；林深截获销毁指令，故意放走苏瑾并伪造报告；共同发现回声残留证据显示该事件源于一项官方人体实验
+              - button "编辑概要" [ref=e169] [cursor=pointer]
+            - article [ref=e170]:
+              - strong [ref=e171]: "#3 不协和音"
+              - generic [ref=e172]: 已锁定
+              - generic [ref=e173]: 揭露实验真相，双主角合力逃脱灭口并决定联手，埋下更大悬念
+              - emphasis [ref=e174]: 林深利用回声干扰对方通信，苏瑾制造假的回声陷阱配合逃脱；逃亡途中对话揭示实验目的是人为制造可控制的回声士兵；两人合作将部分情报匿名发送给媒体，但被迅速封锁；林深明确切断与官方联系，苏瑾带他进入民间网络隐匿
+              - button "编辑概要" [ref=e175] [cursor=pointer]
+        - generic [ref=e176]:
+          - generic [ref=e178]:
+            - paragraph [ref=e179]: 批量正文
+            - heading "顺序生成" [level=2] [ref=e180]
+          - generic [ref=e181]:
+            - generic [ref=e182]:
+              - generic [ref=e183]:
+                - generic [ref=e184]: 起始章
+                - spinbutton "起始章" [ref=e185]: "1"
+              - generic [ref=e186]:
+                - generic [ref=e187]: 结束章
+                - spinbutton "结束章" [ref=e188]: "3"
+            - button "一键生成小说内容" [ref=e189] [cursor=pointer]
+          - paragraph [ref=e190]: 最近任务：已完成 / 当前在处理第 1 章
+          - generic [ref=e191]:
+            - button "暂停" [disabled] [ref=e192]
+            - button "恢复" [disabled] [ref=e193]
+            - button "重试" [disabled] [ref=e194]
+            - button "取消" [disabled] [ref=e195]
+        - generic [ref=e196]:
+          - generic [ref=e198]:
+            - paragraph [ref=e199]: 章节版本
+            - heading "批量生成草稿" [level=2] [ref=e200]
+          - generic [ref=e201]:
+            - button "v1 外滩重影 已生成 重写原因：batch_generation 林深奉命清除外滩旧仓库中的回声，与保护回声的苏瑾对峙。冲突激化时回声源异变，闪现人影传递神秘坐标。官方下令封锁现场，两人被迫撤离，但都记住了对方，林深决定私下调查坐标。" [ref=e203] [cursor=pointer]:
+              - strong [ref=e204]: v1 外滩重影
+              - generic [ref=e205]: 已生成
+              - generic [ref=e206]: 重写原因：batch_generation
+              - emphasis [ref=e207]: 林深奉命清除外滩旧仓库中的回声，与保护回声的苏瑾对峙。冲突激化时回声源异变，闪现人影传递神秘坐标。官方下令封锁现场，两人被迫撤离，但都记住了对方，林深决定私下调查坐标。
+            - generic [ref=e208]:
+              - generic [ref=e209]:
+                - generic [ref=e210]: 重写反馈
+                - textbox "重写反馈" [ref=e211]
+              - button "全章重写生成新版本" [disabled] [ref=e212]
+              - generic [ref=e213]:
+                - generic [ref=e214]:
+                  - generic [ref=e215]: 作者名
+                  - textbox "作者名" [ref=e216]
+                - generic [ref=e217]:
+                  - generic [ref=e218]: 可见性
+                  - combobox "可见性" [ref=e219]:
+                    - option "私密" [selected]
+                    - option "公开"
+              - generic [ref=e220]:
+                - generic [ref=e221]: 作品标语
+                - textbox "作品标语" [ref=e222]
+              - button "定稿为正式章节" [ref=e223] [cursor=pointer]

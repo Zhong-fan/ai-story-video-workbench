@@ -1,0 +1,58 @@
+- generic [ref=e35]:
+  - complementary [ref=e36]:
+    - generic [ref=e37]:
+      - paragraph [ref=e38]: ChenFlow
+      - heading "创作台" [level=1] [ref=e39]
+    - button "返回工作区" [ref=e41] [cursor=pointer]
+    - navigation "Editor" [ref=e42]:
+      - button "项目设定" [ref=e43] [cursor=pointer]
+      - button "生成前校对" [ref=e44] [cursor=pointer]
+      - button "人物卡" [ref=e45] [cursor=pointer]
+      - button "小说创作" [ref=e46] [cursor=pointer]
+      - button "视频创作" [ref=e47] [cursor=pointer]
+      - button "生成过程" [active] [ref=e48] [cursor=pointer]
+      - button "已发布阅读" [ref=e49] [cursor=pointer]
+      - button "作品管理" [ref=e50] [cursor=pointer]
+  - main [ref=e51]:
+    - main [ref=e436]:
+      - generic [ref=e437]:
+        - generic [ref=e439]:
+          - paragraph [ref=e440]: 生成过程
+          - heading "Playwright 长篇流水线验证 20260516 · 缝隙的回声" [level=2] [ref=e441]
+          - paragraph [ref=e442]: 这里同时展示单章写作 trace 和长篇/视频任务状态。用户不需要翻日志，也能知道流程现在卡在哪一步。
+        - generic [ref=e444]:
+          - strong [ref=e445]: 等待后端进度
+          - generic [ref=e446]: 阶段：idle
+      - generic [ref=e449]:
+        - generic [ref=e451]:
+          - paragraph [ref=e452]: 长篇与视频任务
+          - heading "当前流程进度" [level=2] [ref=e453]
+        - generic [ref=e454]:
+          - article [ref=e455]:
+            - strong [ref=e456]: 长篇概要 / 批量正文
+            - generic [ref=e457]: 状态：completed
+            - emphasis [ref=e458]: 当前任务状态：completed，章节范围 1-1
+          - article [ref=e459]:
+            - strong [ref=e460]: 分镜任务
+            - generic [ref=e461]: 状态：idle
+            - emphasis [ref=e462]: 当前没有分镜任务。
+          - article [ref=e463]:
+            - strong [ref=e464]: 视频任务
+            - generic [ref=e465]: 状态：idle
+            - emphasis [ref=e466]: 当前没有视频任务。
+        - paragraph [ref=e467]: 当前还没有长篇或视频任务事件。开始批量正文、分镜或视频任务后，这里会持续刷新。
+      - generic [ref=e468]:
+        - generic [ref=e470]:
+          - paragraph [ref=e471]: 提交内容
+          - heading "本次请求参数" [level=2] [ref=e472]
+        - generic [ref=e473]: "{}"
+      - generic [ref=e474]:
+        - generic [ref=e476]:
+          - paragraph [ref=e477]: 检索上下文
+          - heading "创作上下文摘要" [level=2] [ref=e478]
+        - generic [ref=e479]: "{}"
+      - generic [ref=e480]:
+        - generic [ref=e482]:
+          - paragraph [ref=e483]: 阶段输出
+          - heading "Draft / Refine / Intent Check" [level=2] [ref=e484]
+        - generic [ref=e485]: "{}"

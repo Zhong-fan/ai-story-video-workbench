@@ -1416,7 +1416,9 @@ export const useWorkbenchStore = defineStore("workbench", () => {
       const state = await api.prepareVideoProduction(token.value, activeProject.value.project.id, storyboardId, payload);
       longformState.value = state;
       startLongformPolling(activeProject.value.project.id);
-      success.value = "视频生产前置内容已准备，视频任务已进入队列。";
+      success.value = payload.generate_dialogue_audio
+        ? "视频生产前置内容与配音已准备，视频任务已进入队列。"
+        : "视觉前置内容已准备，视频任务已进入队列；配音可之后单独生成。";
       return state;
     } catch (err) {
       error.value = err instanceof Error ? err.message : "准备视频生产失败。";

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -84,6 +85,8 @@ from .storyboard_job_service import StoryboardJobService
 from .visual_asset_service import VisualAssetService
 from .visual_style_prompt import build_visual_generation_prompt, project_visual_style_summary
 from .voice_service import VoiceService
+
+logger = logging.getLogger(__name__)
 
 
 def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
@@ -203,6 +206,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
     ) -> SeriesPlanOut:
         project = _project_or_404(db, current_user.id, project_id)
         plan = _series_plan_or_404(db, project.id, series_plan_id)
+        logger.info("锁定长篇概要：user_id=%s project_id=%s series_plan_id=%s", current_user.id, project.id, plan.id)
         plan.status = "locked"
         for arc in plan.arc_plans:
             arc.status = "locked"
@@ -301,11 +305,27 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
     ) -> BatchGenerationJobOut:
+        logger.info(
+            "收到批量正文生成请求：user_id=%s project_id=%s series_plan_id=%s chapter_range=%s-%s",
+            current_user.id,
+            project_id,
+            payload.series_plan_id,
+            payload.start_chapter_no,
+            payload.end_chapter_no,
+        )
         if payload.end_chapter_no < payload.start_chapter_no:
+            logger.warning(
+                "批量正文生成请求被拒绝：结束章小于起始章 user_id=%s project_id=%s start=%s end=%s",
+                current_user.id,
+                project_id,
+                payload.start_chapter_no,
+                payload.end_chapter_no,
+            )
             raise HTTPException(status_code=422, detail="结束章节不能小于开始章节。")
         project = _project_or_404(db, current_user.id, project_id)
         plan = _series_plan_or_404(db, project.id, payload.series_plan_id)
         if plan.status != "locked":
+            logger.warning("批量正文生成请求被拒绝：概要未锁定 project_id=%s series_plan_id=%s status=%s", project.id, plan.id, plan.status)
             raise HTTPException(status_code=409, detail="请先锁定长篇概要再批量生成正文。")
         try:
             job = BatchGenerationService(settings).create_job(
@@ -317,6 +337,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        logger.info("批量正文生成任务返回前端：project_id=%s job_id=%s status=%s", project.id, job.id, job.job_status)
         return _batch_job_out(job)
 
     @router.get("/api/projects/{project_id}/batch-generation/{job_id}", response_model=BatchGenerationJobOut)
@@ -718,7 +739,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                         project=project,
                         character=character,
                         chapter_no=None,
-                        prompt_note="视频生产前置资产：请生成角色三视图，保持项目视觉风格一致。",
+                        prompt_note="视频生产前置资产：请生成可长期复用的角色三视图。必须保持项目视觉风格，同时强化这个角色自己的轮廓、配色、服装材质和标志物，避免通用模板脸。",
                         context_pack_inputs=context_pack_inputs,
                     )
                     preflight_summary["generated_character_turnarounds"].append(character.name)

@@ -1,0 +1,39 @@
+- generic [ref=e35]:
+  - complementary [ref=e36]:
+    - generic [ref=e37]:
+      - paragraph [ref=e38]: ChenFlow
+      - heading "创作台" [level=1] [ref=e39]
+    - button "返回工作区" [ref=e41] [cursor=pointer]
+    - navigation "Editor" [ref=e42]:
+      - button "项目设定" [ref=e43] [cursor=pointer]
+      - button "生成前校对" [active] [ref=e44] [cursor=pointer]
+      - button "人物卡" [ref=e45] [cursor=pointer]
+      - button "小说创作" [ref=e46] [cursor=pointer]
+      - button "视频创作" [ref=e47] [cursor=pointer]
+      - button "生成过程" [ref=e48] [cursor=pointer]
+      - button "已发布阅读" [ref=e49] [cursor=pointer]
+      - button "作品管理" [ref=e50] [cursor=pointer]
+  - main [ref=e51]:
+    - main [ref=e150]:
+      - generic [ref=e151]:
+        - generic [ref=e152]:
+          - generic [ref=e153]:
+            - paragraph [ref=e154]: 生成前校对
+            - heading "Playwright 长篇流水线验证 20260516" [level=2] [ref=e155]
+            - paragraph [ref=e156]: 先把项目设定、人物卡和参考作品整理成一份可见、可确认的创作上下文包。后续概要、正文和视频都应以这份包为准。
+          - generic [ref=e157]:
+            - button "项目设定" [ref=e158] [cursor=pointer]
+            - button "人物卡" [ref=e159] [cursor=pointer]
+        - generic [ref=e160]:
+          - generic [ref=e161]:
+            - generic [ref=e162]: 参考作品使用方式
+            - combobox "参考作品使用方式" [ref=e163]:
+              - option "风格参考" [selected]
+              - option "内容参考"
+          - generic [ref=e164]:
+            - generic [ref=e165]: 本轮校对备注
+            - textbox "本轮校对备注" [ref=e166]:
+              - /placeholder: 例如：优先校对人物姓名、男女主关系、是否符合原著气质。
+          - generic [ref=e167]:
+            - button "生成校对稿" [ref=e168] [cursor=pointer]
+            - button "生成并直接确认" [ref=e169] [cursor=pointer]

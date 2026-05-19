@@ -3,9 +3,12 @@ import json
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
+
+LONG_TEXT = Text().with_variant(MEDIUMTEXT(), "mysql")
 
 
 class TimestampMixin:
@@ -557,7 +560,7 @@ class MediaAsset(Base, TimestampMixin):
     uri: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     prompt: Mapped[str] = mapped_column(Text, default="", nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="pending", nullable=False)
-    meta_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    meta_json: Mapped[str] = mapped_column(LONG_TEXT, default="{}", nullable=False)
 
     project: Mapped["Project"] = relationship()
     storyboard: Mapped["Storyboard | None"] = relationship(back_populates="media_assets")

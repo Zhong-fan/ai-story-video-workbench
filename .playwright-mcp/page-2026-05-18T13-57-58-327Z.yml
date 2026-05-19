@@ -1,0 +1,112 @@
+- generic [ref=e224]:
+  - complementary [ref=e225]:
+    - generic [ref=e226]:
+      - paragraph [ref=e227]: ChenFlow
+      - heading "创作台" [level=1] [ref=e228]
+    - button "返回工作区" [ref=e230] [cursor=pointer]
+    - navigation "Editor" [ref=e231]:
+      - button "项目设定" [ref=e232] [cursor=pointer]
+      - button "人物卡" [ref=e233] [cursor=pointer]
+      - button "小说创作" [ref=e234] [cursor=pointer]
+      - button "视频创作" [active] [ref=e235] [cursor=pointer]
+      - button "生成过程" [ref=e236] [cursor=pointer]
+      - button "已发布阅读" [ref=e237] [cursor=pointer]
+      - button "作品管理" [ref=e238] [cursor=pointer]
+  - main [ref=e239]:
+    - generic [ref=e399]:
+      - generic [ref=e402]:
+        - paragraph [ref=e403]: 视频创作
+        - heading "Playwright 长篇流水线验证 20260516" [level=2] [ref=e404]
+        - paragraph [ref=e405]: 只处理视频化相关内容：定稿章节选章、视觉约束、角色三视图、分镜、预检、视频任务与成片。
+      - main [ref=e406]:
+        - generic [ref=e408]:
+          - generic [ref=e409]:
+            - paragraph [ref=e410]: 视频化生产
+            - heading "Playwright 长篇流水线验证 20260516" [level=2] [ref=e411]
+            - paragraph [ref=e412]: 这里只保留视频生产：视觉风格、角色资产、分镜、对白、首帧、视频任务与成片。
+          - generic [ref=e413]:
+            - generic [ref=e414]: 分镜 0
+            - generic [ref=e415]: 素材 0
+            - generic [ref=e416]: 任务 0
+        - generic [ref=e417]:
+          - generic [ref=e419]:
+            - paragraph [ref=e420]: 生产准备
+            - heading "进入视频前先确认" [level=2] [ref=e421]
+            - paragraph [ref=e422]: 视频化只面向已经定稿的章节。先看主链路是否齐备，再继续做视觉、分镜和视频任务。
+          - generic [ref=e423]:
+            - article [ref=e424]:
+              - strong [ref=e425]: 项目级视觉风格 / 已就绪
+              - generic [ref=e426]: 已锁定，后续分镜、首帧和视频会继承这套约束。
+            - article [ref=e427]:
+              - strong [ref=e428]: 长篇概要 / 已就绪
+              - generic [ref=e429]: 2/3 章概要已锁定。
+            - article [ref=e430]:
+              - strong [ref=e431]: 定稿章节 / 待补齐
+              - generic [ref=e432]: 至少先把一章正文定稿，分镜和视频只面向定稿章节。
+            - article [ref=e433]:
+              - strong [ref=e434]: 分镜稿 / 待补齐
+              - generic [ref=e435]: 还没有分镜，先从已定稿章节生成分镜稿。
+            - article [ref=e436]:
+              - strong [ref=e437]: 对白与音频准备 / 待补齐
+              - generic [ref=e438]: 分镜创建后，先补对白脚本和对白音频。
+            - article [ref=e439]:
+              - strong [ref=e440]: 首帧与视觉资产 / 待补齐
+              - generic [ref=e441]: 角色三视图和镜头首帧不是必需，但会明显提升可控性。
+        - generic [ref=e442]:
+          - generic [ref=e444]:
+            - paragraph [ref=e445]: 视觉风格锁定
+            - heading "视觉风格已锁定" [level=2] [ref=e446]
+            - paragraph [ref=e447]: 生成图片和视频时会使用这部项目自己的画面媒介、画风参考和补充约束。
+          - generic [ref=e448]: 二维动画电影
+          - generic [ref=e449]:
+            - generic [ref=e450]:
+              - checkbox "生成图片和视频时强制使用这套视觉风格" [checked] [ref=e451]
+              - generic [ref=e452]: 生成图片和视频时强制使用这套视觉风格
+            - generic [ref=e453]:
+              - generic [ref=e454]:
+                - generic [ref=e455]: 画面媒介
+                - textbox "画面媒介" [ref=e456]:
+                  - /placeholder: 例如：二维动画电影、手绘漫画、水彩插画、写实电影；不需要就留空
+                  - text: 二维动画电影
+              - generic [ref=e457]:
+                - generic [ref=e458]: 风格参考
+                - textbox "风格参考" [ref=e459]:
+                  - /placeholder: 例如：新海诚、CoMix Wave Films、雨天城市光影、夏日云层透光
+            - generic [ref=e460]:
+              - generic [ref=e461]: 项目级视觉约束说明
+              - textbox "项目级视觉约束说明" [ref=e462]:
+                - /placeholder: 这里直接写这部项目自己的长期视觉约束，例如：\n- 画面以新海诚动画电影质感为主，不走写实真人路线\n- 强调暴雨、云缝天光、城市霓虹反光、潮湿空气感\n- 角色面部与服装保持少年少女动画设定，不要偏成熟写实\n- 镜头优先使用通透逆光、黄昏天台、都市高空与电车窗口等意象
+            - button "保存视觉风格" [ref=e463] [cursor=pointer]
+        - generic [ref=e464]:
+          - generic [ref=e466]:
+            - paragraph [ref=e467]: 视觉资产
+            - heading "角色三视图与镜头参考" [level=2] [ref=e468]
+            - paragraph [ref=e469]: 先锁定角色和场景资产，再进入首帧与视频生成。
+          - generic [ref=e470]:
+            - generic [ref=e471]:
+              - generic [ref=e472]:
+                - generic [ref=e473]: 角色
+                - combobox "角色" [ref=e474]
+              - generic [ref=e475]:
+                - generic [ref=e476]: 章节
+                - spinbutton "章节" [ref=e477]: "1"
+            - generic [ref=e478]:
+              - generic [ref=e479]: 造型补充
+              - textbox "造型补充" [ref=e480]:
+                - /placeholder: 例如：第1章医院病房与屋顶场景，校服，雨中湿发，疲惫但坚定。
+            - button "生成角色三视图" [disabled] [ref=e481]
+          - paragraph [ref=e482]: 还没有视觉资产。建议先为主角生成三视图。
+        - generic [ref=e483]:
+          - generic [ref=e485]:
+            - paragraph [ref=e486]: 选章视频化
+            - heading "读后短片分镜" [level=2] [ref=e487]
+          - generic [ref=e488]:
+            - generic [ref=e489]:
+              - generic [ref=e490]: 已发布作品
+              - combobox "已发布作品" [ref=e491]:
+                - option "选择作品" [disabled] [selected]
+            - generic [ref=e492]:
+              - generic [ref=e493]: 短片标题
+              - textbox "短片标题" [ref=e494]
+            - paragraph [ref=e495]: 只有已发布/定稿章节可生成分镜。
+            - button "生成分镜稿" [disabled] [ref=e496]

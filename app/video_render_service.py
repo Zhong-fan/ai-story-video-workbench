@@ -117,6 +117,18 @@ class VideoRenderService:
                     frames=self.settings.jimeng_frames,
                     aspect_ratio=self.settings.jimeng_aspect_ratio,
                 )
+            provider_debug_path = output_dir / f"segment-{shot.shot_no:03d}.provider.json"
+            self._write_provider_debug_sidecar(
+                path=provider_debug_path,
+                payload={
+                    "provider": "jimeng",
+                    "asset_type": "video",
+                    "shot_id": shot.id,
+                    "shot_no": shot.shot_no,
+                    "task_id": jimeng_task_id,
+                    "submit_response": self._sanitize_provider_payload(submit_response),
+                },
+            )
             self._upsert_asset(
                 db,
                 task=task,
@@ -128,7 +140,8 @@ class VideoRenderService:
                 meta={
                     "provider": "jimeng",
                     "jimeng_task_id": jimeng_task_id,
-                    "submit_response": submit_response,
+                    "provider_debug_uri": str(provider_debug_path),
+                    "submit_summary": self._summarize_jimeng_video_response(submit_response),
                     "req_key": self.settings.jimeng_i2v_req_key if first_frame_asset is not None else self.settings.jimeng_req_key,
                     "used_first_frame": first_frame_asset is not None,
                     "shot_first_frame_asset_id": first_frame_asset.id if first_frame_asset is not None else None,
@@ -151,6 +164,18 @@ class VideoRenderService:
             video_url, result_response = self._wait_for_jimeng_result(client=image_client if first_frame_asset is not None else text_client, task_id=jimeng_task_id)
             segment_path = output_dir / f"segment-{shot.shot_no:03d}.mp4"
             self._download_file(url=video_url, path=segment_path)
+            self._write_provider_debug_sidecar(
+                path=provider_debug_path,
+                payload={
+                    "provider": "jimeng",
+                    "asset_type": "video",
+                    "shot_id": shot.id,
+                    "shot_no": shot.shot_no,
+                    "task_id": jimeng_task_id,
+                    "submit_response": self._sanitize_provider_payload(submit_response),
+                    "result_response": self._sanitize_provider_payload(result_response),
+                },
+            )
             self._upsert_asset(
                 db,
                 task=task,
@@ -163,7 +188,9 @@ class VideoRenderService:
                     "provider": "jimeng",
                     "jimeng_task_id": jimeng_task_id,
                     "video_url": video_url,
-                    "result_response": result_response,
+                    "provider_debug_uri": str(provider_debug_path),
+                    "submit_summary": self._summarize_jimeng_video_response(submit_response),
+                    "result_summary": self._summarize_jimeng_video_response(result_response),
                     "req_key": self.settings.jimeng_i2v_req_key if first_frame_asset is not None else self.settings.jimeng_req_key,
                     "used_first_frame": first_frame_asset is not None,
                     "shot_first_frame_asset_id": first_frame_asset.id if first_frame_asset is not None else None,
@@ -404,10 +431,16 @@ class VideoRenderService:
 
     def _build_jimeng_prompt(self, task: VideoTask, shot: StoryboardShot, first_frame_asset: MediaAsset | None = None) -> str:
         prompt = build_visual_generation_prompt(project=task.project, shot=shot, include_narration=True, max_length=1200)
+        video_direction = (
+            "\n视频生成要求：轻微但有目的的镜头运动，保持动画电影质感；"
+            "不要做随机推拉摇移，不要抖动，不要流水线素材感；"
+            "角色动作克制自然，表情和姿态服务当前镜头情绪；"
+            "保持画面中的天气、光源、色彩和角色外观连续。"
+        )
         if first_frame_asset is None:
-            return prompt
+            return f"{prompt}{video_direction}"[:1400]
         return (
-            f"{prompt}\n"
+            f"{prompt}{video_direction}\n"
             "已存在用户确认的镜头首帧，请严格保持首帧中的主体外观、构图、机位和画面氛围一致，"
             "将该首帧视为本镜头的视频起始画面参考。"
         )[:1400]
@@ -748,7 +781,37 @@ class VideoRenderService:
         asset.uri = uri
         asset.prompt = prompt
         asset.status = status
-        asset.meta_json = json_dumps({**json_loads_object(asset.meta_json), **asset_meta})
+        asset.meta_json = json_dumps({**self._compact_asset_meta(json_loads_object(asset.meta_json)), **asset_meta})
+
+    def _compact_asset_meta(self, meta: dict[str, Any]) -> dict[str, Any]:
+        drop_keys = {"submit_response", "result_response", "submit_summary", "result_summary", "provider_debug_uri"}
+        return {key: value for key, value in meta.items() if key not in drop_keys}
+
+    def _write_provider_debug_sidecar(self, *, path: Path, payload: dict[str, Any]) -> None:
+        path.write_text(json_dumps(payload), encoding="utf-8")
+
+    def _summarize_jimeng_video_response(self, response: dict[str, Any]) -> dict[str, Any]:
+        data = response.get("data") if isinstance(response.get("data"), dict) else {}
+        return {
+            "code": response.get("code"),
+            "message": response.get("message") or response.get("msg") or "",
+            "status": data.get("status") or "",
+            "task_id": data.get("task_id") or "",
+            "video_url_present": bool(data.get("video_url")),
+        }
+
+    def _sanitize_provider_payload(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: self._sanitize_provider_payload(item) for key, item in value.items()}
+        if isinstance(value, list):
+            if len(value) > 20:
+                preview = [self._sanitize_provider_payload(item) for item in value[:20]]
+                preview.append(f"... ({len(value) - 20} more items)")
+                return preview
+            return [self._sanitize_provider_payload(item) for item in value]
+        if isinstance(value, str) and len(value) > 1200:
+            return value[:1200] + f"... [truncated {len(value) - 1200} chars]"
+        return value
 
     def _set_progress(self, task: VideoTask, *, stage: str, message: str, extra: dict[str, Any] | None = None) -> None:
         payload = json_loads_object(task.progress_json)

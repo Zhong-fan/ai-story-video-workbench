@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
@@ -9,7 +10,7 @@ import urllib.request
 from typing import Any
 
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.environ.get("CHENFLOW_BASE_URL", "http://127.0.0.1:8500")
 
 
 def _request(method: str, path: str, *, token: str | None = None, payload: dict[str, Any] | None = None) -> Any:

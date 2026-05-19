@@ -24,7 +24,7 @@ type LibraryItem = {
   updatedAt: string;
   chips: string[];
   target: {
-    view: "projectSettings" | "characters" | "workshop" | "longform";
+    view: "projectSettings" | "characters" | "novelCreate" | "videoCreate";
     characterCardId?: number;
     projectChapterId?: number;
     seriesPlanId?: number;
@@ -47,8 +47,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "open-settings"): void;
   (e: "open-characters"): void;
-  (e: "open-workshop"): void;
-  (e: "open-longform"): void;
+  (e: "open-novel-create"): void;
+  (e: "open-video-create"): void;
   (e: "open-item", value: LibraryItem["target"]): void;
 }>();
 
@@ -312,7 +312,7 @@ const libraryItems = computed<LibraryItem[]>(() => {
       status: "ready",
       updatedAt: chapter.updated_at,
       chips: [`章节 ${chapter.chapter_no}`],
-      target: { view: "workshop", projectChapterId: chapter.id },
+      target: { view: "novelCreate", projectChapterId: chapter.id },
     });
   }
 
@@ -329,7 +329,7 @@ const libraryItems = computed<LibraryItem[]>(() => {
       status: plan.status,
       updatedAt: plan.updated_at,
       chips: [`目标 ${plan.target_chapter_count} 章`, `${plan.arcs.length} 个阶段`],
-      target: { view: "longform", seriesPlanId: plan.id },
+      target: { view: "videoCreate", seriesPlanId: plan.id },
     });
   }
 
@@ -346,7 +346,7 @@ const libraryItems = computed<LibraryItem[]>(() => {
       status: draft.status,
       updatedAt: draft.created_at,
       chips: [draft.revision_reason || "自动生成"],
-      target: { view: "longform", draftVersionId: draft.id },
+      target: { view: "novelCreate", draftVersionId: draft.id },
     });
   }
 
@@ -363,7 +363,7 @@ const libraryItems = computed<LibraryItem[]>(() => {
       status: storyboard.status,
       updatedAt: storyboard.updated_at,
       chips: [`${storyboard.shots.length} 镜头`],
-      target: { view: "longform", storyboardId: storyboard.id },
+      target: { view: "videoCreate", storyboardId: storyboard.id },
     });
   }
 
@@ -382,7 +382,7 @@ const libraryItems = computed<LibraryItem[]>(() => {
       status: asset.status,
       updatedAt: asset.updated_at,
       chips: [asset.asset_type, asset.meta.character_name ? String(asset.meta.character_name) : ""].filter(Boolean),
-      target: { view: "longform", storyboardId: asset.storyboard_id ?? undefined },
+      target: { view: "videoCreate", storyboardId: asset.storyboard_id ?? undefined },
     });
   }
 
@@ -402,7 +402,7 @@ const libraryItems = computed<LibraryItem[]>(() => {
         task.progress?.audio_composed_count ? `混音 ${String(task.progress.audio_composed_count)}` : "",
         task.progress?.subtitle_count ? `字幕 ${String(task.progress.subtitle_count)}` : "",
       ].filter(Boolean),
-      target: { view: "longform", storyboardId: task.storyboard_id, videoTaskId: task.id },
+      target: { view: "videoCreate", storyboardId: task.storyboard_id, videoTaskId: task.id },
     });
   }
 
@@ -483,8 +483,8 @@ const quickStats = computed(() => ({
         <div class="mode-switch">
           <button class="ghost-button ghost-button--small" type="button" @click="emit('open-settings')">项目设定</button>
           <button class="ghost-button ghost-button--small" type="button" @click="emit('open-characters')">人物卡</button>
-          <button class="ghost-button ghost-button--small" type="button" @click="emit('open-workshop')">章节工作台</button>
-          <button class="ghost-button ghost-button--small" type="button" @click="emit('open-longform')">长篇流水线</button>
+          <button class="ghost-button ghost-button--small" type="button" @click="emit('open-novel-create')">小说创作</button>
+          <button class="ghost-button ghost-button--small" type="button" @click="emit('open-video-create')">视频创作</button>
         </div>
       </div>
 

@@ -61,6 +61,17 @@ type RequestOptions = RequestInit & {
   token?: string | null;
 };
 
+function describeRequest(input: RequestInfo): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
+function logApi(level: "info" | "error", message: string, details: Record<string, unknown>) {
+  const logger = level === "error" ? console.error : console.info;
+  logger(`[前端接口] ${message}`, details);
+}
+
 const fieldLabels: Record<string, string> = {
   username: "用户名",
   password: "密码",
@@ -135,10 +146,26 @@ async function request<T>(input: RequestInfo, init: RequestOptions = {}): Promis
     headers.set("Authorization", `Bearer ${init.token}`);
   }
 
-  const response = await fetch(input, {
-    ...init,
-    headers,
-  });
+  const method = init.method ?? "GET";
+  const url = describeRequest(input);
+  const startedAt = performance.now();
+  logApi("info", "请求开始", { method, url });
+
+  let response: Response;
+  try {
+    response = await fetch(input, {
+      ...init,
+      headers,
+    });
+  } catch (error) {
+    logApi("error", "请求网络异常", {
+      method,
+      url,
+      elapsed_ms: Math.round(performance.now() - startedAt),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
@@ -150,10 +177,26 @@ async function request<T>(input: RequestInfo, init: RequestOptions = {}): Promis
     } catch {
       // ignore
     }
+    logApi("error", "请求失败", {
+      method,
+      url,
+      status: response.status,
+      elapsed_ms: Math.round(performance.now() - startedAt),
+      message,
+      request_id: response.headers.get("X-Request-ID"),
+    });
     throw new Error(message);
   }
 
-  return (await response.json()) as T;
+  const payload = (await response.json()) as T;
+  logApi("info", "请求成功", {
+    method,
+    url,
+    status: response.status,
+    elapsed_ms: Math.round(performance.now() - startedAt),
+    request_id: response.headers.get("X-Request-ID"),
+  });
+  return payload;
 }
 
 export const api = {

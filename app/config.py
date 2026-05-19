@@ -9,6 +9,8 @@ class Settings:
     root_dir: Path
     env_path: Path
     output_dir: Path
+    app_host: str
+    app_port: int
     llm_mode: str
     writer_model: str
     utility_model: str
@@ -190,6 +192,8 @@ def load_settings() -> Settings:
         root_dir=root_dir,
         env_path=env_path,
         output_dir=root_dir / "output",
+        app_host=_resolve_first(("CHENFLOW_APP_HOST", "APP_HOST"), dotenv_values, "127.0.0.1") or "127.0.0.1",
+        app_port=_parse_positive_int(_resolve_first(("CHENFLOW_APP_PORT", "APP_PORT"), dotenv_values), 8500),
         llm_mode=_require_first(("CHENFLOW_LLM_MODE", "GRAPH_MVP_LLM_MODE"), dotenv_values).strip().lower(),
         writer_model=_require_first(("CHENFLOW_WRITER_MODEL", "GRAPH_MVP_WRITER_MODEL"), dotenv_values),
         utility_model=_require_first(("CHENFLOW_UTILITY_MODEL", "GRAPH_MVP_UTILITY_MODEL"), dotenv_values),
@@ -258,10 +262,14 @@ def load_settings() -> Settings:
         jimeng_endpoint=_resolve_first(("JIMENG_ENDPOINT",), dotenv_values, "https://visual.volcengineapi.com") or "https://visual.volcengineapi.com",
         jimeng_region=_resolve_first(("JIMENG_REGION",), dotenv_values, "cn-north-1") or "cn-north-1",
         jimeng_service=_resolve_first(("JIMENG_SERVICE",), dotenv_values, "cv") or "cv",
-        jimeng_req_key=_resolve_first(("JIMENG_VIDEO_REQ_KEY",), dotenv_values, "jimeng_t2v_v30") or "jimeng_t2v_v30",
+        jimeng_req_key=_resolve_first(("JIMENG_VIDEO_REQ_KEY",), dotenv_values, "jimeng_t2v_v30_1080p") or "jimeng_t2v_v30_1080p",
         jimeng_i2v_req_key=(
             _resolve_first(("JIMENG_VIDEO_I2V_REQ_KEY",), dotenv_values)
-            or ("jimeng_i2v_first_v30_1080" if "1080" in ((_resolve_first(("JIMENG_VIDEO_REQ_KEY",), dotenv_values, "jimeng_t2v_v30") or "jimeng_t2v_v30")) else "jimeng_i2v_first_v30")
+            or (
+                "jimeng_i2v_first_v30_1080"
+                if "1080" in ((_resolve_first(("JIMENG_VIDEO_REQ_KEY",), dotenv_values, "jimeng_t2v_v30_1080p") or "jimeng_t2v_v30_1080p"))
+                else "jimeng_i2v_first_v30"
+            )
         ),
         jimeng_aspect_ratio=_resolve_first(("JIMENG_VIDEO_ASPECT_RATIO",), dotenv_values, "16:9") or "16:9",
         jimeng_frames=_parse_positive_int(_resolve_first(("JIMENG_VIDEO_FRAMES",), dotenv_values), 121),

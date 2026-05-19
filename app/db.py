@@ -19,6 +19,7 @@ PROJECT_VISUAL_STYLE_FIELDS_MIGRATION = "20260517_0008_project_visual_style_fiel
 CHARACTER_CARD_VOICE_FIELDS_MIGRATION = "20260517_0009_character_card_voice_fields"
 LONGFORM_SCHEMA_PARITY_MIGRATION = "20260518_0010_longform_schema_parity"
 CONTEXT_PACK_SCHEMA_MIGRATION = "20260518_0011_context_pack_schema"
+MEDIA_ASSET_META_MEDIUMTEXT_MIGRATION = "20260519_0012_media_asset_meta_mediumtext"
 
 
 settings = load_settings()
@@ -118,6 +119,12 @@ def _migrate_schema() -> None:
             CONTEXT_PACK_SCHEMA_MIGRATION,
             "Context Pack snapshots and feed previews for pre-generation review",
             _migrate_context_pack_schema,
+        )
+        _run_schema_migration(
+            connection,
+            MEDIA_ASSET_META_MEDIUMTEXT_MIGRATION,
+            "Upgrade media_assets.meta_json to MEDIUMTEXT for local media metadata",
+            _migrate_media_asset_meta_mediumtext,
         )
 
 
@@ -572,6 +579,20 @@ def _migrate_context_pack_schema(connection) -> None:
         connection.execute(text("ALTER TABLE context_packs MODIFY COLUMN user_decisions_json MEDIUMTEXT NOT NULL"))
 
 
+def _migrate_media_asset_meta_mediumtext(connection) -> None:
+    column_specs = _column_specs("media_assets")
+    if not column_specs:
+        return
+    column = column_specs.get("meta_json")
+    if column is None:
+        return
+    column_type = str(column["type"]).upper()
+    if "MEDIUMTEXT" in column_type:
+        return
+    connection.execute(text("UPDATE media_assets SET meta_json = '{}' WHERE meta_json IS NULL"))
+    connection.execute(text("ALTER TABLE media_assets MODIFY COLUMN meta_json MEDIUMTEXT NOT NULL"))
+
+
 def _migrate_generation_run_mediumtext(connection) -> None:
     column_specs = _column_specs("generation_runs")
     if not column_specs:
@@ -824,7 +845,7 @@ def _migrate_longform_pipeline_schema(connection) -> None:
                     uri VARCHAR(500) NOT NULL DEFAULT '',
                     prompt TEXT NOT NULL,
                     status VARCHAR(40) NOT NULL DEFAULT 'pending',
-                    meta_json TEXT NOT NULL,
+                    meta_json MEDIUMTEXT NOT NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )

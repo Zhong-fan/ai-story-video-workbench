@@ -1,5 +1,4 @@
 import json
-import json
 from textwrap import dedent
 
 from .config import Settings
@@ -31,8 +30,12 @@ class ProjectBriefingService:
             - 只返回 JSON。
             - 不要说自己不确定，但要在 `confidence_note` 里说明是否可能存在歧义。
             - 不要输出无关分析。
-            - 风格特征、世界特征、叙事约束都要写成短句数组，每组 3 到 5 条。
-            - 叙事约束强调“可以借鉴什么”和“不要直接照搬什么”。
+            - 所有数组都写成短句数组，每组 3 到 5 条。
+            - “写作风格”强调语言质感、节奏、情绪组织、对白气质。
+            - “写作约束”强调结构、叙事边界、哪些可借鉴、哪些不能直接照搬。
+            - “视觉风格”强调美术媒介、色彩、光线、角色气质、环境意象。
+            - “视频约束”强调镜头语言、景别、运镜、构图、画面稳定性和改编边界。
+            - 不要输出“像某某就行”“照着某某做”这种泛话，要写成后续生成系统可直接继承的约束。
 
             JSON 结构必须是：
             {
@@ -43,6 +46,12 @@ class ProjectBriefingService:
               "style_traits": ["...", "...", "..."],
               "world_traits": ["...", "...", "..."],
               "narrative_constraints": ["...", "...", "..."],
+              "writing_style": ["...", "...", "..."],
+              "writing_constraints": ["...", "...", "..."],
+              "visual_style": ["...", "...", "..."],
+              "video_constraints": ["...", "...", "..."],
+              "visual_medium": "...",
+              "visual_artists": ["...", "..."],
               "confidence_note": "..."
             }
             """
@@ -64,6 +73,12 @@ class ProjectBriefingService:
             "style_traits": self._normalize_list(payload.get("style_traits")),
             "world_traits": self._normalize_list(payload.get("world_traits")),
             "narrative_constraints": self._normalize_list(payload.get("narrative_constraints")),
+            "writing_style": self._normalize_list(payload.get("writing_style")),
+            "writing_constraints": self._normalize_list(payload.get("writing_constraints")),
+            "visual_style": self._normalize_list(payload.get("visual_style")),
+            "video_constraints": self._normalize_list(payload.get("video_constraints")),
+            "visual_medium": str(payload.get("visual_medium", "")).strip(),
+            "visual_artists": self._normalize_list(payload.get("visual_artists")),
             "confidence_note": str(payload.get("confidence_note", "")).strip(),
         }
 
@@ -145,6 +160,12 @@ class ProjectBriefingService:
             f"- 风格特征：{'；'.join(self._normalize_list(payload.get('style_traits')))}",
             f"- 世界特征：{'；'.join(self._normalize_list(payload.get('world_traits')))}",
             f"- 叙事约束：{'；'.join(self._normalize_list(payload.get('narrative_constraints')))}",
+            f"- 写作风格：{'；'.join(self._normalize_list(payload.get('writing_style')))}",
+            f"- 写作约束：{'；'.join(self._normalize_list(payload.get('writing_constraints')))}",
+            f"- 视觉风格：{'；'.join(self._normalize_list(payload.get('visual_style')))}",
+            f"- 视频约束：{'；'.join(self._normalize_list(payload.get('video_constraints')))}",
+            f"- 画面媒介：{str(payload.get('visual_medium', '')).strip()}",
+            f"- 风格参考：{'；'.join(self._normalize_list(payload.get('visual_artists')))}",
         ]
         note = str(payload.get("confidence_note", "")).strip()
         if note:

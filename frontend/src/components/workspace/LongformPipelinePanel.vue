@@ -156,6 +156,32 @@ const canRetryBatch = computed(() => {
   const status = latestBatchJob.value?.job_status ?? "";
   return ["failed", "canceled"].includes(status);
 });
+const activeBatchJob = computed(() => {
+  const status = latestBatchJob.value?.job_status ?? "";
+  return ["queued", "retry_queued", "running", "pause_requested", "paused", "cancel_requested"].includes(status)
+    ? latestBatchJob.value
+    : null;
+});
+const batchRangeOutlines = computed(() => {
+  const plan = selectedPlan.value;
+  if (!plan) return [];
+  return plan.chapters.filter(
+    (chapter) => chapter.chapter_no >= batchForm.start_chapter_no && chapter.chapter_no <= batchForm.end_chapter_no,
+  );
+});
+const batchGenerateBlockReason = computed(() => {
+  const plan = selectedPlan.value;
+  if (props.loading) return "正在处理上一个操作，请等当前请求结束。";
+  if (!plan) return "还没有长篇概要，请先生成小说概要。";
+  if (plan.status !== "locked") return "请先点击上方“锁定概要”，锁定后才能顺序生成正文。";
+  if (batchForm.end_chapter_no < batchForm.start_chapter_no) return "结束章不能小于起始章。";
+  if (!batchRangeOutlines.value.length) return "当前章节范围内没有可生成的章节概要。";
+  const unlocked = batchRangeOutlines.value.filter((chapter) => chapter.status !== "outline_locked").map((chapter) => chapter.chapter_no);
+  if (unlocked.length) return `这些章节概要还没锁定：${unlocked.join("、")}。`;
+  if (activeBatchJob.value) return `已有未结束的批量正文任务 #${activeBatchJob.value.id}（${statusLabel(activeBatchJob.value.job_status)}），请先暂停、取消或等待完成。`;
+  return "";
+});
+const canStartBatchGeneration = computed(() => !batchGenerateBlockReason.value);
 const publishedChapters = computed(() => props.currentNovel?.chapters ?? []);
 const selectedDraftVersion = computed(
   () =>
@@ -383,6 +409,25 @@ watch(() => props.project, (project) => {
 function submitFeedback() {
   if (!feedbackForm.target_id && latestPlan.value) feedbackForm.target_id = latestPlan.value.id;
   emit("submit-feedback", { ...feedbackForm, feedback_text: feedbackForm.feedback_text.trim() });
+}
+
+function submitBatchGenerationForm() {
+  if (!canStartBatchGeneration.value) {
+    localError.value = batchGenerateBlockReason.value;
+    console.info("[前端操作] 批量正文生成按钮不可用", {
+      reason: batchGenerateBlockReason.value,
+      series_plan_id: batchForm.series_plan_id,
+      start_chapter_no: batchForm.start_chapter_no,
+      end_chapter_no: batchForm.end_chapter_no,
+      plan_status: selectedPlan.value?.status,
+      active_job_id: activeBatchJob.value?.id,
+      active_job_status: activeBatchJob.value?.job_status,
+    });
+    return;
+  }
+  localError.value = "";
+  console.info("[前端操作] 提交批量正文生成", { ...batchForm });
+  emit("batch-generate", { ...batchForm });
 }
 
 function toggleChapter(chapterId: number) {
@@ -1149,12 +1194,13 @@ function generateTurnaround() {
 
     <section class="panel" v-if="latestPlan && isNovelMode">
       <div class="panel-heading"><div><p class="panel-heading__kicker">批量正文</p><h2>顺序生成</h2></div></div>
-      <form class="form-stack" @submit.prevent="emit('batch-generate', { ...batchForm })">
+      <form class="form-stack" @submit.prevent="submitBatchGenerationForm()">
         <div class="inline-row">
           <label class="field"><span>起始章</span><input v-model.number="batchForm.start_chapter_no" type="number" min="1" /></label>
           <label class="field"><span>结束章</span><input v-model.number="batchForm.end_chapter_no" type="number" min="1" /></label>
         </div>
-        <button class="primary-button" :disabled="loading || latestPlan.status !== 'locked'">一键生成小说内容</button>
+        <button class="primary-button" :disabled="!canStartBatchGeneration">一键生成小说内容</button>
+        <p v-if="batchGenerateBlockReason" class="empty-text">{{ batchGenerateBlockReason }}</p>
       </form>
       <p v-if="latestBatchJob" class="empty-text">{{ batchJobSummary() }}</p>
       <div v-if="latestBatchJob" class="inline-row">
@@ -1324,7 +1370,7 @@ function generateTurnaround() {
           <button class="ghost-button ghost-button--small" type="button" :disabled="loading" @click="createShotAfterLast()">新增镜头</button>
           <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !latestStoryboard.shots.length" @click="emit('generate-audio-scripts', latestStoryboard.id)">从正文生成对白脚本</button>
           <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !latestStoryboard.shots.length" @click="emit('generate-storyboard-voice', latestStoryboard.id)">生成全部角色对白</button>
-          <button class="primary-button primary-button--small" type="button" :disabled="loading || !latestStoryboard.shots.length" @click="emit('prepare-video-production', latestStoryboard.id)">准备并开始视频生产</button>
+          <button class="primary-button primary-button--small" type="button" :disabled="loading || !latestStoryboard.shots.length" @click="emit('prepare-video-production', latestStoryboard.id)">准备视觉并开始视频生产</button>
           <button class="ghost-button ghost-button--small" type="button" :disabled="loading || latestStoryboard.status !== 'draft' || !latestStoryboard.shots.length" @click="emit('create-video-task', latestStoryboard.id)">创建视频导出任务</button>
         </div>
       </div>
