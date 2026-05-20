@@ -82,6 +82,7 @@ from .media_pipeline_service import MediaPipelineService
 from .outline_revision_service import OutlineRevisionService
 from .series_planning_service import SeriesPlanningService
 from .storyboard_job_service import StoryboardJobService
+from .visual_asset_service import CharacterReferenceProfileService
 from .visual_asset_service import VisualAssetService
 from .visual_style_prompt import build_visual_generation_prompt, project_visual_style_summary
 from .voice_service import VoiceService
@@ -1033,6 +1034,25 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         db.refresh(asset)
         return _media_asset_out(asset)
 
+    @router.delete("/api/projects/{project_id}/media-assets/{asset_id}")
+    def delete_media_asset(
+        project_id: int,
+        asset_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, str]:
+        project = _project_or_404(db, current_user.id, project_id)
+        asset = db.scalar(select(MediaAsset).where(MediaAsset.project_id == project.id, MediaAsset.id == asset_id))
+        if asset is None:
+            raise HTTPException(status_code=404, detail="素材不存在。")
+        is_locked_turnaround = asset.asset_type == "character_turnaround" and json_loads_object(asset.meta_json).get("locked") is True
+        db.delete(asset)
+        db.flush()
+        if is_locked_turnaround:
+            CharacterReferenceProfileService().ensure_profiles(db, project)
+        db.commit()
+        return {"status": "deleted"}
+
     @router.post("/api/projects/{project_id}/visual-assets/character-turnaround", response_model=MediaAssetOut)
     def generate_character_turnaround(
         project_id: int,
@@ -1066,6 +1086,53 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         return _media_asset_out(asset)
+
+    @router.delete("/api/projects/{project_id}/video-tasks/{task_id}")
+    def delete_video_task(
+        project_id: int,
+        task_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, str]:
+        project = _project_or_404(db, current_user.id, project_id)
+        task = db.scalar(select(VideoTask).where(VideoTask.project_id == project.id, VideoTask.id == task_id))
+        if task is None:
+            raise HTTPException(status_code=404, detail="视频任务不存在。")
+        for event in db.scalars(select(TaskEvent).where(TaskEvent.video_task_id == task.id)).all():
+            db.delete(event)
+        db.delete(task)
+        db.commit()
+        return {"status": "deleted"}
+
+    @router.delete("/api/projects/{project_id}/storyboards/{storyboard_id}")
+    def delete_storyboard(
+        project_id: int,
+        storyboard_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, str]:
+        project = _project_or_404(db, current_user.id, project_id)
+        storyboard = db.scalar(select(Storyboard).where(Storyboard.project_id == project.id, Storyboard.id == storyboard_id))
+        if storyboard is None:
+            raise HTTPException(status_code=404, detail="分镜稿不存在。")
+
+        task_ids = [task.id for task in db.scalars(select(VideoTask).where(VideoTask.storyboard_id == storyboard.id)).all()]
+        event_ids = {
+            event.id for event in db.scalars(select(TaskEvent).where(TaskEvent.storyboard_id == storyboard.id)).all()
+        }
+        if task_ids:
+            event_ids.update(
+                event.id for event in db.scalars(select(TaskEvent).where(TaskEvent.video_task_id.in_(task_ids))).all()
+            )
+        for event in db.scalars(select(TaskEvent).where(TaskEvent.id.in_(sorted(event_ids)))).all():
+            db.delete(event)
+        for asset in db.scalars(select(MediaAsset).where(MediaAsset.storyboard_id == storyboard.id)).all():
+            db.delete(asset)
+        for task in db.scalars(select(VideoTask).where(VideoTask.storyboard_id == storyboard.id)).all():
+            db.delete(task)
+        db.delete(storyboard)
+        db.commit()
+        return {"status": "deleted"}
 
     @router.post("/api/projects/{project_id}/storyboards/{storyboard_id}/voice-tasks", response_model=list[MediaAssetOut])
     def generate_storyboard_voice(

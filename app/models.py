@@ -144,6 +144,10 @@ class Project(Base, TimestampMixin):
     context_packs: Mapped[list["ContextPack"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     reference_facts: Mapped[list["ReferenceFact"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     reference_image_assets: Mapped[list["ReferenceImageAsset"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    character_reference_profiles: Mapped[list["CharacterReferenceProfile"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def reference_work_style_traits(self) -> list[str]:
@@ -348,19 +352,68 @@ class ReferenceFact(Base, TimestampMixin):
 
 class ReferenceImageAsset(Base, TimestampMixin):
     __tablename__ = "reference_image_assets"
-    __table_args__ = (UniqueConstraint("project_id", "remote_url", name="uq_reference_image_assets_project_url"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "remote_url_hash",
+            name="uq_reference_image_assets_project_url_hash",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
     source_work: Mapped[str] = mapped_column(String(255), nullable=False)
     asset_kind: Mapped[str] = mapped_column(String(80), default="stills", nullable=False)
     remote_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    remote_url_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     provider: Mapped[str] = mapped_column(String(80), default="manual", nullable=False)
     source_page: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
     mapped_character_name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="candidate", nullable=False)
 
     project: Mapped["Project"] = relationship(back_populates="reference_image_assets")
+
+
+class CharacterReferenceProfile(Base, TimestampMixin):
+    __tablename__ = "character_reference_profiles"
+    __table_args__ = (UniqueConstraint("project_id", "character_card_id", name="uq_character_reference_profiles_project_character"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    character_card_id: Mapped[int] = mapped_column(ForeignKey("character_cards.id"), nullable=False)
+    reference_character_name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    visual_reference_asset_ids_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    locked_turnaround_asset_id: Mapped[int | None] = mapped_column(ForeignKey("media_assets.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), default="unmapped", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+    project: Mapped["Project"] = relationship(back_populates="character_reference_profiles")
+    character_card: Mapped["CharacterCard"] = relationship()
+    locked_turnaround_asset: Mapped["MediaAsset | None"] = relationship(foreign_keys=[locked_turnaround_asset_id])
+
+    @property
+    def visual_reference_asset_ids(self) -> list[int]:
+        ids: list[int] = []
+        for item in _json_text_list(self.visual_reference_asset_ids_json):
+            try:
+                value = int(item)
+            except (TypeError, ValueError):
+                continue
+            if value not in ids:
+                ids.append(value)
+        return ids
+
+    @visual_reference_asset_ids.setter
+    def visual_reference_asset_ids(self, value: list[int]) -> None:
+        normalized: list[int] = []
+        for item in value:
+            try:
+                asset_id = int(item)
+            except (TypeError, ValueError):
+                continue
+            if asset_id not in normalized:
+                normalized.append(asset_id)
+        self.visual_reference_asset_ids_json = json.dumps(normalized, ensure_ascii=False)
 
 
 class ProjectChapter(Base, TimestampMixin):

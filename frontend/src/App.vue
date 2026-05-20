@@ -12,7 +12,6 @@ import NovelStagePage from "./components/workspace/NovelStagePage.vue";
 import VideoStagePage from "./components/workspace/VideoStagePage.vue";
 import GenerationTracePanel from "./components/workspace/GenerationTracePanel.vue";
 import ContextReviewPage from "./components/workspace/ContextReviewPage.vue";
-import ProjectContentLibraryPanel from "./components/workspace/ProjectContentLibraryPanel.vue";
 import ProjectCreateWizard from "./components/workspace/ProjectCreateWizard.vue";
 import ProjectSettingsPanel from "./components/workspace/ProjectSettingsPanel.vue";
 import StudioWorkspacePanel from "./components/workspace/StudioWorkspacePanel.vue";
@@ -447,7 +446,7 @@ function goToView(view: ViewKey) {
     openAuthPanel("register", view);
     return;
   }
-  if (view !== "auth" && !isAuthenticated.value && ["studio", "trash", "setupStage", "novelStage", "videoStage", "projectSettings", "projectLibrary", "contextReview", "characters", "novelCreate", "videoCreate", "novelReader", "generationTrace", "novelEditor"].includes(view)) {
+  if (view !== "auth" && !isAuthenticated.value && ["studio", "trash", "setupStage", "novelStage", "videoStage", "projectSettings", "contextReview", "characters", "novelCreate", "videoCreate", "novelReader", "generationTrace", "novelEditor"].includes(view)) {
     openAuthPanel("login", view);
     return;
   }
@@ -862,15 +861,6 @@ function clearLongformPreferences() {
   preferredVideoTaskId.value = null;
 }
 
-async function openProjectLibrary() {
-  if (!isAuthenticated.value) return openAuthPanel("login");
-  if (activeProject.value?.project.id) {
-    await store.loadLongformState(activeProject.value.project.id, { silent: true });
-  }
-  clearLongformPreferences();
-  currentView.value = "projectLibrary";
-}
-
 async function openNovelCreate() {
   if (!isAuthenticated.value) return openAuthPanel("login");
   if (!store.hasConfirmedContextPack()) {
@@ -923,43 +913,6 @@ function openGenerationTraceImmediately() {
   if (activeProject.value?.project.id) {
     void store.loadLongformState(activeProject.value.project.id, { silent: true });
   }
-}
-
-async function openContentLibraryItem(target: {
-  view: "projectSettings" | "characters" | "novelCreate" | "videoCreate";
-  characterCardId?: number;
-  projectChapterId?: number;
-  seriesPlanId?: number;
-  draftVersionId?: number;
-  storyboardId?: number;
-  videoTaskId?: number;
-}) {
-  if (target.view === "projectSettings") {
-    openProjectSettings();
-    return;
-  }
-  if (target.view === "characters") {
-    const card = activeProject.value?.character_cards.find((item) => item.id === target.characterCardId);
-    if (card) editCharacterCard(card);
-    openCharacters();
-    return;
-  }
-  if (target.view === "novelCreate") {
-    preferredSeriesPlanId.value = target.seriesPlanId ?? null;
-    preferredLongformDraftVersionId.value = target.draftVersionId ?? null;
-    preferredStoryboardId.value = null;
-    preferredVideoTaskId.value = null;
-    if (typeof target.projectChapterId === "number") {
-      selectedProjectChapterId.value = target.projectChapterId;
-    }
-    await openNovelCreate();
-    return;
-  }
-  preferredSeriesPlanId.value = target.seriesPlanId ?? null;
-  preferredLongformDraftVersionId.value = target.draftVersionId ?? null;
-  preferredStoryboardId.value = target.storyboardId ?? null;
-  preferredVideoTaskId.value = target.videoTaskId ?? null;
-  await openVideoCreate();
 }
 
 async function openNovelEditor(projectId?: number) {
@@ -1321,6 +1274,10 @@ async function submitUpdateAsset(payload: { assetId: number; uri: string; status
   });
 }
 
+async function submitDeleteAsset(payload: { assetId: number }) {
+  await store.deleteMediaAsset(payload.assetId);
+}
+
 async function submitGenerateCharacterTurnaround(payload: { character_card_id: number; chapter_no?: number | null; prompt_note: string }) {
   openGenerationTraceImmediately();
   await store.generateCharacterTurnaround({
@@ -1381,6 +1338,14 @@ async function submitUpdateVideoTask(payload: {
     progress: payload.progress,
     error_message: payload.error_message,
   });
+}
+
+async function submitDeleteVideoTask(payload: { taskId: number }) {
+  await store.deleteVideoTask(payload.taskId);
+}
+
+async function submitDeleteStoryboard(payload: { storyboardId: number }) {
+  await store.deleteStoryboard(payload.storyboardId);
 }
 
 async function submitPublishNovel() {
@@ -1620,7 +1585,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
       />
     </template>
 
-    <template v-else-if="['setupStage', 'novelStage', 'videoStage', 'novelEditor', 'projectSettings', 'projectLibrary', 'contextReview', 'characters', 'novelCreate', 'videoCreate', 'generationTrace'].includes(currentView)">
+    <template v-else-if="['setupStage', 'novelStage', 'videoStage', 'novelEditor', 'projectSettings', 'contextReview', 'characters', 'novelCreate', 'videoCreate', 'generationTrace'].includes(currentView)">
       <div class="editor-shell">
         <aside class="editor-sidebar panel panel--paper">
           <div class="brand brand--sidebar">
@@ -1637,7 +1602,6 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
           </nav>
           <nav class="sidebar-nav sidebar-nav--secondary" aria-label="Secondary">
             <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'generationTrace' }" @click="openGenerationTrace()">生成过程</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'projectLibrary' }" @click="openProjectLibrary()">内容库</button>
           </nav>
         </aside>
 
@@ -1652,7 +1616,6 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @open-settings="openProjectSettings()"
               @open-characters="openCharacters()"
               @open-context-review="openContextReview()"
-              @open-library="openProjectLibrary()"
             />
           </template>
 
@@ -1702,7 +1665,6 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @save-story-boundaries="saveProjectStoryBoundaries()"
               @generate-suggestion="generateProjectSuggestion($event, projectSettingsForm)"
               @use-suggestion="appendOrReplaceField(projectSettingsForm, $event.kind, $event.text, $event.mode)"
-              @open-content-library="openProjectLibrary()"
             />
           </template>
 
@@ -1722,24 +1684,6 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
             />
           </template>
 
-          <template v-else-if="currentView === 'projectLibrary'">
-            <ProjectContentLibraryPanel
-              v-if="isAuthenticated && hasProject"
-              :project="activeProject?.project"
-              :project-chapters="activeProject?.project_chapters || []"
-              :memories="activeProject?.memories || []"
-              :character-cards="activeProject?.character_cards || []"
-              :sources="activeProject?.sources || []"
-              :state="longformState"
-              :loading="loading"
-              @open-settings="openProjectSettings()"
-              @open-characters="openCharacters()"
-              @open-novel-create="openNovelCreate()"
-              @open-video-create="openVideoCreate()"
-              @open-item="openContentLibraryItem"
-            />
-          </template>
-
           <template v-else-if="currentView === 'characters'">
             <main v-if="isAuthenticated && hasProject" class="workspace workspace--single">
               <section class="panel panel--paper">
@@ -1751,7 +1695,6 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
                   </div>
                   <div class="mode-switch">
                     <button class="ghost-button ghost-button--small" type="button" @click="openProjectSettings()">项目设定</button>
-                    <button class="ghost-button ghost-button--small" type="button" @click="openProjectLibrary()">内容库</button>
                     <button v-if="editingCharacterId" class="ghost-button ghost-button--small" type="button" @click="resetCharacterForm()">取消</button>
                   </div>
                 </div>
@@ -1862,6 +1805,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               :state="longformState"
               :context-pack="contextPack"
               :character-cards="activeProject?.character_cards || []"
+              :character-reference-profiles="activeProject?.character_reference_profiles || []"
               :managed-novels="managedNovels"
               :current-novel="currentNovel"
               :preferred-series-plan-id="preferredSeriesPlanId"
@@ -1885,6 +1829,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @update-outline="submitUpdateOutline"
               @update-shot="submitUpdateShot"
               @update-asset="submitUpdateAsset"
+              @delete-asset="submitDeleteAsset"
               @generate-character-turnaround="submitGenerateCharacterTurnaround"
               @generate-shot-first-frame="submitGenerateShotFirstFrame"
               @generate-audio-scripts="(storyboardId) => { openGenerationTraceImmediately(); return store.generateStoryboardAudioScripts(storyboardId); }"
@@ -1893,6 +1838,8 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @generate-shot-voice="({ storyboardId, shotId, voice_role, character_card_id, dialogue_text, voice_profile, emotion }) => { openGenerationTraceImmediately(); return store.generateShotVoice(storyboardId, shotId, { voice_role, character_card_id, dialogue_text, voice_profile, emotion }); }"
               @create-shot="submitCreateShot"
               @delete-shot="submitDeleteShot"
+              @delete-video-task="submitDeleteVideoTask"
+              @delete-storyboard="submitDeleteStoryboard"
               @reorder-shots="submitReorderShots"
               @update-video-task="submitUpdateVideoTask"
               @update-visual-style="submitUpdateVisualStyle"
@@ -1908,6 +1855,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               :state="longformState"
               :context-pack="contextPack"
               :character-cards="activeProject?.character_cards || []"
+              :character-reference-profiles="activeProject?.character_reference_profiles || []"
               :managed-novels="managedNovels"
               :current-novel="currentNovel"
               :preferred-series-plan-id="preferredSeriesPlanId"
@@ -1931,6 +1879,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @update-outline="submitUpdateOutline"
               @update-shot="submitUpdateShot"
               @update-asset="submitUpdateAsset"
+              @delete-asset="submitDeleteAsset"
               @generate-character-turnaround="submitGenerateCharacterTurnaround"
               @generate-shot-first-frame="submitGenerateShotFirstFrame"
               @generate-audio-scripts="(storyboardId) => { openGenerationTraceImmediately(); return store.generateStoryboardAudioScripts(storyboardId); }"
@@ -1939,6 +1888,8 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @generate-shot-voice="({ storyboardId, shotId, voice_role, character_card_id, dialogue_text, voice_profile, emotion }) => { openGenerationTraceImmediately(); return store.generateShotVoice(storyboardId, shotId, { voice_role, character_card_id, dialogue_text, voice_profile, emotion }); }"
               @create-shot="submitCreateShot"
               @delete-shot="submitDeleteShot"
+              @delete-video-task="submitDeleteVideoTask"
+              @delete-storyboard="submitDeleteStoryboard"
               @reorder-shots="submitReorderShots"
               @update-video-task="submitUpdateVideoTask"
               @update-visual-style="submitUpdateVisualStyle"
@@ -2028,7 +1979,6 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
             <button class="sidebar-nav__item sidebar-nav__item--main" :class="{ 'sidebar-nav__item--active': currentView === 'studio' }" @click="goToView('studio')">我的项目</button>
             <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'projectCreate' }" @click="openProjectCreate()">新建项目</button>
             <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'trash' }" @click="goToView('trash')">回收站</button>
-            <button v-if="hasProject" class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'projectLibrary' }" @click="openProjectLibrary()">项目内容库</button>
           </nav>
           <div class="sidebar__footer">
             <template v-if="isAuthenticated">

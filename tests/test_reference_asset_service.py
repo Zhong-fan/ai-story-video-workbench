@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import unittest
 
+from sqlalchemy import UniqueConstraint
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -46,6 +48,26 @@ class ReferenceAssetServiceTests(unittest.TestCase):
             self.assertEqual(len(persisted), 1)
             self.assertEqual(persisted[0].status, "candidate")
             self.assertEqual(persisted[0].source_work, "天气之子")
+            self.assertEqual(
+                persisted[0].remote_url_hash,
+                hashlib.sha256("https://example.com/weathering/poster.jpg".encode("utf-8")).hexdigest(),
+            )
+
+    def test_reference_image_asset_uniqueness_uses_fixed_width_url_hash(self) -> None:
+        table = ReferenceImageAsset.__table__
+        unique_columns = {
+            constraint.name: tuple(column.name for column in constraint.columns)
+            for constraint in table.constraints
+            if isinstance(constraint, UniqueConstraint)
+        }
+
+        self.assertIn("remote_url_hash", table.c)
+        self.assertEqual(
+            unique_columns.get("uq_reference_image_assets_project_url_hash"),
+            ("project_id", "remote_url_hash"),
+        )
+        self.assertNotIn(("project_id", "remote_url"), unique_columns.values())
+        self.assertEqual(table.c.remote_url_hash.type.length, 64)
 
     def test_approval_rejection_mapping_and_workflow_state(self) -> None:
         service = ReferenceAssetService()

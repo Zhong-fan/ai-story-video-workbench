@@ -1302,6 +1302,26 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     }
   }
 
+  async function deleteStoryboard(storyboardId: number) {
+    if (!token.value || !activeProject.value) return false;
+    loading.value = true;
+    error.value = "";
+    success.value = "";
+    try {
+      const projectId = activeProject.value.project.id;
+      const deleted = await api.deleteStoryboard(token.value, projectId, storyboardId);
+      await loadLongformState(projectId);
+      await selectProject(projectId, { showLoading: false, silent: true });
+      success.value = deleted.status === "deleted" ? "分镜稿已删除。" : "分镜稿已移除。";
+      return true;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : "删除分镜稿失败。";
+      return false;
+    } finally {
+      loading.value = false;
+    }
+  }
+
   async function updateChapterOutline(outlineId: number, payload: UpdateChapterOutlinePayload) {
     if (!token.value || !activeProject.value) return null;
     loading.value = true;
@@ -1398,13 +1418,37 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     error.value = "";
     success.value = "";
     try {
-      const asset = await api.updateMediaAsset(token.value, activeProject.value.project.id, assetId, payload);
-      await loadLongformState(activeProject.value.project.id);
+      const projectId = activeProject.value.project.id;
+      const asset = await api.updateMediaAsset(token.value, projectId, assetId, payload);
+      await loadLongformState(projectId);
+      if (payload.meta.locked !== undefined) {
+        await selectProject(projectId, { showLoading: false, silent: true });
+      }
       success.value = "素材状态已保存。";
       return asset;
     } catch (err) {
       error.value = err instanceof Error ? err.message : "保存素材状态失败。";
       return null;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function deleteMediaAsset(assetId: number) {
+    if (!token.value || !activeProject.value) return false;
+    loading.value = true;
+    error.value = "";
+    success.value = "";
+    try {
+      const projectId = activeProject.value.project.id;
+      const deleted = await api.deleteMediaAsset(token.value, projectId, assetId);
+      await loadLongformState(projectId);
+      await selectProject(projectId, { showLoading: false, silent: true });
+      success.value = deleted.status === "deleted" ? "素材已删除。" : "素材已移除。";
+      return true;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : "删除素材失败。";
+      return false;
     } finally {
       loading.value = false;
     }
@@ -1417,8 +1461,10 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     success.value = "";
     beginLongformRequest("longform_visual", "正在提交角色三视图生成请求…", { character_card_id: payload.character_card_id, chapter_no: payload.chapter_no ?? null });
     try {
-      const asset = await api.generateCharacterTurnaround(token.value, activeProject.value.project.id, payload);
-      await loadLongformState(activeProject.value.project.id);
+      const projectId = activeProject.value.project.id;
+      const asset = await api.generateCharacterTurnaround(token.value, projectId, payload);
+      await loadLongformState(projectId);
+      await selectProject(projectId, { showLoading: false, silent: true });
       success.value = "角色三视图已生成。";
       return asset;
     } catch (err) {
@@ -1551,6 +1597,26 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     }
   }
 
+  async function deleteVideoTask(taskId: number) {
+    if (!token.value || !activeProject.value) return false;
+    loading.value = true;
+    error.value = "";
+    success.value = "";
+    try {
+      const projectId = activeProject.value.project.id;
+      const deleted = await api.deleteVideoTask(token.value, projectId, taskId);
+      await loadLongformState(projectId);
+      await selectProject(projectId, { showLoading: false, silent: true });
+      success.value = deleted.status === "deleted" ? "视频任务已删除。" : "视频任务已移除。";
+      return true;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : "删除视频任务失败。";
+      return false;
+    } finally {
+      loading.value = false;
+    }
+  }
+
   return {
     bootstrap,
     captcha,
@@ -1610,12 +1676,14 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     reviseDraftVersion,
     canonicalizeDraftVersion,
     createVideoTask,
+    deleteStoryboard,
     updateChapterOutline,
     updateStoryboardShot,
     createStoryboardShot,
     deleteStoryboardShot,
     reorderStoryboardShots,
     updateMediaAsset,
+    deleteMediaAsset,
     generateCharacterTurnaround,
     generateShotFirstFrame,
     generateStoryboardAudioScripts,
@@ -1623,6 +1691,7 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     generateShotVoice,
     prepareVideoProduction,
     updateVideoTask,
+    deleteVideoTask,
     updateProject,
     parseStoryBoundaries,
     updateStoryBoundaries,

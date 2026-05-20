@@ -279,6 +279,7 @@ class ProjectDetailResponse(BaseModel):
     relationship_state_updates: list[RelationshipStateUpdateOut] = []
     story_events: list[StoryEventOut] = []
     world_perception_updates: list[WorldPerceptionUpdateOut] = []
+    character_reference_profiles: list["CharacterReferenceProfileOut"] = []
     context_pack: "ContextPackOut | None" = None
 
 
@@ -379,6 +380,21 @@ class ReferenceImageAssetOut(BaseModel):
 class ReferenceImageAssetUpdateRequest(BaseModel):
     status: str = Field(..., pattern="^(candidate|approved|rejected)$")
     mapped_character_name: str = Field(default="", max_length=120)
+
+
+class CharacterReferenceProfileOut(BaseModel):
+    id: int
+    project_id: int
+    character_card_id: int
+    reference_character_name: str
+    visual_reference_asset_ids: list[int] = []
+    locked_turnaround_asset_id: int | None = None
+    status: str
+    notes: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReferenceAssetWorkflowStateOut(BaseModel):

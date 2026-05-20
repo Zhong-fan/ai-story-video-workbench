@@ -23,6 +23,7 @@ from .api_support import (
 from .auth import get_current_user
 from .contracts import (
     CharacterCardCreateRequest,
+    CharacterReferenceProfileOut,
     ContextPackBuildRequest,
     ContextPackConfirmResponse,
     ContextPackDecisionRequest,
@@ -86,6 +87,7 @@ from .project_briefing_service import ProjectBriefingService
 from .reference_asset_service import ReferenceAssetService
 from .reference_policy_service import ReferencePolicyService
 from .story_boundary_service import StoryBoundaryService
+from .visual_asset_service import CharacterReferenceProfileService
 
 
 def _apply_reference_work_payload(project: Project, payload: ProjectCreateRequest | ProjectUpdateRequest) -> None:
@@ -117,6 +119,7 @@ def register_project_routes(router: APIRouter) -> None:
     story_boundary_service = StoryBoundaryService()
     reference_asset_service = ReferenceAssetService()
     reference_policy_service = ReferencePolicyService()
+    character_reference_profile_service = CharacterReferenceProfileService()
 
     @router.get("/api/projects", response_model=list[ProjectOut])
     def list_projects(
@@ -491,6 +494,8 @@ def register_project_routes(router: APIRouter) -> None:
     ) -> ProjectDetailResponse:
         project = _project_or_404(db, current_user.id, project_id)
         context_pack = context_pack_service.latest_for_project(db, project.id)
+        character_reference_profiles = character_reference_profile_service.ensure_profiles(db, project)
+        db.commit()
         generations = db.scalars(
             select(GenerationRun).where(GenerationRun.project_id == project.id).order_by(GenerationRun.created_at.desc())
         ).all()
@@ -511,6 +516,10 @@ def register_project_routes(router: APIRouter) -> None:
             relationship_state_updates=[_relationship_state_out(item) for item in relationship_updates[:20]],
             story_events=[_story_event_out(item) for item in story_events[:20]],
             world_perception_updates=[_world_perception_out(item) for item in world_updates[:20]],
+            character_reference_profiles=[
+                CharacterReferenceProfileOut.model_validate(item)
+                for item in sorted(character_reference_profiles, key=lambda profile: profile.character_card_id)
+            ],
             context_pack=ContextPackOut(**context_pack_service.as_dict(context_pack)) if context_pack is not None else None,
         )
 

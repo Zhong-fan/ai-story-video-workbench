@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import VideoCreatePage from "./VideoCreatePage.vue";
-import type { CharacterCard, ContextPack, LongformState, NovelCard, NovelDetail, Project } from "../../types";
+import type { CharacterCard, CharacterReferenceProfile, ContextPack, LongformState, NovelCard, NovelDetail, Project } from "../../types";
 
 defineProps<{
   project?: Project | null;
@@ -9,6 +9,7 @@ defineProps<{
   state: LongformState;
   contextPack?: ContextPack | null;
   characterCards: CharacterCard[];
+  characterReferenceProfiles?: CharacterReferenceProfile[];
   managedNovels: NovelCard[];
   currentNovel?: NovelDetail | null;
   preferredSeriesPlanId?: number | null;
@@ -35,6 +36,7 @@ const emit = defineEmits<{
   (e: "update-outline", value: { outlineId: number; title: string; outline: Record<string, unknown>; status: string }): void;
   (e: "update-shot", value: { storyboardId: number; shotId: number; narration_text: string; visual_prompt: string; character_refs: unknown[]; scene_refs: unknown[]; audio_script: Record<string, unknown>; duration_seconds: number; status: string }): void;
   (e: "update-asset", value: { assetId: number; uri: string; status: string; meta: Record<string, unknown> }): void;
+  (e: "delete-asset", value: { assetId: number }): void;
   (e: "generate-character-turnaround", value: { character_card_id: number; chapter_no?: number | null; prompt_note: string }): void;
   (e: "generate-shot-first-frame", value: { storyboardId: number; shotId: number }): void;
   (e: "generate-audio-scripts", storyboardId: number): void;
@@ -43,6 +45,8 @@ const emit = defineEmits<{
   (e: "generate-shot-voice", value: { storyboardId: number; shotId: number; voice_role?: "narrator" | "dialogue"; character_card_id?: number | null; dialogue_text?: string; voice_profile?: string; emotion?: string }): void;
   (e: "create-shot", value: { storyboardId: number; shot_no?: number | null; narration_text: string; visual_prompt: string; character_refs: unknown[]; scene_refs: unknown[]; audio_script: Record<string, unknown>; duration_seconds: number; status: string }): void;
   (e: "delete-shot", value: { storyboardId: number; shotId: number }): void;
+  (e: "delete-video-task", value: { taskId: number }): void;
+  (e: "delete-storyboard", value: { storyboardId: number }): void;
   (e: "reorder-shots", value: { storyboardId: number; shot_ids: number[] }): void;
   (e: "update-video-task", value: { taskId: number; task_status: string; output_uri: string; progress: Record<string, unknown>; error_message: string }): void;
   (e: "update-visual-style", value: { locked: boolean; medium: string; artists: string[]; positive: string[]; negative: string[]; notes: string }): void;
@@ -57,6 +61,7 @@ const emit = defineEmits<{
     :state="state"
     :context-pack="contextPack"
     :character-cards="characterCards"
+    :character-reference-profiles="characterReferenceProfiles"
     :managed-novels="managedNovels"
     :current-novel="currentNovel"
     :preferred-series-plan-id="preferredSeriesPlanId"
@@ -80,6 +85,7 @@ const emit = defineEmits<{
     @update-outline="emit('update-outline', $event)"
     @update-shot="emit('update-shot', $event)"
     @update-asset="emit('update-asset', $event)"
+    @delete-asset="emit('delete-asset', $event)"
     @generate-character-turnaround="emit('generate-character-turnaround', $event)"
     @generate-shot-first-frame="emit('generate-shot-first-frame', $event)"
     @generate-audio-scripts="emit('generate-audio-scripts', $event)"
@@ -88,6 +94,8 @@ const emit = defineEmits<{
     @generate-shot-voice="emit('generate-shot-voice', $event)"
     @create-shot="emit('create-shot', $event)"
     @delete-shot="emit('delete-shot', $event)"
+    @delete-video-task="emit('delete-video-task', $event)"
+    @delete-storyboard="emit('delete-storyboard', $event)"
     @reorder-shots="emit('reorder-shots', $event)"
     @update-video-task="emit('update-video-task', $event)"
     @update-visual-style="emit('update-visual-style', $event)"

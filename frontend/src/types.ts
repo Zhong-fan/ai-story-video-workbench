@@ -6,7 +6,6 @@ export type ViewKey =
   | "novelStage"
   | "videoStage"
   | "projectSettings"
-  | "projectLibrary"
   | "contextReview"
   | "characters"
   | "novelCreate"
@@ -182,6 +181,19 @@ export interface ReferenceImageAsset {
   updated_at: string;
 }
 
+export interface CharacterReferenceProfile {
+  id: number;
+  project_id: number;
+  character_card_id: number;
+  reference_character_name: string;
+  visual_reference_asset_ids: number[];
+  locked_turnaround_asset_id?: number | null;
+  status: "unmapped" | "mapped" | "reference_assets_ready" | "turnaround_candidate_ready" | "turnaround_locked";
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ReferenceImageCandidatePayload {
   remote_url: string;
   asset_kind?: string;
@@ -349,6 +361,7 @@ export interface ProjectDetailResponse {
   relationship_state_updates: RelationshipStateUpdate[];
   story_events: StoryEventItem[];
   world_perception_updates: WorldPerceptionUpdate[];
+  character_reference_profiles: CharacterReferenceProfile[];
   context_pack?: ContextPack | null;
 }
 

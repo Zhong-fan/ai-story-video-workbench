@@ -7,19 +7,176 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import Settings
 from .jimeng_image_client import JimengImageClient
 from .json_utils import json_dumps, json_loads_list, json_loads_object
-from .models import CharacterCard, MediaAsset, Project, Storyboard, StoryboardShot, TaskEvent
+from .models import CharacterCard, CharacterReferenceProfile, MediaAsset, Project, ReferenceImageAsset, Storyboard, StoryboardShot, TaskEvent
 from .video_render_service import VideoRenderService
 from .visual_style_prompt import build_character_visual_prompt, build_visual_generation_prompt, project_visual_style_summary
+
+
+class CharacterReferenceProfileService:
+    def ensure_profiles(self, db: Session, project: Project) -> list[CharacterReferenceProfile]:
+        cards = [
+            item
+            for item in db.scalars(
+                select(CharacterCard)
+                .where(CharacterCard.project_id == project.id, CharacterCard.deleted_at.is_(None))
+                .order_by(CharacterCard.id.asc())
+            ).all()
+        ]
+        existing = {
+            item.character_card_id: item
+            for item in db.scalars(
+                select(CharacterReferenceProfile).where(CharacterReferenceProfile.project_id == project.id)
+            ).all()
+        }
+        profiles: list[CharacterReferenceProfile] = []
+        for card in cards:
+            profile = existing.get(card.id)
+            if profile is None:
+                profile = CharacterReferenceProfile(project_id=project.id, character_card_id=card.id)
+                db.add(profile)
+            self._sync_profile_from_existing_assets(db, profile=profile, character=card, project=project)
+            profiles.append(profile)
+        return profiles
+
+    def apply_turnaround_lock(self, db: Session, project: Project, asset: MediaAsset, locked: bool) -> CharacterReferenceProfile | None:
+        if asset.asset_type != "character_turnaround":
+            return None
+        meta = json_loads_object(asset.meta_json)
+        character_id = self._safe_int(meta.get("character_card_id"))
+        if character_id is None:
+            return None
+        character = db.scalar(
+            select(CharacterCard).where(
+                CharacterCard.id == character_id,
+                CharacterCard.project_id == project.id,
+                CharacterCard.deleted_at.is_(None),
+            )
+        )
+        if character is None:
+            return None
+        profile = self._profile_for_character(db, project=project, character=character)
+        if meta.get("character_name"):
+            profile.reference_character_name = str(meta.get("character_name") or "").strip()
+        elif not profile.reference_character_name:
+            profile.reference_character_name = character.name
+        if locked:
+            profile.locked_turnaround_asset_id = asset.id
+            profile.status = "turnaround_locked"
+        else:
+            profile.locked_turnaround_asset_id = None if profile.locked_turnaround_asset_id == asset.id else profile.locked_turnaround_asset_id
+            if profile.locked_turnaround_asset_id is None:
+                profile.status = "unmapped"
+            self._sync_profile_from_existing_assets(db, profile=profile, character=character, project=project, ignored_locked_asset_id=asset.id)
+        return profile
+
+    def locked_turnaround_for_shot(self, db: Session, project: Project, shot: StoryboardShot, character_ids: list[int]) -> list[dict[str, Any]]:
+        if not character_ids:
+            return []
+        profiles = {
+            profile.character_card_id: profile
+            for profile in self.ensure_profiles(db, project)
+            if profile.character_card_id in character_ids
+        }
+        result: list[dict[str, Any]] = []
+        for character_id in character_ids:
+            profile = profiles.get(character_id)
+            if profile is None or profile.status != "turnaround_locked" or profile.locked_turnaround_asset_id is None:
+                continue
+            asset = db.get(MediaAsset, profile.locked_turnaround_asset_id)
+            if asset is None or asset.project_id != project.id or asset.asset_type != "character_turnaround" or asset.status != "completed":
+                continue
+            result.append(
+                {
+                    "asset_id": asset.id,
+                    "character_card_id": character_id,
+                    "character_name": profile.reference_character_name,
+                    "uri": asset.uri,
+                    "status": asset.status,
+                }
+            )
+        return result
+
+    def _profile_for_character(self, db: Session, *, project: Project, character: CharacterCard) -> CharacterReferenceProfile:
+        profile = db.scalar(
+            select(CharacterReferenceProfile).where(
+                CharacterReferenceProfile.project_id == project.id,
+                CharacterReferenceProfile.character_card_id == character.id,
+            )
+        )
+        if profile is None:
+            profile = CharacterReferenceProfile(project_id=project.id, character_card_id=character.id)
+            db.add(profile)
+            db.flush()
+        return profile
+
+    def _sync_profile_from_existing_assets(
+        self,
+        db: Session,
+        *,
+        profile: CharacterReferenceProfile,
+        character: CharacterCard,
+        project: Project,
+        ignored_locked_asset_id: int | None = None,
+    ) -> None:
+        approved_assets = db.scalars(
+            select(ReferenceImageAsset).where(
+                ReferenceImageAsset.project_id == project.id,
+                ReferenceImageAsset.status == "approved",
+                ReferenceImageAsset.mapped_character_name == character.name,
+            )
+        ).all()
+        turnarounds = db.scalars(
+            select(MediaAsset).where(
+                MediaAsset.project_id == project.id,
+                MediaAsset.asset_type == "character_turnaround",
+                MediaAsset.status == "completed",
+            )
+        ).all()
+        character_turnarounds: list[MediaAsset] = []
+        locked_asset: MediaAsset | None = None
+        for asset in turnarounds:
+            meta = json_loads_object(asset.meta_json)
+            if self._safe_int(meta.get("character_card_id")) != character.id:
+                continue
+            character_turnarounds.append(asset)
+            if asset.id != ignored_locked_asset_id and meta.get("locked") is True:
+                locked_asset = asset
+        profile.visual_reference_asset_ids = [asset.id for asset in approved_assets]
+        profile.reference_character_name = profile.reference_character_name or character.name
+        if locked_asset is not None:
+            meta = json_loads_object(locked_asset.meta_json)
+            profile.locked_turnaround_asset_id = locked_asset.id
+            profile.reference_character_name = str(meta.get("character_name") or profile.reference_character_name or character.name).strip()
+            profile.status = "turnaround_locked"
+            return
+        if character_turnarounds:
+            profile.status = "turnaround_candidate_ready"
+            profile.locked_turnaround_asset_id = None
+            return
+        if approved_assets:
+            profile.status = "reference_assets_ready"
+            profile.locked_turnaround_asset_id = None
+            return
+        profile.status = "mapped" if profile.reference_character_name and profile.reference_character_name != character.name else "unmapped"
+        profile.locked_turnaround_asset_id = None
+
+    def _safe_int(self, value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
 
 class VisualAssetService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.character_reference_profiles = CharacterReferenceProfileService()
 
     def generate_shot_first_frame(
         self,
@@ -167,27 +324,12 @@ class VisualAssetService:
         character_ids = self._shot_character_ids(shot)
         if not character_ids:
             return []
-        assets = db.query(MediaAsset).filter(
-            MediaAsset.project_id == project.id,
-            MediaAsset.asset_type == "character_turnaround",
-            MediaAsset.status == "completed",
-        ).all()
-        by_character_id: dict[int, dict[str, Any]] = {}
-        for asset in assets:
-            meta = json_loads_object(asset.meta_json)
-            if meta.get("locked") is not True:
-                continue
-            character_id = self._safe_int(meta.get("character_card_id"))
-            if character_id is None or character_id not in character_ids:
-                continue
-            by_character_id[character_id] = {
-                "asset_id": asset.id,
-                "character_card_id": character_id,
-                "character_name": str(meta.get("character_name") or ""),
-                "uri": asset.uri,
-                "status": asset.status,
-            }
-        return [by_character_id[character_id] for character_id in character_ids if character_id in by_character_id]
+        return self.character_reference_profiles.locked_turnaround_for_shot(
+            db=db,
+            project=project,
+            shot=shot,
+            character_ids=character_ids,
+        )
 
     def apply_turnaround_lock(
         self,
@@ -203,6 +345,7 @@ class VisualAssetService:
         character_id = self._safe_int(meta.get("character_card_id"))
         if character_id is None:
             meta["locked"] = bool(locked)
+            meta["candidate_status"] = "locked" if locked else "candidate"
             meta["turnaround_status"] = "turnaround_locked" if locked else "candidate_ready"
             asset.meta_json = json_dumps(meta)
             return
@@ -219,12 +362,15 @@ class VisualAssetService:
                 if self._safe_int(sibling_meta.get("character_card_id")) != character_id:
                     continue
                 sibling_meta["locked"] = False
+                sibling_meta["candidate_status"] = "candidate"
                 sibling_meta["turnaround_status"] = "candidate_ready"
                 sibling.meta_json = json_dumps(sibling_meta)
 
         meta["locked"] = bool(locked)
+        meta["candidate_status"] = "locked" if locked else "candidate"
         meta["turnaround_status"] = "turnaround_locked" if locked else "candidate_ready"
         asset.meta_json = json_dumps(meta)
+        self.character_reference_profiles.apply_turnaround_lock(db, project, asset, locked)
 
     def _shot_character_ids(self, shot: StoryboardShot) -> list[int]:
         ids: list[int] = []
@@ -244,6 +390,23 @@ class VisualAssetService:
         except (TypeError, ValueError):
             return None
 
+    def _next_turnaround_version(self, db: Session, project: Project, character_id: int) -> int:
+        versions: list[int] = []
+        assets = db.scalars(
+            select(MediaAsset).where(
+                MediaAsset.project_id == project.id,
+                MediaAsset.asset_type == "character_turnaround",
+            )
+        ).all()
+        for asset in assets:
+            meta = json_loads_object(asset.meta_json)
+            if self._safe_int(meta.get("character_card_id")) != character_id:
+                continue
+            version = self._safe_int(meta.get("candidate_version") or meta.get("version"))
+            if version is not None and version > 0:
+                versions.append(version)
+        return (max(versions) if versions else 0) + 1
+
     def generate_character_turnaround(
         self,
         *,
@@ -255,18 +418,7 @@ class VisualAssetService:
         context_pack_inputs: dict[str, Any] | None = None,
     ) -> MediaAsset:
         self._require_jimeng_image_config()
-        locked_existing = db.query(MediaAsset).filter(
-            MediaAsset.project_id == project.id,
-            MediaAsset.asset_type == "character_turnaround",
-        ).all()
-        for asset in locked_existing:
-            meta = json_loads_object(asset.meta_json)
-            if (
-                asset.status == "completed"
-                and meta.get("character_card_id") == character.id
-                and meta.get("locked") is True
-            ):
-                return asset
+        next_version = self._next_turnaround_version(db, project, character.id)
         prompt = self._build_turnaround_prompt(project=project, character=character, prompt_note=prompt_note)
         client = JimengImageClient(
             access_key=self.settings.jimeng_access_key,
@@ -297,7 +449,7 @@ class VisualAssetService:
 
         output_dir = self._visual_output_dir(project=project, chapter_no=chapter_no, character=character)
         output_dir.mkdir(parents=True, exist_ok=True)
-        image_path = output_dir / "turnaround-v001.png"
+        image_path = output_dir / f"turnaround-v{next_version:03d}.png"
         self._save_image_payload(payload=image_payload, path=image_path)
         provider_debug_path = self._provider_debug_path(image_path)
         self._write_provider_debug_sidecar(
@@ -325,7 +477,9 @@ class VisualAssetService:
                 {
                     "character_card_id": character.id,
                     "character_name": character.name,
-                    "version": 1,
+                    "version": next_version,
+                    "candidate_version": next_version,
+                    "candidate_status": "candidate",
                     "locked": False,
                     "views": ["front", "side", "back"],
                     "provider": "jimeng",

@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.api_routes_projects import register_project_routes
 from app.auth import get_current_user
 from app.db import Base, get_db
-from app.models import Project, ReferenceImageAsset, User
+from app.models import CharacterCard, Project, ReferenceImageAsset, User
 
 
 class ReferenceAssetApiTests(unittest.TestCase):
@@ -94,6 +94,30 @@ class ReferenceAssetApiTests(unittest.TestCase):
             persisted = session.query(ReferenceImageAsset).filter(ReferenceImageAsset.project_id == self.project_id).all()
             self.assertEqual(len(persisted), 1)
             self.assertEqual(persisted[0].source_work, "天气之子")
+
+    def test_project_detail_includes_character_reference_profiles(self) -> None:
+        with self.SessionLocal() as session:
+            project = session.get(Project, self.project_id)
+            session.add(
+                CharacterCard(
+                    project=project,
+                    name="阳菜",
+                    age="16",
+                    gender="女",
+                    personality="明亮坚定",
+                    story_role="女主",
+                    background="",
+                )
+            )
+            session.commit()
+
+        response = self.client.get(f"/api/projects/{self.project_id}")
+
+        self.assertEqual(response.status_code, 200)
+        profiles = response.json()["character_reference_profiles"]
+        self.assertEqual(len(profiles), 1)
+        self.assertEqual(profiles[0]["reference_character_name"], "阳菜")
+        self.assertEqual(profiles[0]["status"], "unmapped")
 
 
 if __name__ == "__main__":

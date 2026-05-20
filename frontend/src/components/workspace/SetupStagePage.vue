@@ -13,7 +13,6 @@ const emit = defineEmits<{
   (e: "open-settings"): void;
   (e: "open-characters"): void;
   (e: "open-context-review"): void;
-  (e: "open-library"): void;
 }>();
 
 const activeRules = computed<StoryBoundaryRule[]>(() => props.project?.story_boundary_rules ?? []);
@@ -32,9 +31,6 @@ const hardConstraints = computed(() => {
           <p class="panel-heading__kicker">设定阶段</p>
           <h2>{{ project?.title || "当前项目" }}</h2>
           <p class="panel-heading__desc">项目设定、人物、故事边界和生成前校对集中在这里。</p>
-        </div>
-        <div class="mode-switch">
-          <button class="ghost-button ghost-button--small" type="button" @click="emit('open-library')">内容库</button>
         </div>
       </div>
     </section>

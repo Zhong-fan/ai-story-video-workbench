@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from sqlalchemy import inspect, text
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -24,6 +26,8 @@ STORY_BOUNDARY_SCHEMA_MIGRATION = "20260519_0013_story_boundary_schema"
 REFERENCE_POLICY_SCHEMA_MIGRATION = "20260519_0014_reference_policy_schema"
 REFERENCE_FACT_SCHEMA_MIGRATION = "20260519_0015_reference_fact_schema"
 REFERENCE_IMAGE_ASSET_SCHEMA_MIGRATION = "20260519_0016_reference_image_asset_schema"
+CHARACTER_REFERENCE_PROFILE_SCHEMA_MIGRATION = "20260520_0017_character_reference_profile_schema"
+REFERENCE_IMAGE_ASSET_URL_HASH_MIGRATION = "20260520_0018_reference_image_asset_url_hash"
 
 
 settings = load_settings()
@@ -154,6 +158,19 @@ def _migrate_schema() -> None:
             "Reference image candidates and approval state",
             _migrate_reference_image_asset_schema,
         )
+        _run_schema_migration(
+            connection,
+            CHARACTER_REFERENCE_PROFILE_SCHEMA_MIGRATION,
+            "Character visual identity profile state",
+            _migrate_character_reference_profile_schema,
+        )
+        _run_schema_migration(
+            connection,
+            REFERENCE_IMAGE_ASSET_URL_HASH_MIGRATION,
+            "Use a fixed-width URL hash for reference image asset uniqueness",
+            _migrate_reference_image_asset_url_hash_schema,
+        )
+    _backfill_character_reference_profiles()
 
 
 def _ensure_schema_migrations_table(connection) -> None:
@@ -688,17 +705,74 @@ def _migrate_reference_image_asset_schema(connection) -> None:
                 source_work VARCHAR(255) NOT NULL,
                 asset_kind VARCHAR(80) NOT NULL DEFAULT 'stills',
                 remote_url VARCHAR(1000) NOT NULL,
+                remote_url_hash VARCHAR(64) NOT NULL,
                 provider VARCHAR(80) NOT NULL DEFAULT 'manual',
                 source_page VARCHAR(1000) NOT NULL DEFAULT '',
                 mapped_character_name VARCHAR(120) NOT NULL DEFAULT '',
                 status VARCHAR(40) NOT NULL DEFAULT 'candidate',
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY uq_reference_image_assets_project_url (project_id, remote_url)
+                UNIQUE KEY uq_reference_image_assets_project_url_hash (project_id, remote_url_hash)
             )
             """
         )
     )
+
+
+def _migrate_reference_image_asset_url_hash_schema(connection) -> None:
+    if "reference_image_assets" not in _table_names():
+        return
+
+    columns = _column_names("reference_image_assets")
+    if "remote_url_hash" not in columns:
+        connection.execute(text("ALTER TABLE reference_image_assets ADD COLUMN remote_url_hash VARCHAR(64) NULL"))
+
+    rows = connection.execute(
+        text(
+            """
+            SELECT id, remote_url
+            FROM reference_image_assets
+            WHERE remote_url_hash IS NULL OR remote_url_hash = ''
+            """
+        )
+    ).mappings()
+    for row in rows:
+        connection.execute(
+            text("UPDATE reference_image_assets SET remote_url_hash = :remote_url_hash WHERE id = :id"),
+            {"id": row["id"], "remote_url_hash": _reference_url_hash(row["remote_url"])},
+        )
+
+    if connection.dialect.name == "mysql":
+        connection.execute(text("ALTER TABLE reference_image_assets MODIFY COLUMN remote_url_hash VARCHAR(64) NOT NULL"))
+
+    index_names = _schema_index_names(connection, "reference_image_assets")
+    if "uq_reference_image_assets_project_url" in index_names:
+        if connection.dialect.name == "mysql":
+            connection.execute(text("ALTER TABLE reference_image_assets DROP INDEX uq_reference_image_assets_project_url"))
+        else:
+            connection.execute(text("DROP INDEX IF EXISTS uq_reference_image_assets_project_url"))
+
+    index_names = _schema_index_names(connection, "reference_image_assets")
+    if "uq_reference_image_assets_project_url_hash" not in index_names:
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX uq_reference_image_assets_project_url_hash
+                ON reference_image_assets (project_id, remote_url_hash)
+                """
+            )
+        )
+
+
+def _schema_index_names(connection, table_name: str) -> set[str]:
+    inspector = inspect(connection)
+    names = {item["name"] for item in inspector.get_indexes(table_name) if item.get("name")}
+    names.update(item["name"] for item in inspector.get_unique_constraints(table_name) if item.get("name"))
+    return names
+
+
+def _reference_url_hash(remote_url: str) -> str:
+    return hashlib.sha256(str(remote_url or "").encode("utf-8")).hexdigest()
 
 
 def _migrate_generation_run_mediumtext(connection) -> None:
@@ -1107,6 +1181,42 @@ def _migrate_longform_async_metadata_schema(connection) -> None:
             connection.execute(text("ALTER TABLE storyboard_shots ADD COLUMN meta_json TEXT NULL"))
             connection.execute(text("UPDATE storyboard_shots SET meta_json = '{}' WHERE meta_json IS NULL"))
             connection.execute(text("ALTER TABLE storyboard_shots MODIFY COLUMN meta_json TEXT NOT NULL"))
+
+
+def _migrate_character_reference_profile_schema(connection) -> None:
+    tables = _table_names()
+    if "character_reference_profiles" not in tables:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE character_reference_profiles (
+                    id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                    project_id INTEGER NOT NULL,
+                    character_card_id INTEGER NOT NULL,
+                    reference_character_name VARCHAR(120) NOT NULL DEFAULT '',
+                    visual_reference_asset_ids_json TEXT NOT NULL,
+                    locked_turnaround_asset_id INTEGER NULL,
+                    status VARCHAR(40) NOT NULL DEFAULT 'unmapped',
+                    notes TEXT NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uq_character_reference_profiles_project_character UNIQUE (project_id, character_card_id)
+                )
+                """
+            )
+        )
+
+
+def _backfill_character_reference_profiles() -> None:
+    from .models import Project
+    from .visual_asset_service import CharacterReferenceProfileService
+
+    service = CharacterReferenceProfileService()
+    with SessionLocal() as session:
+        projects = session.query(Project).filter(Project.deleted_at.is_(None)).all()
+        for project in projects:
+            service.ensure_profiles(session, project)
+        session.commit()
 
 
 def db_session() -> Session:

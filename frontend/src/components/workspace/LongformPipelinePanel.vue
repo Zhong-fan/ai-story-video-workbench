@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
-import type { BatchGenerationChapterTask, ChapterOutline, CharacterCard, ContextPack, DraftVersion, LongformState, MediaAsset, NovelCard, NovelDetail, Project, SeriesPlan, StoryboardShot, VideoTask } from "../../types";
+import type { BatchGenerationChapterTask, ChapterOutline, CharacterCard, CharacterReferenceProfile, ContextPack, DraftVersion, LongformState, MediaAsset, NovelCard, NovelDetail, Project, SeriesPlan, StoryboardShot, VideoTask } from "../../types";
 
 const props = defineProps<{
   mode: "novel" | "video";
@@ -10,6 +10,7 @@ const props = defineProps<{
   state: LongformState;
   contextPack?: ContextPack | null;
   characterCards: CharacterCard[];
+  characterReferenceProfiles?: CharacterReferenceProfile[];
   managedNovels: NovelCard[];
   currentNovel?: NovelDetail | null;
   preferredSeriesPlanId?: number | null;
@@ -52,6 +53,7 @@ const emit = defineEmits<{
     status: string;
   }): void;
   (e: "update-asset", value: { assetId: number; uri: string; status: string; meta: Record<string, unknown> }): void;
+  (e: "delete-asset", value: { assetId: number }): void;
   (e: "generate-character-turnaround", value: { character_card_id: number; chapter_no?: number | null; prompt_note: string }): void;
   (e: "generate-shot-first-frame", value: { storyboardId: number; shotId: number }): void;
   (e: "generate-audio-scripts", storyboardId: number): void;
@@ -78,6 +80,8 @@ const emit = defineEmits<{
     status: string;
   }): void;
   (e: "delete-shot", value: { storyboardId: number; shotId: number }): void;
+  (e: "delete-video-task", value: { taskId: number }): void;
+  (e: "delete-storyboard", value: { storyboardId: number }): void;
   (e: "reorder-shots", value: { storyboardId: number; shot_ids: number[] }): void;
   (e: "update-video-task", value: { taskId: number; task_status: string; output_uri: string; progress: Record<string, unknown>; error_message: string }): void;
   (e: "update-visual-style", value: {
@@ -378,16 +382,35 @@ const productionChecklist = computed(() => [
 ]);
 const characterTurnaroundState = computed(() =>
   props.characterCards.map((card) => {
+    const profile = props.characterReferenceProfiles?.find((item) => item.character_card_id === card.id) ?? null;
     const assets = props.state.media_assets.filter((asset) => {
       if (asset.asset_type !== "character_turnaround") return false;
       return Number(asset.meta.character_card_id || 0) === card.id;
     });
-    const locked = assets.find((asset) => asset.meta.locked === true);
+    const profileLocked = profile?.locked_turnaround_asset_id
+      ? assets.find((asset) => asset.id === profile.locked_turnaround_asset_id)
+      : null;
+    const locked = profileLocked ?? assets.find((asset) => asset.meta.locked === true);
     const completed = assets.find((asset) => asset.status === "completed");
+    const status =
+      profile?.status === "turnaround_locked"
+        ? "locked"
+        : profile?.status === "turnaround_candidate_ready"
+          ? "candidate_ready"
+          : profile?.status === "reference_assets_ready"
+            ? "reference_assets_ready"
+            : locked
+              ? "locked"
+              : completed
+                ? "candidate_ready"
+                : assets.length
+                  ? "turnaround_pending"
+                  : "unmapped";
     return {
       character: card,
+      profile,
       asset: locked ?? completed ?? assets[0] ?? null,
-      status: locked ? "locked" : completed ? "candidate_ready" : assets.length ? "turnaround_pending" : "unmapped",
+      status,
     };
   }),
 );
@@ -770,10 +793,12 @@ function visualAssetSummary(asset: MediaAsset) {
   const subject = String(asset.meta.character_name || asset.meta.scene_name || "").trim();
   const view = String(asset.meta.view || "").trim();
   const locked = asset.meta.locked === true;
+  const candidateVersion = Number(asset.meta.candidate_version || asset.meta.version || 0);
   const pieces = [
     subject || "已生成视觉素材",
+    candidateVersion > 0 ? `候选 v${String(candidateVersion).padStart(3, "0")}` : "",
     view ? `视角：${view}` : "",
-    locked ? "已锁定" : "",
+    locked ? "已采用" : "",
   ].filter(Boolean);
   return pieces.join(" / ");
 }
@@ -800,6 +825,8 @@ function referenceFactSummary(item: unknown) {
 function turnaroundStatusLabel(status: string) {
   const labels: Record<string, string> = {
     unmapped: "未映射",
+    mapped: "已映射",
+    reference_assets_ready: "参考图已确认",
     turnaround_pending: "三视图待确认",
     candidate_ready: "候选已生成",
     locked: "已锁定",
@@ -1031,6 +1058,13 @@ function toggleAudioScriptLock(shot: StoryboardShot) {
 
 function isAssetLocked(asset: MediaAsset) {
   return asset.meta.locked === true;
+}
+
+function assetLockActionLabel(asset: MediaAsset) {
+  if (asset.asset_type === "character_turnaround") {
+    return isAssetLocked(asset) ? "取消采用" : "设为采用";
+  }
+  return isAssetLocked(asset) ? "解锁素材" : "锁定素材";
 }
 
 function toggleAssetLock(asset: MediaAsset) {
@@ -1456,8 +1490,9 @@ function generateTurnaround() {
           <div class="mode-switch">
             <button v-if="publicUrl(asset)" class="ghost-button ghost-button--small" type="button" @click="openAssetPreview(asset)">预览</button>
             <button class="ghost-button ghost-button--small" type="button" :disabled="loading" @click="toggleAssetLock(asset)">
-              {{ isAssetLocked(asset) ? "解锁素材" : "锁定素材" }}
+              {{ assetLockActionLabel(asset) }}
             </button>
+            <button class="ghost-button ghost-button--small" type="button" :disabled="loading" @click="emit('delete-asset', { assetId: asset.id })">删除候选</button>
           </div>
         </article>
       </div>
@@ -1496,6 +1531,7 @@ function generateTurnaround() {
           <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !latestStoryboard.shots.length" @click="emit('generate-storyboard-voice', latestStoryboard.id)">生成全部角色对白</button>
           <button class="primary-button primary-button--small" type="button" :disabled="loading || !latestStoryboard.shots.length" @click="emit('prepare-video-production', latestStoryboard.id)">准备视觉并开始视频生产</button>
           <button class="ghost-button ghost-button--small" type="button" :disabled="loading || latestStoryboard.status !== 'draft' || !latestStoryboard.shots.length" @click="emit('create-video-task', latestStoryboard.id)">创建视频导出任务</button>
+          <button class="ghost-button ghost-button--small" type="button" :disabled="loading" @click="emit('delete-storyboard', { storyboardId: latestStoryboard.id })">删除分镜稿</button>
         </div>
       </div>
       <p class="empty-text">{{ storyboardSummary() }}</p>
@@ -1626,6 +1662,7 @@ function generateTurnaround() {
             <button class="ghost-button ghost-button--small" type="button" :disabled="loading" @click="toggleAssetLock(asset)">
               {{ isAssetLocked(asset) ? "解锁素材" : "锁定素材" }}
             </button>
+            <button class="ghost-button ghost-button--small" type="button" :disabled="loading" @click="emit('delete-asset', { assetId: asset.id })">删除素材</button>
           </div>
         </article>
       </div>
@@ -1637,7 +1674,10 @@ function generateTurnaround() {
         <article v-for="task in videoOutputs" :key="task.id" class="memory-card">
           <strong>成片 / {{ statusLabel(task.task_status) }}</strong>
           <span>{{ videoOutputSummary(task) }}</span>
-          <button class="ghost-button ghost-button--small" type="button" @click="openVideoPreview(task)">预览视频</button>
+          <div class="mode-switch">
+            <button class="ghost-button ghost-button--small" type="button" @click="openVideoPreview(task)">预览视频</button>
+            <button class="ghost-button ghost-button--small" type="button" :disabled="loading" @click="emit('delete-video-task', { taskId: task.id })">删除成片</button>
+          </div>
         </article>
       </div>
     </section>

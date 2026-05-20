@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from sqlalchemy import select
@@ -32,6 +33,7 @@ class ReferenceAssetService:
             remote_url = str(raw.get("remote_url") or "").strip()
             if not remote_url:
                 continue
+            remote_url_hash = _remote_url_hash(remote_url)
             existing = existing_by_url.get(remote_url)
             if existing is not None:
                 if existing not in assets:
@@ -42,6 +44,7 @@ class ReferenceAssetService:
                 source_work=source_work,
                 asset_kind=str(raw.get("asset_kind") or "stills").strip() or "stills",
                 remote_url=remote_url,
+                remote_url_hash=remote_url_hash,
                 provider=str(raw.get("provider") or "manual").strip() or "manual",
                 source_page=str(raw.get("source_page") or "").strip(),
                 mapped_character_name=str(raw.get("mapped_character_name") or "").strip(),
@@ -107,3 +110,7 @@ class ReferenceAssetService:
             "approved_count": approved,
             "rejected_count": rejected,
         }
+
+
+def _remote_url_hash(remote_url: str) -> str:
+    return hashlib.sha256(remote_url.encode("utf-8")).hexdigest()

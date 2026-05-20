@@ -474,6 +474,11 @@ export const api = {
       token,
       body: JSON.stringify(payload),
     }),
+  deleteMediaAsset: (token: string, projectId: number, assetId: number) =>
+    request<{ status: string }>(`/api/projects/${projectId}/media-assets/${assetId}`, {
+      method: "DELETE",
+      token,
+    }),
   generateCharacterTurnaround: (token: string, projectId: number, payload: GenerateCharacterTurnaroundPayload) =>
     request<MediaAsset>(`/api/projects/${projectId}/visual-assets/character-turnaround`, {
       method: "POST",
@@ -514,5 +519,15 @@ export const api = {
       method: "PUT",
       token,
       body: JSON.stringify(payload),
+    }),
+  deleteVideoTask: (token: string, projectId: number, taskId: number) =>
+    request<{ status: string }>(`/api/projects/${projectId}/video-tasks/${taskId}`, {
+      method: "DELETE",
+      token,
+    }),
+  deleteStoryboard: (token: string, projectId: number, storyboardId: number) =>
+    request<{ status: string }>(`/api/projects/${projectId}/storyboards/${storyboardId}`, {
+      method: "DELETE",
+      token,
     }),
 };
