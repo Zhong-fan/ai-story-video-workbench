@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
+import PreviewModal from "./PreviewModal.vue";
 import type { BatchGenerationChapterTask, ChapterOutline, CharacterCard, CharacterReferenceProfile, ContextPack, DraftVersion, LongformState, MediaAsset, NovelCard, NovelDetail, Project, SeriesPlan, StoryboardShot, VideoTask } from "../../types";
+
+type PreviewTarget = { kind: "image" | "video" | "audio"; title: string; url: string };
 
 const props = defineProps<{
   mode: "novel" | "video";
@@ -130,7 +133,7 @@ const visualStyleForm = reactive({
   artistsText: "",
   notes: "",
 });
-const preview = ref<{ type: "image" | "video" | "audio"; title: string; url: string } | null>(null);
+const preview = ref<PreviewTarget | null>(null);
 const localError = ref("");
 const isNovelMode = computed(() => props.mode === "novel");
 const isVideoMode = computed(() => props.mode === "video");
@@ -1097,7 +1100,7 @@ function openAssetPreview(asset: MediaAsset) {
   const url = publicUrl(asset);
   if (!url) return;
   preview.value = {
-    type: isVideoAsset(asset) ? "video" : isAudioAsset(asset) ? "audio" : "image",
+    kind: isVideoAsset(asset) ? "video" : isAudioAsset(asset) ? "audio" : "image",
     title: `${assetTypeLabel(asset.asset_type)} / ${statusLabel(asset.status)}`,
     url,
   };
@@ -1106,7 +1109,7 @@ function openAssetPreview(asset: MediaAsset) {
 function openVideoPreview(task: VideoTask) {
   const url = publicUrl(task);
   if (!url) return;
-  preview.value = { type: "video", title: "视频预览", url };
+  preview.value = { kind: "video", title: "视频预览", url };
 }
 
 function generateTurnaround() {
@@ -1682,16 +1685,13 @@ function generateTurnaround() {
       </div>
     </section>
 
-    <div v-if="preview" class="asset-modal" role="dialog" aria-modal="true" @click.self="preview = null">
-      <div class="asset-modal__body">
-        <div class="panel-heading">
-          <div><p class="panel-heading__kicker">预览</p><h2>{{ preview.title }}</h2></div>
-          <button class="ghost-button ghost-button--small" type="button" @click="preview = null">关闭</button>
-        </div>
-        <img v-if="preview.type === 'image'" class="asset-preview asset-preview--image" :src="preview.url" alt="" />
-        <audio v-else-if="preview.type === 'audio'" class="asset-preview asset-preview--audio" :src="preview.url" controls />
-        <video v-else class="asset-preview asset-preview--video" :src="preview.url" controls playsinline />
-      </div>
-    </div>
+    <PreviewModal
+      v-if="preview"
+      :open="Boolean(preview)"
+      :title="preview.title"
+      :kind="preview.kind"
+      :url="preview.url"
+      @close="preview = null"
+    />
   </main>
 </template>
