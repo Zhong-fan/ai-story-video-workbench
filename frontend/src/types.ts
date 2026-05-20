@@ -2,6 +2,9 @@ export type ViewKey =
   | "studio"
   | "trash"
   | "projectCreate"
+  | "setupStage"
+  | "novelStage"
+  | "videoStage"
   | "projectSettings"
   | "projectLibrary"
   | "contextReview"
@@ -163,6 +166,33 @@ export interface StoryBoundaryParseResponse {
 export interface StoryBoundaryUpdatePayload {
   story_boundary_text: string;
   rules: StoryBoundaryRule[];
+}
+
+export interface ReferenceImageAsset {
+  id: number;
+  project_id: number;
+  source_work: string;
+  asset_kind: string;
+  remote_url: string;
+  provider: string;
+  source_page: string;
+  mapped_character_name: string;
+  status: "candidate" | "approved" | "rejected";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReferenceImageCandidatePayload {
+  remote_url: string;
+  asset_kind?: string;
+  provider?: string;
+  source_page?: string;
+  mapped_character_name?: string;
+}
+
+export interface ReferenceImageUpdatePayload {
+  status: "candidate" | "approved" | "rejected";
+  mapped_character_name: string;
 }
 
 export interface ProjectChapter {

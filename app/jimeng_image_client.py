@@ -22,6 +22,7 @@ class JimengImageClient(JimengVideoClient):
         width: int,
         height: int,
         seed: int = -1,
+        reference_images: list[str] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         payload = {
             "req_key": self.req_key,
@@ -30,6 +31,10 @@ class JimengImageClient(JimengVideoClient):
             "width": width,
             "height": height,
         }
+        references = [item for item in (reference_images or []) if item]
+        if references:
+            payload["reference_images"] = references
+            payload["image_urls"] = references
         response = self._request(action=self.submit_action, payload=payload)
         data = response.get("data") if isinstance(response.get("data"), dict) else {}
         task_id = data.get("task_id")

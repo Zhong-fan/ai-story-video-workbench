@@ -7,6 +7,9 @@ import NovelEditorPanel from "./components/workspace/NovelEditorPanel.vue";
 import NovelReaderPanel from "./components/workspace/NovelReaderPanel.vue";
 import NovelCreatePage from "./components/workspace/NovelCreatePage.vue";
 import VideoCreatePage from "./components/workspace/VideoCreatePage.vue";
+import SetupStagePage from "./components/workspace/SetupStagePage.vue";
+import NovelStagePage from "./components/workspace/NovelStagePage.vue";
+import VideoStagePage from "./components/workspace/VideoStagePage.vue";
 import GenerationTracePanel from "./components/workspace/GenerationTracePanel.vue";
 import ContextReviewPage from "./components/workspace/ContextReviewPage.vue";
 import ProjectContentLibraryPanel from "./components/workspace/ProjectContentLibraryPanel.vue";
@@ -61,14 +64,10 @@ const restorableViews: ViewKey[] = [
   "studio",
   "trash",
   "projectCreate",
-  "projectSettings",
-  "projectLibrary",
-  "contextReview",
-  "characters",
-  "novelCreate",
-  "videoCreate",
+  "setupStage",
+  "novelStage",
+  "videoStage",
   "novelReader",
-  "novelEditor",
 ];
 
 type GenreOptionCard = {
@@ -448,7 +447,7 @@ function goToView(view: ViewKey) {
     openAuthPanel("register", view);
     return;
   }
-  if (view !== "auth" && !isAuthenticated.value && ["studio", "trash", "projectSettings", "projectLibrary", "contextReview", "characters", "novelCreate", "videoCreate", "novelReader", "generationTrace", "novelEditor"].includes(view)) {
+  if (view !== "auth" && !isAuthenticated.value && ["studio", "trash", "setupStage", "novelStage", "videoStage", "projectSettings", "projectLibrary", "contextReview", "characters", "novelCreate", "videoCreate", "novelReader", "generationTrace", "novelEditor"].includes(view)) {
     openAuthPanel("login", view);
     return;
   }
@@ -531,6 +530,12 @@ async function restoreViewState() {
   const persistedView = readPersistedView();
   if (persistedView && restorableViews.includes(persistedView)) {
     currentView.value = persistedView;
+  } else if (persistedView && ["projectSettings", "contextReview", "characters"].includes(persistedView)) {
+    currentView.value = "setupStage";
+  } else if (persistedView && ["novelCreate", "novelEditor"].includes(persistedView)) {
+    currentView.value = "novelStage";
+  } else if (persistedView && ["videoCreate", "generationTrace"].includes(persistedView)) {
+    currentView.value = "videoStage";
   }
   hasRestoredViewState.value = true;
 }
@@ -818,6 +823,12 @@ function openProjectSettings() {
   currentView.value = "projectSettings";
 }
 
+function openSetupStage() {
+  if (!isAuthenticated.value) return openAuthPanel("login");
+  clearLongformPreferences();
+  currentView.value = "setupStage";
+}
+
 async function openContextReview() {
   if (!isAuthenticated.value) return openAuthPanel("login");
   if (activeProject.value?.project.id) {
@@ -872,6 +883,13 @@ async function openNovelCreate() {
   currentView.value = "novelCreate";
 }
 
+async function openNovelStage() {
+  await openNovelCreate();
+  if (!error.value && currentView.value === "novelCreate") {
+    currentView.value = "novelStage";
+  }
+}
+
 async function openVideoCreate() {
   if (!isAuthenticated.value) return openAuthPanel("login");
   if (!store.hasConfirmedContextPack()) {
@@ -882,6 +900,13 @@ async function openVideoCreate() {
     await store.loadLongformState(activeProject.value.project.id);
   }
   currentView.value = "videoCreate";
+}
+
+async function openVideoStage() {
+  await openVideoCreate();
+  if (!error.value && currentView.value === "videoCreate") {
+    currentView.value = "videoStage";
+  }
 }
 
 async function openGenerationTrace() {
@@ -1595,7 +1620,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
       />
     </template>
 
-    <template v-else-if="['novelEditor', 'projectSettings', 'contextReview', 'characters', 'novelCreate', 'videoCreate', 'generationTrace'].includes(currentView)">
+    <template v-else-if="['setupStage', 'novelStage', 'videoStage', 'novelEditor', 'projectSettings', 'projectLibrary', 'contextReview', 'characters', 'novelCreate', 'videoCreate', 'generationTrace'].includes(currentView)">
       <div class="editor-shell">
         <aside class="editor-sidebar panel panel--paper">
           <div class="brand brand--sidebar">
@@ -1606,18 +1631,32 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
             <button class="ghost-button ghost-button--small editor-sidebar__back" type="button" @click="goToView('studio')">返回工作区</button>
           </div>
           <nav class="sidebar-nav" aria-label="Editor">
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'projectSettings' }" @click="openProjectSettings()">项目设定</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'contextReview' }" @click="openContextReview()">生成前校对</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'characters' }" @click="openCharacters()">人物卡</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'novelCreate' }" @click="openNovelCreate()">小说创作</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'videoCreate' }" @click="openVideoCreate()">视频创作</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': ['setupStage', 'projectSettings', 'contextReview', 'characters'].includes(currentView) }" @click="openSetupStage()">设定</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': ['novelStage', 'novelCreate', 'novelEditor'].includes(currentView) }" @click="openNovelStage()">小说</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': ['videoStage', 'videoCreate'].includes(currentView) }" @click="openVideoStage()">视频</button>
+          </nav>
+          <nav class="sidebar-nav sidebar-nav--secondary" aria-label="Secondary">
             <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'generationTrace' }" @click="openGenerationTrace()">生成过程</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'novelEditor' }" @click="openNovelEditor(activeProject?.project.id)">作品管理</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'projectLibrary' }" @click="openProjectLibrary()">内容库</button>
           </nav>
         </aside>
 
         <main class="main-shell">
-          <template v-if="currentView === 'projectSettings'">
+          <template v-if="currentView === 'setupStage'">
+            <SetupStagePage
+              v-if="isAuthenticated && hasProject"
+              :project="activeProject?.project"
+              :character-cards="activeProject?.character_cards || []"
+              :project-chapters="projectChapters"
+              :context-pack="contextPack"
+              @open-settings="openProjectSettings()"
+              @open-characters="openCharacters()"
+              @open-context-review="openContextReview()"
+              @open-library="openProjectLibrary()"
+            />
+          </template>
+
+          <template v-else-if="currentView === 'projectSettings'">
             <ProjectSettingsPanel
               v-if="isAuthenticated && hasProject"
               :projects="projects"
@@ -1758,6 +1797,34 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
             </main>
           </template>
 
+          <template v-else-if="currentView === 'novelStage'">
+            <NovelStagePage
+              v-if="isAuthenticated && hasProject"
+              :project="activeProject?.project"
+              :project-title="activeProject?.project.title"
+              :loading="loading"
+              :state="longformState"
+              :context-pack="contextPack"
+              :character-cards="activeProject?.character_cards || []"
+              :managed-novels="managedNovels"
+              :current-novel="currentNovel"
+              :preferred-series-plan-id="preferredSeriesPlanId"
+              :preferred-draft-version-id="preferredLongformDraftVersionId"
+              @generate-plan="submitGenerateSeriesPlan"
+              @submit-feedback="submitOutlineFeedback"
+              @lock-plan="store.lockSeriesPlan"
+              @restore-plan-version="submitRestorePlanVersion"
+              @batch-generate="submitBatchGeneration"
+              @retry-batch="submitRetryBatch"
+              @pause-batch="submitPauseBatch"
+              @resume-batch="submitResumeBatch"
+              @cancel-batch="submitCancelBatch"
+              @revise-draft="submitReviseDraft"
+              @canonicalize-draft="submitCanonicalizeDraft"
+              @update-outline="submitUpdateOutline"
+            />
+          </template>
+
           <template v-else-if="currentView === 'novelCreate'">
             <NovelCreatePage
               v-if="isAuthenticated && hasProject"
@@ -1783,6 +1850,52 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @revise-draft="submitReviseDraft"
               @canonicalize-draft="submitCanonicalizeDraft"
               @update-outline="submitUpdateOutline"
+            />
+          </template>
+
+          <template v-else-if="currentView === 'videoStage'">
+            <VideoStagePage
+              v-if="isAuthenticated && hasProject"
+              :project="activeProject?.project"
+              :project-title="activeProject?.project.title"
+              :loading="loading"
+              :state="longformState"
+              :context-pack="contextPack"
+              :character-cards="activeProject?.character_cards || []"
+              :managed-novels="managedNovels"
+              :current-novel="currentNovel"
+              :preferred-series-plan-id="preferredSeriesPlanId"
+              :preferred-draft-version-id="preferredLongformDraftVersionId"
+              :preferred-storyboard-id="preferredStoryboardId"
+              :preferred-video-task-id="preferredVideoTaskId"
+              @generate-plan="submitGenerateSeriesPlan"
+              @submit-feedback="submitOutlineFeedback"
+              @lock-plan="store.lockSeriesPlan"
+              @restore-plan-version="submitRestorePlanVersion"
+              @batch-generate="submitBatchGeneration"
+              @retry-batch="submitRetryBatch"
+              @pause-batch="submitPauseBatch"
+              @resume-batch="submitResumeBatch"
+              @cancel-batch="submitCancelBatch"
+              @open-novel="openNovelForLongform"
+              @create-storyboard="submitCreateStoryboard"
+              @revise-draft="submitReviseDraft"
+              @canonicalize-draft="submitCanonicalizeDraft"
+              @create-video-task="(storyboardId) => { openGenerationTraceImmediately(); return store.createVideoTask(storyboardId); }"
+              @update-outline="submitUpdateOutline"
+              @update-shot="submitUpdateShot"
+              @update-asset="submitUpdateAsset"
+              @generate-character-turnaround="submitGenerateCharacterTurnaround"
+              @generate-shot-first-frame="submitGenerateShotFirstFrame"
+              @generate-audio-scripts="(storyboardId) => { openGenerationTraceImmediately(); return store.generateStoryboardAudioScripts(storyboardId); }"
+              @generate-storyboard-voice="(storyboardId) => { openGenerationTraceImmediately(); return store.generateStoryboardVoice(storyboardId, { voice_role: 'dialogue' }); }"
+              @prepare-video-production="(storyboardId) => { openGenerationTraceImmediately(); return store.prepareVideoProduction(storyboardId, { generate_character_turnarounds: true, generate_audio_scripts: false, generate_dialogue_audio: false, create_video_task: true }); }"
+              @generate-shot-voice="({ storyboardId, shotId, voice_role, character_card_id, dialogue_text, voice_profile, emotion }) => { openGenerationTraceImmediately(); return store.generateShotVoice(storyboardId, shotId, { voice_role, character_card_id, dialogue_text, voice_profile, emotion }); }"
+              @create-shot="submitCreateShot"
+              @delete-shot="submitDeleteShot"
+              @reorder-shots="submitReorderShots"
+              @update-video-task="submitUpdateVideoTask"
+              @update-visual-style="submitUpdateVisualStyle"
             />
           </template>
 
@@ -1945,7 +2058,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               :loading="loading"
               @update:workspace-search="workspaceSearch = $event"
               @open-project-create="openProjectCreate()"
-              @open-project="openNovelCreate"
+              @open-project="async (projectId) => { await store.selectProject(projectId); openSetupStage(); }"
               @delete-project="deleteProjectToTrash"
               @previous-page="previousWorkspacePage()"
               @next-page="nextWorkspacePage()"

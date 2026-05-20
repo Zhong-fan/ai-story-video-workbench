@@ -1022,6 +1022,13 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         asset.uri = payload.uri.strip()
         asset.status = payload.status.strip() or "pending"
         asset.meta_json = json_dumps(payload.meta)
+        if asset.asset_type == "character_turnaround" and "locked" in payload.meta:
+            VisualAssetService(settings).apply_turnaround_lock(
+                db=db,
+                project=project,
+                asset=asset,
+                locked=payload.meta.get("locked") is True,
+            )
         db.commit()
         db.refresh(asset)
         return _media_asset_out(asset)

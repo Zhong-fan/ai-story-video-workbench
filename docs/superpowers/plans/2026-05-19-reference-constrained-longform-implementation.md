@@ -29,23 +29,22 @@
 - Context Pack 现在会携带故事边界、参考继承策略、ReferenceFact 快照和授权改写标记
 - 小说生成 prompt 已显式注入故事边界和参考继承策略
 - 参考资产链路已有后端候选/审批 API，但前端视频阶段审核 UI 尚未接入
-- 角色三视图已有单张生成能力，但多候选、锁定语义和下游强继承尚未完成
+- 角色三视图已有单张生成能力；已补充 `character_turnaround` 锁定语义、同角色互斥锁定、镜头首帧对锁定三视图的 metadata 继承记录
+- 前端已新增 `设定 / 小说 / 视频` 三阶段壳层入口，旧功能降为阶段内或次级入口
 
 **未开始：**
 
-- 三视图多候选生成与锁定
-- 视频链对锁定角色视觉资产的强继承
-- 三阶段前端壳层重构
-- 小说阶段约束/违规可视化
-- 视频阶段参考资产审核与锁定状态 UI
+- 三视图真正的多候选批量生成
+- 视频链视频模型提交阶段对锁定角色视觉资产的强继承
+- 视频阶段参考资产审核完整 UI
 - Playwright 回归补齐
 
 **新对话建议从这里继续：**
 
-1. Task 7：三视图锁定与下游视觉继承
-2. Task 8：前端三阶段工作流壳层
-3. Task 10/11：小说约束可视化、视频参考资产审核 UI
-4. Task 12：后端/前端回归覆盖与构建验证
+1. Task 11：补完 `ReferenceAssetReviewPanel.vue`，把 `store.referenceImages` 的列表/审批/拒绝/映射接入视频阶段
+2. Task 12：补 Playwright 三阶段导航、故事边界确认、小说硬约束可视化回归
+3. Task 7：继续把锁定三视图传递到视频模型提交链路，而不仅是首帧生成链路
+4. Task 8/10：根据 build 与手测结果收敛三阶段壳层细节和小说违规横幅样式
 
 ---
 
@@ -395,6 +394,7 @@ Run a manual API check using a known work like 《天气之子》 and confirm th
 - Modify: `app/api_routes_longform.py`
 
 - [ ] **Step 1: Extend the image client for reference-driven generation**
+- [x] **Step 1: Extend the image client for reference-driven generation**
 
 If the provider supports image-conditioned generation, add a method for passing approved reference image URLs or provider-uploaded asset handles alongside prompt text.
 
@@ -403,8 +403,11 @@ If the provider supports image-conditioned generation, add a method for passing 
 Replace “single turnaround output” with “multiple candidates for review”.
 
 - [ ] **Step 3: Add turnaround lock semantics**
+- [x] **Step 3: Add turnaround lock semantics**
 
 Once a user approves a turnaround asset, mark the associated `CharacterReferenceProfile` as `turnaround_locked`.
+
+Implemented via `MediaAsset.meta.locked` / `turnaround_status` because the current repo does not yet contain a `CharacterReferenceProfile` model/table. Locking one `character_turnaround` unlocks sibling turnaround assets for the same character.
 
 - [ ] **Step 4: Enforce downstream inheritance**
 
@@ -416,7 +419,10 @@ When generating:
 
 use the locked character turnaround asset as a required reference, not optional prompt flavor.
 
+Partially implemented for shot first-frame generation: locked turnaround references are resolved from `StoryboardShot.character_refs`, included in the image prompt, passed to the image client as `reference_images`, and recorded in first-frame `MediaAsset.meta.locked_turnaround_asset_ids`.
+
 - [ ] **Step 5: Verify the locked-reference path**
+- [x] **Step 5: Verify the locked-reference path**
 
 Run a manual generation path where:
 
@@ -424,6 +430,8 @@ Run a manual generation path where:
 - a subsequent shot first frame is generated
 
 Expected: the downstream generation records the locked asset ID in metadata.
+
+Verified by `tests/test_visual_asset_locked_references.py`.
 
 ---
 
@@ -439,6 +447,7 @@ Expected: the downstream generation records the locked asset ID in metadata.
 - Modify: `frontend/src/styles/workspace.css`
 
 - [ ] **Step 1: Replace the current top-level workspace view model**
+- [x] **Step 1: Replace the current top-level workspace view model**
 
 Reduce the primary project navigation to:
 
@@ -448,7 +457,10 @@ Reduce the primary project navigation to:
 
 Keep `generationTrace` and `projectLibrary` as secondary routes or panels.
 
+Implemented new `setupStage`, `novelStage`, and `videoStage` view keys. Persisted legacy noisy views now restore to the matching stage by default; `generationTrace` and `projectLibrary` remain secondary entries.
+
 - [ ] **Step 2: Build the setup stage page**
+- [x] **Step 2: Build the setup stage page**
 
 `SetupStagePage.vue` should surface:
 
@@ -458,7 +470,10 @@ Keep `generationTrace` and `projectLibrary` as secondary routes or panels.
 - series plan status
 - context review status
 
+Created `frontend/src/components/workspace/SetupStagePage.vue`.
+
 - [ ] **Step 3: Build the novel stage page**
+- [x] **Step 3: Build the novel stage page**
 
 `NovelStagePage.vue` should surface:
 
@@ -467,7 +482,10 @@ Keep `generationTrace` and `projectLibrary` as secondary routes or panels.
 - current draft
 - next action
 
+Created `NovelStagePage.vue` as the stage wrapper over the existing novel longform panel.
+
 - [ ] **Step 4: Build the video stage page**
+- [x] **Step 4: Build the video stage page**
 
 `VideoStagePage.vue` should surface:
 
@@ -475,6 +493,8 @@ Keep `generationTrace` and `projectLibrary` as secondary routes or panels.
 - storyboard status
 - preflight status
 - video task status
+
+Created `VideoStagePage.vue` as the stage wrapper over the existing video longform panel.
 
 - [ ] **Step 5: Verify routing and state restoration**
 
@@ -527,6 +547,7 @@ Run the app and confirm a user can describe chapter-range rules once, then confi
 - Modify: `frontend/src/stores/workbench.ts`
 
 - [ ] **Step 1: Show chapter-effective hard constraints in the current chapter view**
+- [x] **Step 1: Show chapter-effective hard constraints in the current chapter view**
 
 For the selected chapter, show:
 
@@ -534,13 +555,18 @@ For the selected chapter, show:
 - active reference-work facts
 - authorized overrides
 
+Added a novel-stage `章节硬约束` panel sourced from chapter `constraint_snapshot`.
+
 - [ ] **Step 2: Show violation banners when generation breaks rules**
+- [x] **Step 2: Show violation banners when generation breaks rules**
 
 If a generated chapter violates a hard rule, show:
 
 - violated rule
 - reason
 - whether auto-rewrite was attempted
+
+Partially implemented: draft versions whose status/revision summary indicates violation are surfaced as warning cards. A richer `ViolationCheck` list API/UI is still pending.
 
 - [ ] **Step 3: Block misleading success states**
 
@@ -569,6 +595,7 @@ Manual check:
 Users must be able to approve or reject discovered assets inside the project.
 
 - [ ] **Step 2: Show per-character turnaround state**
+- [x] **Step 2: Show per-character turnaround state**
 
 Display:
 
@@ -576,6 +603,8 @@ Display:
 - turnaround pending
 - candidate ready
 - locked
+
+Added per-character turnaround status in the video-stage longform panel based on generated/locked `character_turnaround` media assets.
 
 - [ ] **Step 3: Make locked turnaround status gate downstream actions**
 
@@ -598,12 +627,15 @@ Manual check:
 - Create: `tests/test_longform_constraints.py`
 
 - [ ] **Step 1: Add backend regression coverage**
+- [x] **Step 1: Add backend regression coverage**
 
 Create Python tests covering:
 
 - chapter-range hard rule parsing
 - outline validation against hard rules
 - draft violation detection
+
+Added focused backend coverage for locked turnaround resolution and same-character lock exclusivity in `tests/test_visual_asset_locked_references.py`. Existing constraint parsing / outline / draft violation tests remain in place.
 
 - [ ] **Step 2: Add frontend regression coverage**
 

@@ -263,6 +263,31 @@ const contextPackSummary = computed(() => {
     pendingTodos,
   };
 });
+const selectedChapterConstraintSnapshot = computed(() => {
+  const chapter = selectedPlan.value?.chapters.find((item) => item.chapter_no === batchForm.start_chapter_no) ?? selectedPlan.value?.chapters[0] ?? null;
+  const snapshot = chapter?.outline?.constraint_snapshot;
+  return snapshot && typeof snapshot === "object" ? snapshot as Record<string, unknown> : null;
+});
+const selectedChapterHardConstraints = computed(() => {
+  const snapshot = selectedChapterConstraintSnapshot.value;
+  const hard = snapshot?.hard_constraints;
+  return Array.isArray(hard) ? hard.slice(0, 8) : [];
+});
+const selectedChapterReferenceFacts = computed(() => {
+  const snapshot = selectedChapterConstraintSnapshot.value;
+  const facts = snapshot?.reference_facts;
+  return Array.isArray(facts) ? facts.slice(0, 6) : [];
+});
+const selectedChapterAuthorizedOverrides = computed(() => {
+  const snapshot = selectedChapterConstraintSnapshot.value;
+  const overrides = snapshot?.authorized_overrides;
+  return Array.isArray(overrides) ? overrides.map((item) => String(item)).filter(Boolean).slice(0, 6) : [];
+});
+const draftViolationBanners = computed(() =>
+  props.state.draft_versions
+    .filter((draft) => draft.status.includes("violation") || draft.revision_reason.includes("违规") || draft.summary.includes("违规"))
+    .slice(0, 6),
+);
 const novelChecklist = computed(() => [
   {
     key: "plan",
@@ -351,6 +376,22 @@ const productionChecklist = computed(() => [
         : "角色三视图和镜头首帧不是必需，但会明显提升可控性。",
   },
 ]);
+const characterTurnaroundState = computed(() =>
+  props.characterCards.map((card) => {
+    const assets = props.state.media_assets.filter((asset) => {
+      if (asset.asset_type !== "character_turnaround") return false;
+      return Number(asset.meta.character_card_id || 0) === card.id;
+    });
+    const locked = assets.find((asset) => asset.meta.locked === true);
+    const completed = assets.find((asset) => asset.status === "completed");
+    return {
+      character: card,
+      asset: locked ?? completed ?? assets[0] ?? null,
+      status: locked ? "locked" : completed ? "candidate_ready" : assets.length ? "turnaround_pending" : "unmapped",
+    };
+  }),
+);
+const unlockedTurnaroundCharacters = computed(() => characterTurnaroundState.value.filter((item) => item.status !== "locked"));
 const feedbackTargets = computed(() => {
   const plan = latestPlan.value;
   if (!plan) return [];
@@ -737,6 +778,35 @@ function visualAssetSummary(asset: MediaAsset) {
   return pieces.join(" / ");
 }
 
+function constraintSummary(item: unknown) {
+  if (typeof item === "string") return item;
+  if (item && typeof item === "object") {
+    const record = item as Record<string, unknown>;
+    return String(record.summary || record.instruction || record.predicate || record.rule_type || JSON.stringify(record));
+  }
+  return String(item || "");
+}
+
+function referenceFactSummary(item: unknown) {
+  if (typeof item === "string") return item;
+  if (item && typeof item === "object") {
+    const record = item as Record<string, unknown>;
+    const payload = record.payload && typeof record.payload === "object" ? record.payload as Record<string, unknown> : {};
+    return String(record.summary || payload.summary || payload.text || record.fact_type || JSON.stringify(record));
+  }
+  return String(item || "");
+}
+
+function turnaroundStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    unmapped: "未映射",
+    turnaround_pending: "三视图待确认",
+    candidate_ready: "候选已生成",
+    locked: "已锁定",
+  };
+  return labels[status] || status;
+}
+
 function storyboardAssetSummary(asset: MediaAsset) {
   const shotNo = asset.meta.shot_no ? `镜头 ${asset.meta.shot_no}` : "";
   if (asset.asset_type === "dialogue") return [shotNo, "角色对白素材"].filter(Boolean).join(" / ");
@@ -1085,6 +1155,34 @@ function generateTurnaround() {
       </div>
     </section>
 
+    <section class="panel panel--paper" v-if="isNovelMode && (selectedChapterHardConstraints.length || selectedChapterReferenceFacts.length || selectedChapterAuthorizedOverrides.length || draftViolationBanners.length)">
+      <div class="panel-heading">
+        <div>
+          <p class="panel-heading__kicker">章节硬约束</p>
+          <h2>当前章节生效规则</h2>
+          <p class="panel-heading__desc">这里显示概要阶段继承到章节的硬边界、原作事实和授权改写。</p>
+        </div>
+      </div>
+      <div class="longform-outline">
+        <article v-if="selectedChapterHardConstraints.length" class="memory-card">
+          <strong>硬约束</strong>
+          <span v-for="(item, index) in selectedChapterHardConstraints" :key="`hard-${index}`">{{ constraintSummary(item) }}</span>
+        </article>
+        <article v-if="selectedChapterReferenceFacts.length" class="memory-card">
+          <strong>原作事实</strong>
+          <span v-for="(item, index) in selectedChapterReferenceFacts" :key="`fact-${index}`">{{ referenceFactSummary(item) }}</span>
+        </article>
+        <article v-if="selectedChapterAuthorizedOverrides.length" class="memory-card">
+          <strong>授权改写</strong>
+          <span v-for="item in selectedChapterAuthorizedOverrides" :key="item">{{ item }}</span>
+        </article>
+        <article v-for="draft in draftViolationBanners" :key="draft.id" class="memory-card memory-card--warning">
+          <strong>违反硬约束：{{ draft.title }}</strong>
+          <span>{{ draft.revision_reason || draft.summary || "该章节版本未作为成功结果处理。" }}</span>
+        </article>
+      </div>
+    </section>
+
     <section class="panel panel--paper" v-if="isVideoMode">
       <div class="panel-heading">
         <div>
@@ -1097,6 +1195,32 @@ function generateTurnaround() {
         <article v-for="item in productionChecklist" :key="item.key" class="memory-card">
           <strong>{{ item.label }} / {{ item.done ? "已就绪" : "待补齐" }}</strong>
           <span>{{ item.detail }}</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel panel--paper" v-if="isVideoMode">
+      <div class="panel-heading">
+        <div>
+          <p class="panel-heading__kicker">角色视觉母版</p>
+          <h2>三视图锁定状态</h2>
+          <p class="panel-heading__desc">未锁定角色会让后续首帧和视频更不稳定。</p>
+        </div>
+      </div>
+      <p v-if="unlockedTurnaroundCharacters.length" class="empty-text">
+        还有 {{ unlockedTurnaroundCharacters.length }} 个角色没有锁定三视图，视频预检会继续提示这些风险。
+      </p>
+      <div class="longform-outline">
+        <article v-for="item in characterTurnaroundState" :key="item.character.id" class="memory-card">
+          <strong>{{ item.character.name }} / {{ turnaroundStatusLabel(item.status) }}</strong>
+          <span>{{ item.character.story_role || "未设置角色定位" }}</span>
+          <span v-if="item.asset">素材 #{{ item.asset.id }} · {{ assetTypeLabel(item.asset.asset_type) }}</span>
+          <div class="mode-switch" v-if="item.asset">
+            <button v-if="publicUrl(item.asset)" class="ghost-button ghost-button--small" type="button" @click="openAssetPreview(item.asset)">预览</button>
+            <button class="ghost-button ghost-button--small" type="button" :disabled="loading" @click="toggleAssetLock(item.asset)">
+              {{ isAssetLocked(item.asset) ? "解锁三视图" : "锁定三视图" }}
+            </button>
+          </div>
         </article>
       </div>
     </section>

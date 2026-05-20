@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .jimeng_image_client import JimengImageClient
-from .json_utils import json_dumps, json_loads_object
+from .json_utils import json_dumps, json_loads_list, json_loads_object
 from .models import CharacterCard, MediaAsset, Project, Storyboard, StoryboardShot, TaskEvent
 from .video_render_service import VideoRenderService
 from .visual_style_prompt import build_character_visual_prompt, build_visual_generation_prompt, project_visual_style_summary
@@ -42,7 +42,20 @@ class VisualAssetService:
             if asset.status == "completed" and meta.get("locked") is True:
                 return asset
 
+        locked_references = self.locked_turnaround_references(db=db, project=project, shot=shot)
         prompt = build_visual_generation_prompt(project=project, shot=shot, include_narration=False, max_length=1800)
+        if locked_references:
+            prompt = "\n".join(
+                [
+                    prompt,
+                    "",
+                    "锁定角色视觉母版（必须强继承，不能只作为风格提示）：",
+                    *[
+                        f"- {item['character_name']}：使用素材 #{item['asset_id']}，保持脸型、发型、服装轮廓、配色和标志物一致。"
+                        for item in locked_references
+                    ],
+                ]
+            )
         client = JimengImageClient(
             access_key=self.settings.jimeng_access_key,
             secret_key=self.settings.jimeng_secret_key,
@@ -55,6 +68,7 @@ class VisualAssetService:
             prompt=prompt,
             width=self.settings.jimeng_image_width,
             height=self.settings.jimeng_image_height,
+            reference_images=[str(item["uri"]) for item in locked_references],
         )
         if task_id:
             image_payload, result_response = self._wait_for_image_result(client=client, task_id=task_id)
@@ -123,6 +137,8 @@ class VisualAssetService:
                 "height": self.settings.jimeng_image_height,
                 "mime_type": "image/png",
                 "visual_style": project_visual_style_summary(project),
+                "locked_turnaround_references": locked_references,
+                "locked_turnaround_asset_ids": [item["asset_id"] for item in locked_references],
                 "context_pack_id": context_pack_inputs.get("context_pack_id") if isinstance(context_pack_inputs, dict) else None,
                 "context_pack_version": context_pack_inputs.get("context_pack_version") if isinstance(context_pack_inputs, dict) else None,
                 "context_pack_reference_mode": context_pack_inputs.get("reference_mode") if isinstance(context_pack_inputs, dict) else None,
@@ -140,6 +156,93 @@ class VisualAssetService:
         db.commit()
         db.refresh(asset)
         return asset
+
+    def locked_turnaround_references(
+        self,
+        *,
+        db: Session,
+        project: Project,
+        shot: StoryboardShot,
+    ) -> list[dict[str, Any]]:
+        character_ids = self._shot_character_ids(shot)
+        if not character_ids:
+            return []
+        assets = db.query(MediaAsset).filter(
+            MediaAsset.project_id == project.id,
+            MediaAsset.asset_type == "character_turnaround",
+            MediaAsset.status == "completed",
+        ).all()
+        by_character_id: dict[int, dict[str, Any]] = {}
+        for asset in assets:
+            meta = json_loads_object(asset.meta_json)
+            if meta.get("locked") is not True:
+                continue
+            character_id = self._safe_int(meta.get("character_card_id"))
+            if character_id is None or character_id not in character_ids:
+                continue
+            by_character_id[character_id] = {
+                "asset_id": asset.id,
+                "character_card_id": character_id,
+                "character_name": str(meta.get("character_name") or ""),
+                "uri": asset.uri,
+                "status": asset.status,
+            }
+        return [by_character_id[character_id] for character_id in character_ids if character_id in by_character_id]
+
+    def apply_turnaround_lock(
+        self,
+        *,
+        db: Session,
+        project: Project,
+        asset: MediaAsset,
+        locked: bool,
+    ) -> None:
+        if asset.asset_type != "character_turnaround":
+            return
+        meta = json_loads_object(asset.meta_json)
+        character_id = self._safe_int(meta.get("character_card_id"))
+        if character_id is None:
+            meta["locked"] = bool(locked)
+            meta["turnaround_status"] = "turnaround_locked" if locked else "candidate_ready"
+            asset.meta_json = json_dumps(meta)
+            return
+
+        if locked:
+            sibling_assets = db.query(MediaAsset).filter(
+                MediaAsset.project_id == project.id,
+                MediaAsset.asset_type == "character_turnaround",
+            ).all()
+            for sibling in sibling_assets:
+                if sibling.id == asset.id:
+                    continue
+                sibling_meta = json_loads_object(sibling.meta_json)
+                if self._safe_int(sibling_meta.get("character_card_id")) != character_id:
+                    continue
+                sibling_meta["locked"] = False
+                sibling_meta["turnaround_status"] = "candidate_ready"
+                sibling.meta_json = json_dumps(sibling_meta)
+
+        meta["locked"] = bool(locked)
+        meta["turnaround_status"] = "turnaround_locked" if locked else "candidate_ready"
+        asset.meta_json = json_dumps(meta)
+
+    def _shot_character_ids(self, shot: StoryboardShot) -> list[int]:
+        ids: list[int] = []
+        for item in json_loads_list(shot.character_refs_json):
+            if isinstance(item, dict):
+                value = item.get("character_card_id") or item.get("id")
+            else:
+                value = item
+            character_id = self._safe_int(value)
+            if character_id is not None and character_id not in ids:
+                ids.append(character_id)
+        return ids
+
+    def _safe_int(self, value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def generate_character_turnaround(
         self,

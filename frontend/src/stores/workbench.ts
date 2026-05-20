@@ -17,6 +17,9 @@ import type {
   Project,
   ProjectPayload,
   ReferenceWorkResolved,
+  ReferenceImageAsset,
+  ReferenceImageCandidatePayload,
+  ReferenceImageUpdatePayload,
   StoryBoundaryParseResponse,
   StoryBoundaryRule,
   ProjectSuggestionResponse,
@@ -69,6 +72,7 @@ export const useWorkbenchStore = defineStore("workbench", () => {
   const activeProject = ref<ProjectDetailResponse | null>(null);
   const contextPack = ref<ContextPack | null>(null);
   const currentGeneration = ref<GenerationItem | null>(null);
+  const referenceImages = ref<ReferenceImageAsset[]>([]);
   const longformState = ref<LongformState>({
     series_plans: [],
     draft_versions: [],
@@ -348,6 +352,7 @@ export const useWorkbenchStore = defineStore("workbench", () => {
         currentGeneration.value = detail.generations[0] ?? null;
       }
       await loadLongformState(projectId, { silent: true });
+      await loadReferenceImages(projectId, { silent: true });
     } catch (err) {
       if (!silent) {
         error.value = err instanceof Error ? err.message : "加载项目失败。";
@@ -890,6 +895,56 @@ export const useWorkbenchStore = defineStore("workbench", () => {
       return project;
     } catch (err) {
       error.value = err instanceof Error ? err.message : "保存故事边界失败。";
+      return null;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function loadReferenceImages(projectId?: number, options: { silent?: boolean } = {}) {
+    if (!token.value) return [];
+    const targetProjectId = projectId ?? activeProject.value?.project.id;
+    if (!targetProjectId) return [];
+    try {
+      referenceImages.value = await api.listReferenceImages(token.value, targetProjectId);
+      return referenceImages.value;
+    } catch (err) {
+      if (!options.silent) {
+        error.value = err instanceof Error ? err.message : "加载参考图失败。";
+      }
+      return [];
+    }
+  }
+
+  async function discoverReferenceImages(candidates: ReferenceImageCandidatePayload[]) {
+    if (!token.value || !activeProject.value) return [];
+    loading.value = true;
+    error.value = "";
+    success.value = "";
+    try {
+      referenceImages.value = await api.discoverReferenceImages(token.value, activeProject.value.project.id, candidates);
+      success.value = "参考图候选已更新。";
+      return referenceImages.value;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : "发现参考图失败。";
+      return [];
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function updateReferenceImage(assetId: number, payload: ReferenceImageUpdatePayload) {
+    if (!token.value || !activeProject.value) return null;
+    loading.value = true;
+    error.value = "";
+    success.value = "";
+    try {
+      const asset = await api.updateReferenceImage(token.value, activeProject.value.project.id, assetId, payload);
+      referenceImages.value = referenceImages.value.map((item) => item.id === asset.id ? asset : item);
+      success.value = "参考图审核状态已保存。";
+      return asset;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : "保存参考图状态失败。";
       return null;
     } finally {
       loading.value = false;
@@ -1508,6 +1563,7 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     activeProject,
     contextPack,
     currentGeneration,
+    referenceImages,
     longformState,
     generationProgress,
     longformRequestState,
@@ -1538,6 +1594,9 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     restoreTrashItem,
     trashDirtyEvolution,
     loadLongformState,
+    loadReferenceImages,
+    discoverReferenceImages,
+    updateReferenceImage,
     generateSeriesPlan,
     submitOutlineFeedback,
     lockSeriesPlan,

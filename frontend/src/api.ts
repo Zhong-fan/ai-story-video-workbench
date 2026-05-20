@@ -18,6 +18,9 @@ import type {
   ProjectPayload,
   ReferenceWorkResolveRequest,
   ReferenceWorkResolved,
+  ReferenceImageAsset,
+  ReferenceImageCandidatePayload,
+  ReferenceImageUpdatePayload,
   StoryBoundaryParsePayload,
   StoryBoundaryParseResponse,
   StoryBoundaryUpdatePayload,
@@ -227,6 +230,20 @@ export const api = {
     }),
   updateStoryBoundaries: (token: string, projectId: number, payload: StoryBoundaryUpdatePayload) =>
     request<Project>(`/api/projects/${projectId}/story-boundaries`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  discoverReferenceImages: (token: string, projectId: number, candidates: ReferenceImageCandidatePayload[]) =>
+    request<ReferenceImageAsset[]>(`/api/projects/${projectId}/reference-images/discover`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ candidates }),
+    }),
+  listReferenceImages: (token: string, projectId: number) =>
+    request<ReferenceImageAsset[]>(`/api/projects/${projectId}/reference-images`, { token }),
+  updateReferenceImage: (token: string, projectId: number, assetId: number, payload: ReferenceImageUpdatePayload) =>
+    request<ReferenceImageAsset>(`/api/projects/${projectId}/reference-images/${assetId}`, {
       method: "PUT",
       token,
       body: JSON.stringify(payload),
