@@ -371,6 +371,7 @@ class ReferenceImageAssetOut(BaseModel):
     source_page: str
     mapped_character_name: str
     status: str
+    meta: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

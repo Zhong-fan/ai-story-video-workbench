@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -20,6 +22,7 @@ from .api_support import (
     _trash_items_for_user,
     _world_perception_out,
 )
+from .api_support_longform import _public_asset_url
 from .auth import get_current_user
 from .contracts import (
     CharacterCardCreateRequest,
@@ -88,6 +91,12 @@ from .reference_asset_service import ReferenceAssetService
 from .reference_policy_service import ReferencePolicyService
 from .story_boundary_service import StoryBoundaryService
 from .visual_asset_service import CharacterReferenceProfileService
+
+
+def _path_slug(value: str, *, fallback: str = "untitled") -> str:
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", value.strip())
+    text = re.sub(r"\s+", "-", text).strip(".- ")
+    return (text or fallback)[:80]
 
 
 def _apply_reference_work_payload(project: Project, payload: ProjectCreateRequest | ProjectUpdateRequest) -> None:
@@ -257,6 +266,44 @@ def register_project_routes(router: APIRouter) -> None:
         for asset in assets:
             db.refresh(asset)
         return [ReferenceImageAssetOut.model_validate(item) for item in assets]
+
+    @router.post("/api/projects/{project_id}/reference-images/upload", response_model=ReferenceImageAssetOut)
+    def upload_reference_image(
+        project_id: int,
+        asset_kind: str = Form(default="character_reference"),
+        file: UploadFile = File(...),
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ReferenceImageAssetOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        content_type = (file.content_type or "").lower()
+        if content_type not in {"image/png", "image/jpeg", "image/webp"}:
+            raise HTTPException(status_code=422, detail="只支持 PNG、JPEG 或 WebP 参考图。")
+        raw = file.file.read()
+        if not raw:
+            raise HTTPException(status_code=422, detail="上传文件为空。")
+        if len(raw) > 12 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="参考图不能超过 12MB。")
+        safe_ext = ".png" if content_type == "image/png" else ".jpg" if content_type == "image/jpeg" else ".webp"
+        settings = load_settings()
+        project_dir = f"{project.id:04d}-{_path_slug(project.title)}"
+        asset_dir = settings.output_dir / "projects" / project_dir / "reference_assets"
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(raw).hexdigest()
+        path = asset_dir / f"{digest[:16]}{safe_ext}"
+        path.write_bytes(raw)
+        asset = reference_asset_service.register_uploaded_asset(
+            db,
+            project=project,
+            public_url=_public_asset_url(str(path)),
+            original_filename=file.filename or "reference",
+            asset_kind=asset_kind,
+            content_type=content_type,
+            byte_size=len(raw),
+        )
+        db.commit()
+        db.refresh(asset)
+        return ReferenceImageAssetOut.model_validate(asset)
 
     @router.get("/api/projects/{project_id}/reference-images", response_model=list[ReferenceImageAssetOut])
     def list_reference_images(

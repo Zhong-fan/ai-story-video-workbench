@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .json_utils import json_dumps
 from .models import Project, ReferenceImageAsset
 
 
@@ -55,6 +56,51 @@ class ReferenceAssetService:
             existing_by_url[remote_url] = asset
             assets.append(asset)
         return assets
+
+    def register_uploaded_asset(
+        self,
+        db: Session,
+        *,
+        project: Project,
+        public_url: str,
+        original_filename: str,
+        asset_kind: str,
+        content_type: str,
+        byte_size: int,
+    ) -> ReferenceImageAsset:
+        normalized_url = public_url.strip()
+        if not normalized_url:
+            raise ValueError("Uploaded reference asset requires a public URL")
+        existing = db.scalar(
+            select(ReferenceImageAsset).where(
+                ReferenceImageAsset.project_id == project.id,
+                ReferenceImageAsset.remote_url_hash == _remote_url_hash(normalized_url),
+            )
+        )
+        if existing is not None:
+            return existing
+        asset = ReferenceImageAsset(
+            project=project,
+            source_work=str(project.reference_work or project.title or "uploaded").strip(),
+            asset_kind=asset_kind.strip() or "character_reference",
+            remote_url=normalized_url,
+            remote_url_hash=_remote_url_hash(normalized_url),
+            provider="upload",
+            source_page=f"upload:{original_filename.strip() or 'reference'}",
+            mapped_character_name="",
+            status="candidate",
+            meta_json=json_dumps(
+                {
+                    "classification_status": "pending",
+                    "original_filename": original_filename,
+                    "content_type": content_type,
+                    "byte_size": byte_size,
+                }
+            ),
+        )
+        db.add(asset)
+        db.flush()
+        return asset
 
     def list_assets(self, db: Session, *, project: Project) -> list[ReferenceImageAsset]:
         return db.scalars(

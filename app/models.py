@@ -370,8 +370,21 @@ class ReferenceImageAsset(Base, TimestampMixin):
     source_page: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
     mapped_character_name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="candidate", nullable=False)
+    meta_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
 
     project: Mapped["Project"] = relationship(back_populates="reference_image_assets")
+
+    @property
+    def meta(self) -> dict[str, Any]:
+        try:
+            value = json.loads(self.meta_json or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    @meta.setter
+    def meta(self, value: dict[str, Any]) -> None:
+        self.meta_json = json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False)
 
 
 class CharacterReferenceProfile(Base, TimestampMixin):

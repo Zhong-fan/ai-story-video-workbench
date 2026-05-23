@@ -28,6 +28,7 @@ REFERENCE_FACT_SCHEMA_MIGRATION = "20260519_0015_reference_fact_schema"
 REFERENCE_IMAGE_ASSET_SCHEMA_MIGRATION = "20260519_0016_reference_image_asset_schema"
 CHARACTER_REFERENCE_PROFILE_SCHEMA_MIGRATION = "20260520_0017_character_reference_profile_schema"
 REFERENCE_IMAGE_ASSET_URL_HASH_MIGRATION = "20260520_0018_reference_image_asset_url_hash"
+REFERENCE_IMAGE_ASSET_META_MIGRATION = "20260523_0019_reference_image_asset_meta"
 
 
 settings = load_settings()
@@ -169,6 +170,12 @@ def _migrate_schema() -> None:
             REFERENCE_IMAGE_ASSET_URL_HASH_MIGRATION,
             "Use a fixed-width URL hash for reference image asset uniqueness",
             _migrate_reference_image_asset_url_hash_schema,
+        )
+        _run_schema_migration(
+            connection,
+            REFERENCE_IMAGE_ASSET_META_MIGRATION,
+            "Reference image asset metadata for uploaded assets and AI classification state",
+            _migrate_reference_image_asset_meta_schema,
         )
     _backfill_character_reference_profiles()
 
@@ -710,6 +717,7 @@ def _migrate_reference_image_asset_schema(connection) -> None:
                 source_page VARCHAR(1000) NOT NULL DEFAULT '',
                 mapped_character_name VARCHAR(120) NOT NULL DEFAULT '',
                 status VARCHAR(40) NOT NULL DEFAULT 'candidate',
+                meta_json TEXT NOT NULL DEFAULT ('{}'),
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE KEY uq_reference_image_assets_project_url_hash (project_id, remote_url_hash)
@@ -762,6 +770,14 @@ def _migrate_reference_image_asset_url_hash_schema(connection) -> None:
                 """
             )
         )
+
+
+def _migrate_reference_image_asset_meta_schema(connection) -> None:
+    if "reference_image_assets" not in _table_names():
+        return
+    columns = _column_names("reference_image_assets")
+    if "meta_json" not in columns:
+        connection.execute(text("ALTER TABLE reference_image_assets ADD COLUMN meta_json TEXT NOT NULL DEFAULT ('{}')"))
 
 
 def _schema_index_names(connection, table_name: str) -> set[str]:
