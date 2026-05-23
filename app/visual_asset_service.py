@@ -323,6 +323,17 @@ class VisualAssetService:
     ) -> list[dict[str, Any]]:
         character_ids = self._shot_character_ids(shot)
         if not character_ids:
+            names = self._shot_character_names(shot)
+            if names:
+                cards = db.scalars(
+                    select(CharacterCard).where(
+                        CharacterCard.project_id == project.id,
+                        CharacterCard.deleted_at.is_(None),
+                        CharacterCard.name.in_(names),
+                    )
+                ).all()
+                character_ids = [card.id for card in cards]
+        if not character_ids:
             return []
         return self.character_reference_profiles.locked_turnaround_for_shot(
             db=db,
@@ -383,6 +394,18 @@ class VisualAssetService:
             if character_id is not None and character_id not in ids:
                 ids.append(character_id)
         return ids
+
+    def _shot_character_names(self, shot: StoryboardShot) -> list[str]:
+        names: list[str] = []
+        for item in json_loads_list(shot.character_refs_json):
+            if isinstance(item, dict):
+                value = item.get("name") or item.get("character_name") or item.get("value")
+            else:
+                value = item
+            name = str(value or "").strip()
+            if name and name not in names and self._safe_int(name) is None:
+                names.append(name)
+        return names
 
     def _safe_int(self, value: Any) -> int | None:
         try:
