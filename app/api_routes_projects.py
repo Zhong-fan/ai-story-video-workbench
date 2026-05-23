@@ -53,6 +53,7 @@ from .contracts import (
     ProjectOut,
     ProjectUpdateRequest,
     ReferenceAssetWorkflowStateOut,
+    ReferenceImageClassifyRequest,
     ReferenceImageAssetOut,
     ReferenceImageAssetUpdateRequest,
     ReferenceImageDiscoverRequest,
@@ -69,7 +70,7 @@ from .contracts import (
 from .db import get_db
 from .config import load_settings
 from .context_pack_service import ContextPackService
-from .json_utils import json_loads_object
+from .json_utils import json_dumps, json_loads_object
 from .models import (
     CharacterCard,
     CharacterStateUpdate,
@@ -80,6 +81,7 @@ from .models import (
     Project,
     ProjectChapter,
     ProjectFolder,
+    ReferenceImageAsset,
     RelationshipStateUpdate,
     SourceDocument,
     StoryEvent,
@@ -87,6 +89,7 @@ from .models import (
     WorldPerceptionUpdate,
 )
 from .project_briefing_service import ProjectBriefingService
+from .reference_asset_classifier import normalize_reference_classification
 from .reference_asset_service import ReferenceAssetService
 from .reference_policy_service import ReferencePolicyService
 from .story_boundary_service import StoryBoundaryService
@@ -330,11 +333,41 @@ def register_project_routes(router: APIRouter) -> None:
                 asset_id=asset_id,
                 status=payload.status,
                 mapped_character_name=payload.mapped_character_name,
+                asset_kind=payload.asset_kind,
+                meta=payload.meta,
             )
         except LookupError as exc:
             raise HTTPException(status_code=404, detail="参考图候选不存在。") from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        character_reference_profile_service.ensure_profiles(db, project)
+        db.commit()
+        db.refresh(asset)
+        return ReferenceImageAssetOut.model_validate(asset)
+
+    @router.post("/api/projects/{project_id}/reference-images/{asset_id}/classify", response_model=ReferenceImageAssetOut)
+    def classify_reference_image(
+        project_id: int,
+        asset_id: int,
+        payload: ReferenceImageClassifyRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ReferenceImageAssetOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        asset = db.scalar(
+            select(ReferenceImageAsset).where(
+                ReferenceImageAsset.project_id == project.id,
+                ReferenceImageAsset.id == asset_id,
+            )
+        )
+        if asset is None:
+            raise HTTPException(status_code=404, detail="参考图不存在。")
+        known_names = [card.name for card in project.character_cards if card.deleted_at is None]
+        normalized = normalize_reference_classification(payload.hints, known_character_names=known_names)
+        asset.asset_kind = normalized["asset_kind"]
+        asset.mapped_character_name = normalized["mapped_character_name"]
+        existing_meta = json_loads_object(asset.meta_json)
+        asset.meta_json = json_dumps({**existing_meta, **normalized})
         db.commit()
         db.refresh(asset)
         return ReferenceImageAssetOut.model_validate(asset)

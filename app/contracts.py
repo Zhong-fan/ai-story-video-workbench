@@ -381,6 +381,12 @@ class ReferenceImageAssetOut(BaseModel):
 class ReferenceImageAssetUpdateRequest(BaseModel):
     status: str = Field(..., pattern="^(candidate|approved|rejected)$")
     mapped_character_name: str = Field(default="", max_length=120)
+    asset_kind: str | None = Field(default=None, max_length=80)
+    meta: dict[str, Any] | None = None
+
+
+class ReferenceImageClassifyRequest(BaseModel):
+    hints: dict[str, Any] = Field(default_factory=dict)
 
 
 class CharacterReferenceProfileOut(BaseModel):

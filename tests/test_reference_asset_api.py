@@ -11,7 +11,8 @@ from sqlalchemy.pool import StaticPool
 from app.api_routes_projects import register_project_routes
 from app.auth import get_current_user
 from app.db import Base, get_db
-from app.models import CharacterCard, Project, ReferenceImageAsset, User
+from app.json_utils import json_loads_object
+from app.models import CharacterCard, CharacterReferenceProfile, Project, ReferenceImageAsset, User
 
 
 class ReferenceAssetApiTests(unittest.TestCase):
@@ -118,6 +119,105 @@ class ReferenceAssetApiTests(unittest.TestCase):
         self.assertEqual(len(profiles), 1)
         self.assertEqual(profiles[0]["reference_character_name"], "阳菜")
         self.assertEqual(profiles[0]["status"], "unmapped")
+
+
+    def test_confirm_reference_image_updates_kind_meta_and_syncs_profile(self) -> None:
+        with self.SessionLocal() as session:
+            project = session.get(Project, self.project_id)
+            card = CharacterCard(
+                project=project,
+                name="阳菜",
+                age="16",
+                gender="女",
+                personality="明亮坚定",
+                story_role="女主",
+                background="",
+            )
+            asset = ReferenceImageAsset(
+                project=project,
+                source_work=project.reference_work,
+                asset_kind="unknown",
+                remote_url="https://example.com/hina.png",
+                remote_url_hash="asset-hash",
+                provider="manual",
+                source_page="https://example.com",
+                mapped_character_name="",
+                status="candidate",
+            )
+            session.add_all([card, asset])
+            session.commit()
+            asset_id = asset.id
+            card_id = card.id
+
+        response = self.client.put(
+            f"/api/projects/{self.project_id}/reference-images/{asset_id}",
+            json={
+                "status": "approved",
+                "mapped_character_name": "阳菜",
+                "asset_kind": "character_reference",
+                "meta": {"classification_status": "confirmed"},
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["status"], "approved")
+        self.assertEqual(payload["asset_kind"], "character_reference")
+        self.assertEqual(payload["mapped_character_name"], "阳菜")
+        self.assertEqual(payload["meta"]["classification_status"], "confirmed")
+
+        with self.SessionLocal() as session:
+            asset = session.get(ReferenceImageAsset, asset_id)
+            self.assertEqual(json_loads_object(asset.meta_json)["classification_status"], "confirmed")
+            profile = session.query(CharacterReferenceProfile).filter_by(character_card_id=card_id).one()
+            self.assertEqual(profile.status, "reference_assets_ready")
+            self.assertEqual(profile.visual_reference_asset_ids, [asset_id])
+
+    def test_classify_reference_image_updates_suggested_metadata(self) -> None:
+        with self.SessionLocal() as session:
+            project = session.get(Project, self.project_id)
+            card = CharacterCard(
+                project=project,
+                name="阳菜",
+                age="16",
+                gender="女",
+                personality="明亮坚定",
+                story_role="女主",
+                background="",
+            )
+            asset = ReferenceImageAsset(
+                project=project,
+                source_work=project.reference_work,
+                asset_kind="unknown",
+                remote_url="https://example.com/hina-classify.png",
+                remote_url_hash="classify-hash",
+                provider="upload",
+                source_page="upload:hina.png",
+                mapped_character_name="",
+                status="candidate",
+            )
+            session.add_all([card, asset])
+            session.commit()
+            asset_id = asset.id
+
+        response = self.client.post(
+            f"/api/projects/{self.project_id}/reference-images/{asset_id}/classify",
+            json={
+                "hints": {
+                    "asset_kind": "character_reference",
+                    "mapped_character_name": "阳菜",
+                    "confidence": 0.9,
+                    "reason": "角色参考图",
+                }
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["asset_kind"], "character_reference")
+        self.assertEqual(payload["mapped_character_name"], "阳菜")
+        self.assertEqual(payload["meta"]["classification_status"], "suggested")
+        self.assertEqual(payload["meta"]["confidence"], 0.9)
 
 
 if __name__ == "__main__":

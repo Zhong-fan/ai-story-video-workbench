@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .json_utils import json_dumps
+from .json_utils import json_dumps, json_loads_object
 from .models import Project, ReferenceImageAsset
 
 
@@ -117,6 +117,8 @@ class ReferenceAssetService:
         asset_id: int,
         status: str,
         mapped_character_name: str = "",
+        asset_kind: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> ReferenceImageAsset:
         normalized_status = str(status or "").strip()
         if normalized_status not in self.VALID_STATUSES:
@@ -132,6 +134,11 @@ class ReferenceAssetService:
         asset.status = normalized_status
         if mapped_character_name.strip():
             asset.mapped_character_name = mapped_character_name.strip()
+        if asset_kind is not None and asset_kind.strip():
+            asset.asset_kind = asset_kind.strip()
+        if meta is not None:
+            existing_meta = json_loads_object(asset.meta_json)
+            asset.meta_json = json_dumps({**existing_meta, **meta})
         db.flush()
         return asset
 
