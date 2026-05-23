@@ -90,6 +90,33 @@ from .voice_service import VoiceService
 logger = logging.getLogger(__name__)
 
 
+def _video_quality_gate_failures(db: Session, *, settings: Settings, project: Project, storyboard: Storyboard) -> list[str]:
+    failures: list[str] = []
+    visual_service = VisualAssetService(settings)
+    for shot in sorted(storyboard.shots, key=lambda item: item.shot_no):
+        refs = visual_service.locked_turnaround_references(db=db, project=project, shot=shot)
+        character_refs = json_loads_list(shot.character_refs_json)
+        if character_refs and not refs:
+            failures.append(f"镜头 {shot.shot_no} 有角色引用，但没有可用的锁定三视图。")
+        meta = json_loads_object(shot.meta_json)
+        continuity = meta.get("continuity") if isinstance(meta.get("continuity"), dict) else {}
+        requires_i2v = continuity.get("requires_i2v") is not False
+        first_frame_source = str(continuity.get("first_frame_source") or "generated")
+        if requires_i2v and first_frame_source == "generated":
+            first_frame = db.scalar(
+                select(MediaAsset).where(
+                    MediaAsset.project_id == project.id,
+                    MediaAsset.storyboard_id == storyboard.id,
+                    MediaAsset.shot_id == shot.id,
+                    MediaAsset.asset_type == "shot_first_frame",
+                    MediaAsset.status == "completed",
+                )
+            )
+            if first_frame is None:
+                failures.append(f"镜头 {shot.shot_no} 需要首帧，但还没有完成的首帧素材。")
+    return failures
+
+
 def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
     context_pack_service = ContextPackService()
 
@@ -602,6 +629,9 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
             raise HTTPException(status_code=404, detail="分镜稿不存在。")
         if storyboard.status != "draft" or not storyboard.shots:
             raise HTTPException(status_code=409, detail="分镜稿尚未生成完成，不能创建视频任务。")
+        gate_failures = _video_quality_gate_failures(db, settings=settings, project=project, storyboard=storyboard)
+        if gate_failures:
+            raise HTTPException(status_code=409, detail="视频生产前置检查未通过：" + "；".join(gate_failures[:5]))
         existing_task = db.scalar(
             select(VideoTask)
             .where(
@@ -823,6 +853,23 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
             db.refresh(storyboard)
             preflight_summary["generated_dialogue_audio"] = len(generated_assets)
             preflight_summary["skipped_locked_dialogue_audio"] = locked_before
+
+        gate_failures = _video_quality_gate_failures(db, settings=settings, project=project, storyboard=storyboard)
+        preflight_summary["quality_gate_failures"] = gate_failures
+        if gate_failures:
+            db.add(
+                TaskEvent(
+                    project_id=project.id,
+                    storyboard=storyboard,
+                    event_type="storyboard_preflight_blocked",
+                    message="视频生产前置检查未通过。",
+                    payload_json=json_dumps({"quality_gate_failures": gate_failures}),
+                )
+            )
+            db.commit()
+            if payload.create_video_task:
+                raise HTTPException(status_code=409, detail="视频生产前置检查未通过：" + "；".join(gate_failures[:5]))
+            return _state_out(db, project)
 
         if payload.create_video_task:
             existing_task = db.scalar(
