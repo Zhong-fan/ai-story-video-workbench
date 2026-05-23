@@ -195,15 +195,22 @@ class StoryboardJobService:
         db.flush()
         created_count = 0
         for index, shot_payload in enumerate(valid_shots, start=1):
+            shot_no = int(shot_payload.get("shot_no") or index)
+            continuity = self._normalize_continuity(shot_payload.get("continuity"), shot_no=shot_no)
             db.add(
                 StoryboardShot(
                     storyboard=storyboard,
-                    shot_no=int(shot_payload.get("shot_no") or index),
+                    shot_no=shot_no,
                     narration_text=str(shot_payload.get("narration_text") or "").strip(),
                     visual_prompt=str(shot_payload.get("visual_prompt") or "").strip(),
                     character_refs_json=json_dumps(ensure_list(shot_payload.get("character_refs"))),
                     scene_refs_json=json_dumps(ensure_list(shot_payload.get("scene_refs"))),
-                    meta_json=json_dumps({"audio_script": self._normalize_audio_script(shot_payload.get("audio_script"))}),
+                    meta_json=json_dumps(
+                        {
+                            "audio_script": self._normalize_audio_script(shot_payload.get("audio_script")),
+                            "continuity": continuity,
+                        }
+                    ),
                     duration_seconds=float(shot_payload.get("duration_seconds") or 4),
                     status="draft",
                 )
@@ -211,6 +218,47 @@ class StoryboardJobService:
             created_count += 1
         db.flush()
         return created_count
+
+    def _normalize_continuity(self, value: Any, *, shot_no: int) -> dict[str, Any]:
+        payload = value if isinstance(value, dict) else {}
+        shot_type = str(payload.get("shot_type") or "new").strip()
+        if shot_type not in {"new", "continuation", "camera_move", "transition"}:
+            shot_type = "new"
+        depends = payload.get("depends_on_shot_no")
+        try:
+            depends_on = int(depends) if depends is not None and str(depends).strip() else None
+        except (TypeError, ValueError):
+            depends_on = None
+        first_frame_source = str(payload.get("first_frame_source") or "").strip()
+        if first_frame_source not in {"generated", "previous_last_frame"}:
+            first_frame_source = "previous_last_frame" if shot_type in {"continuation", "camera_move"} else "generated"
+        if shot_type in {"continuation", "camera_move"} and depends_on is None and shot_no > 1:
+            depends_on = shot_no - 1
+        return {
+            "shot_type": shot_type,
+            "depends_on_shot_no": depends_on,
+            "first_frame_source": first_frame_source,
+            "requires_i2v": self._normalize_bool(payload.get("requires_i2v"), default=True),
+            "end_frame_usage": str(payload.get("end_frame_usage") or "none").strip(),
+            "camera_motion": str(payload.get("camera_motion") or "").strip(),
+            "character_state_delta": str(payload.get("character_state_delta") or "").strip(),
+            "continuity_constraints": [
+                str(item).strip() for item in ensure_list(payload.get("continuity_constraints")) if str(item).strip()
+            ],
+        }
+
+    def _normalize_bool(self, value: Any, *, default: bool) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "y"}:
+                return True
+            if normalized in {"false", "0", "no", "n"}:
+                return False
+        return bool(value)
 
     def _normalize_audio_script(self, value: Any) -> dict[str, Any]:
         payload = value if isinstance(value, dict) else {}

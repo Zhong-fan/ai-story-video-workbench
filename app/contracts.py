@@ -866,6 +866,7 @@ class StoryboardShotOut(BaseModel):
     character_refs: list[Any]
     scene_refs: list[Any]
     audio_script: dict[str, Any]
+    continuity: dict[str, Any] = Field(default_factory=dict)
     duration_seconds: float
     status: str
 

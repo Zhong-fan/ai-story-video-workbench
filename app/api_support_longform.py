@@ -207,6 +207,7 @@ def _storyboard_shot_out(shot: StoryboardShot) -> StoryboardShotOut:
     meta = json_loads_object(shot.meta_json)
     audio_script = meta.get("audio_script") if isinstance(meta.get("audio_script"), dict) else {}
     audio_script = {**audio_script, "audio_script_locked": bool(audio_script.get("audio_script_locked"))}
+    continuity = meta.get("continuity") if isinstance(meta.get("continuity"), dict) else {}
     return StoryboardShotOut(
         id=shot.id,
         storyboard_id=shot.storyboard_id,
@@ -216,6 +217,7 @@ def _storyboard_shot_out(shot: StoryboardShot) -> StoryboardShotOut:
         character_refs=json_loads_list(shot.character_refs_json),
         scene_refs=json_loads_list(shot.scene_refs_json),
         audio_script=audio_script,
+        continuity=continuity,
         duration_seconds=shot.duration_seconds,
         status=shot.status,
     )

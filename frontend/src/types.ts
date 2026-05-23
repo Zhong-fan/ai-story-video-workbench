@@ -552,6 +552,7 @@ export interface StoryboardShot {
   character_refs: unknown[];
   scene_refs: unknown[];
   audio_script: Record<string, unknown>;
+  continuity: Record<string, unknown>;
   duration_seconds: number;
   status: string;
 }

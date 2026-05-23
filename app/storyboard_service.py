@@ -40,6 +40,11 @@ class StoryboardService:
         user_decisions = video_feed.get("user_decisions", {}) if isinstance(video_feed, dict) else {}
         reference_constraints = video_feed.get("reference_constraints", {}) if isinstance(video_feed, dict) else {}
         character_visual_anchors = video_feed.get("character_visual_anchors", []) if isinstance(video_feed, dict) else []
+        character_directory = [
+            {"character_card_id": card.id, "name": card.name, "story_role": card.story_role}
+            for card in project.character_cards
+            if card.deleted_at is None
+        ]
         chapter_text = "\n\n".join(
             f"第 {chapter.chapter_no} 章《{chapter.title}》\n摘要：{chapter.summary}\n正文节选：{chapter.content[:5000]}"
             for chapter in chapters
@@ -64,6 +69,9 @@ class StoryboardService:
 已确认角色视觉锚点：
 {character_visual_anchors}
 
+角色 ID 目录：
+{character_directory}
+
 已确认参考作品约束：
 {reference_constraints}
 
@@ -82,8 +90,18 @@ class StoryboardService:
       "shot_no": 1,
       "narration_text": "旁白/字幕文本",
       "visual_prompt": "可直接用于图像/视频模型的画面提示词，包含角色、场景、景别、机位、构图、光线、色彩、空气质感、情绪",
-      "character_refs": ["角色名"],
-      "scene_refs": ["场景名"],
+      "character_refs": [{{"character_card_id": 1, "name": "角色名", "role": "角色在镜头中的作用"}}],
+      "scene_refs": [{{"name": "场景名", "role": "场景用途"}}],
+      "continuity": {{
+        "shot_type": "new|continuation|camera_move|transition",
+        "depends_on_shot_no": null,
+        "first_frame_source": "generated|previous_last_frame",
+        "requires_i2v": true,
+        "end_frame_usage": "none|feeds_next",
+        "camera_motion": "无|推进|横移|摇镜|拉远",
+        "character_state_delta": "角色状态变化",
+        "continuity_constraints": ["必须保持的角色、服装、场景和构图连续性"]
+      }},
       "audio_script": {{
         "dialogues": [
           {{
@@ -114,6 +132,8 @@ class StoryboardService:
 - visual_prompt 要像给图像/视频模型的最终提示词，直接可用，不要写“表现出”“体现出”这类抽象说明。
 - 必须遵守项目级视觉风格锁定；如果用户填写了作者/工作室画风参考，只借鉴可迁移的美术特征，不要复刻原作角色、剧情、专有名词或具体画面。
 - 不要改写章节既定事实。
+- character_refs 必须返回对象数组，character_card_id 必须来自“角色 ID 目录”；无法确定时保留 name 并省略 ID。
+- 每个镜头必须返回 continuity；continuation 和 camera_move 镜头要设置 first_frame_source 为 previous_last_frame，并写明 depends_on_shot_no。
 - 必须遵守以下硬约束：{hard_constraints}
 - 配音和对白是可选项；没有自然对白时，`audio_script.dialogues` 可以为空，不要为了配音硬塞台词。
 - 如果原文没有适合对白，可以用极短旁白或字幕补足信息；视觉叙事优先。
