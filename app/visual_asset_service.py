@@ -420,6 +420,8 @@ class VisualAssetService:
         self._require_jimeng_image_config()
         next_version = self._next_turnaround_version(db, project, character.id)
         prompt = self._build_turnaround_prompt(project=project, character=character, prompt_note=prompt_note)
+        reference_assets = self._approved_character_reference_assets(db, project=project, character=character)
+        reference_images = [asset.remote_url for asset in reference_assets if asset.remote_url]
         client = JimengImageClient(
             access_key=self.settings.jimeng_access_key,
             secret_key=self.settings.jimeng_secret_key,
@@ -432,6 +434,7 @@ class VisualAssetService:
             prompt=prompt,
             width=self.settings.jimeng_image_width,
             height=self.settings.jimeng_image_height,
+            reference_images=reference_images,
         )
         if task_id:
             image_payload, result_response = self._wait_for_image_result(client=client, task_id=task_id)
@@ -482,6 +485,8 @@ class VisualAssetService:
                     "candidate_status": "candidate",
                     "locked": False,
                     "views": ["front", "side", "back"],
+                    "visual_reference_asset_ids": [asset.id for asset in reference_assets],
+                    "visual_reference_image_count": len(reference_images),
                     "provider": "jimeng",
                     "req_key": self.settings.jimeng_image_req_key,
                     "jimeng_task_id": task_id,
@@ -511,6 +516,22 @@ class VisualAssetService:
         db.commit()
         db.refresh(asset)
         return asset
+
+    def _approved_character_reference_assets(
+        self,
+        db: Session,
+        *,
+        project: Project,
+        character: CharacterCard,
+    ) -> list[ReferenceImageAsset]:
+        return db.scalars(
+            select(ReferenceImageAsset).where(
+                ReferenceImageAsset.project_id == project.id,
+                ReferenceImageAsset.status == "approved",
+                ReferenceImageAsset.asset_kind == "character_reference",
+                ReferenceImageAsset.mapped_character_name == character.name,
+            )
+        ).all()
 
     def _require_jimeng_image_config(self) -> None:
         missing = []
