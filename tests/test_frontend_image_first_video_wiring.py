@@ -20,6 +20,7 @@ class FrontendImageFirstVideoWiringTests(unittest.TestCase):
         self.assertIn("createBriefStoryboard", store_source)
         self.assertIn('source_mode: "user_brief"', store_source)
         self.assertIn("image_first_reference", pipeline_source)
+        self.assertIn('value="existing_images"', pipeline_source)
         self.assertIn("先生成关键图", pipeline_source)
         self.assertIn("shot_first_frame", pipeline_source)
 

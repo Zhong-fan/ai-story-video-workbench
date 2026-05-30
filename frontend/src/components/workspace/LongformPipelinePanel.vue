@@ -518,7 +518,7 @@ function submitStoryboard() {
     title: storyboardTitle.value.trim(),
     source_mode: storyboardSourceMode.value,
     reference_video_brief: storyboardSourceMode.value === "novel_chapters" ? "" : storyboardBrief.value.trim(),
-    key_image_strategy: storyboardKeyImageStrategy.value,
+    key_image_strategy: storyboardSourceMode.value === "existing_images" ? "use_existing_images" : storyboardKeyImageStrategy.value,
     reference_image_asset_ids: [],
   };
   emit("create-storyboard", payload);
@@ -1531,6 +1531,7 @@ function generateTurnaround() {
           <select v-model="storyboardSourceMode">
             <option value="novel_chapters">小说章节</option>
             <option value="image_first_reference">图片先行</option>
+            <option value="existing_images">已有图片</option>
             <option value="user_brief">自由简报</option>
           </select>
         </label>
