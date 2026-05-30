@@ -18,6 +18,7 @@ from .api_support import (
 from .api_support_project import _canonical_project_evolution
 from .auth import get_current_user
 from .config import Settings
+from .context_pack_service import ContextPackService
 from .contracts import GenerateRequest, GenerationOut, GenerationProgressOut
 from .db import get_db
 from .evolution_service import EvolutionService
@@ -186,6 +187,8 @@ def register_generation_routes(
     *,
     settings: Settings,
 ) -> None:
+    context_pack_service = ContextPackService()
+
     @router.post("/api/projects/{project_id}/generate", response_model=GenerationOut)
     def generate(
         project_id: int,
@@ -194,6 +197,11 @@ def register_generation_routes(
         current_user: User = Depends(get_current_user),
     ) -> GenerationOut:
         project = _project_or_404(db, current_user.id, project_id)
+        try:
+            context_pack = context_pack_service.require_confirmed(db, project)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        context_pack_inputs = context_pack_service.resolved_inputs(context_pack)
         project_chapter = _project_chapter_or_404(db, project.id, payload.chapter_id)
         runtime_trace = _build_generation_trace(project=project, project_chapter=project_chapter, payload=payload)
         logs: list[dict[str, object]] = []
@@ -256,6 +264,9 @@ def register_generation_routes(
                     "recent_event_count": len(recent_story_events),
                     "recent_world_update_count": len(recent_world_updates),
                     "reference_work_enabled": bool(project.reference_work.strip()),
+                    "context_pack_id": context_pack_inputs.get("context_pack_id"),
+                    "context_pack_version": context_pack_inputs.get("context_pack_version"),
+                    "context_pack_reference_mode": context_pack_inputs.get("reference_mode"),
                 }
             )
 
@@ -281,6 +292,10 @@ def register_generation_routes(
                 project_title=project.title,
                 genre=project.genre,
                 reference_work=project.reference_work,
+                reference_work_synopsis=project.reference_work_synopsis,
+                reference_work_style_traits=project.reference_work_style_traits,
+                reference_work_world_traits=project.reference_work_world_traits,
+                reference_work_narrative_constraints=project.reference_work_narrative_constraints,
                 premise=project_chapter.premise,
                 world_brief=project.world_brief,
                 writing_rules=project.writing_rules,
@@ -290,6 +305,7 @@ def register_generation_routes(
                 scene_card=scene_card,
                 memories=memory_payload,
                 use_refiner=payload.use_refiner,
+                context_pack_inputs=context_pack_inputs,
                 progress=set_progress,
                 trace=runtime_trace,
             )
@@ -310,6 +326,9 @@ def register_generation_routes(
             "recent_relationship_update_count": len(recent_relationship_updates),
             "recent_event_count": len(recent_story_events),
             "recent_world_update_count": len(recent_world_updates),
+            "context_pack_id": context_pack_inputs.get("context_pack_id"),
+            "context_pack_version": context_pack_inputs.get("context_pack_version"),
+            "context_pack_reference_mode": context_pack_inputs.get("reference_mode"),
         }
         generation = GenerationRun(
             project=project,

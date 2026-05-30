@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -20,9 +22,16 @@ from .api_support import (
     _trash_items_for_user,
     _world_perception_out,
 )
+from .api_support_longform import _public_asset_url
 from .auth import get_current_user
 from .contracts import (
     CharacterCardCreateRequest,
+    CharacterReferenceProfileOut,
+    ContextPackBuildRequest,
+    ContextPackConfirmResponse,
+    ContextPackDecisionRequest,
+    ContextPackTodoUpdateRequest,
+    ContextPackOut,
     CharacterCardOut,
     CharacterCardUpdateRequest,
     DeleteCharacterCardRequest,
@@ -43,23 +52,36 @@ from .contracts import (
     ProjectFolderOut,
     ProjectOut,
     ProjectUpdateRequest,
+    ReferenceAssetWorkflowStateOut,
+    ReferenceImageClassifyRequest,
+    ReferenceImageAssetOut,
+    ReferenceImageAssetUpdateRequest,
+    ReferenceImageDiscoverRequest,
     ReferenceWorkResolveRequest,
     ReferenceWorkResolvedOut,
     RestoreTrashItemRequest,
+    StoryBoundaryParseRequest,
+    StoryBoundaryParseResponse,
+    StoryBoundaryRuleOut,
+    StoryBoundaryUpdateRequest,
     SourceCreateRequest,
     SourceOut,
 )
 from .db import get_db
 from .config import load_settings
+from .context_pack_service import ContextPackService
+from .json_utils import json_dumps, json_loads_object
 from .models import (
     CharacterCard,
     CharacterStateUpdate,
+    ContextPack,
     GenerationRun,
     Memory,
     Novel,
     Project,
     ProjectChapter,
     ProjectFolder,
+    ReferenceImageAsset,
     RelationshipStateUpdate,
     SourceDocument,
     StoryEvent,
@@ -67,6 +89,17 @@ from .models import (
     WorldPerceptionUpdate,
 )
 from .project_briefing_service import ProjectBriefingService
+from .reference_asset_classifier import normalize_reference_classification
+from .reference_asset_service import ReferenceAssetService
+from .reference_policy_service import ReferencePolicyService
+from .story_boundary_service import StoryBoundaryService
+from .visual_asset_service import CharacterReferenceProfileService
+
+
+def _path_slug(value: str, *, fallback: str = "untitled") -> str:
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", value.strip())
+    text = re.sub(r"\s+", "-", text).strip(".- ")
+    return (text or fallback)[:80]
 
 
 def _apply_reference_work_payload(project: Project, payload: ProjectCreateRequest | ProjectUpdateRequest) -> None:
@@ -78,9 +111,28 @@ def _apply_reference_work_payload(project: Project, payload: ProjectCreateReques
     project.reference_work_world_traits = payload.reference_work_world_traits
     project.reference_work_narrative_constraints = payload.reference_work_narrative_constraints
     project.reference_work_confidence_note = payload.reference_work_confidence_note.strip()
+    project.reference_inheritance_mode = payload.reference_inheritance_mode
+    project.reference_rewrite_start = payload.reference_rewrite_start.strip()
+    project.reference_authorized_changes = payload.reference_authorized_changes.strip()
+    project.story_boundary_text = payload.story_boundary_text.strip()
+
+
+def _apply_visual_style_payload(project: Project, payload: ProjectCreateRequest | ProjectUpdateRequest) -> None:
+    project.visual_style_locked = bool(payload.visual_style_locked)
+    project.visual_style_medium = payload.visual_style_medium.strip()
+    project.visual_style_artists = payload.visual_style_artists
+    project.visual_style_positive = payload.visual_style_positive
+    project.visual_style_negative = payload.visual_style_negative
+    project.visual_style_notes = payload.visual_style_notes.strip()
 
 
 def register_project_routes(router: APIRouter) -> None:
+    context_pack_service = ContextPackService()
+    story_boundary_service = StoryBoundaryService()
+    reference_asset_service = ReferenceAssetService()
+    reference_policy_service = ReferencePolicyService()
+    character_reference_profile_service = CharacterReferenceProfileService()
+
     @router.get("/api/projects", response_model=list[ProjectOut])
     def list_projects(
         db: Session = Depends(get_db),
@@ -172,6 +224,163 @@ def register_project_routes(router: APIRouter) -> None:
         result = service.resolve_reference_work(query=payload.query, genre=payload.genre)
         return ReferenceWorkResolvedOut(**result)
 
+    @router.post("/api/projects/{project_id}/story-boundaries/parse", response_model=StoryBoundaryParseResponse)
+    def parse_story_boundaries(
+        project_id: int,
+        payload: StoryBoundaryParseRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> StoryBoundaryParseResponse:
+        _project_or_404(db, current_user.id, project_id)
+        rules = story_boundary_service.parse_rules(payload.story_boundary_text)
+        return StoryBoundaryParseResponse(
+            story_boundary_text=payload.story_boundary_text.strip(),
+            rules=[StoryBoundaryRuleOut(**item) for item in rules],
+        )
+
+    @router.put("/api/projects/{project_id}/story-boundaries", response_model=ProjectOut)
+    def update_story_boundaries(
+        project_id: int,
+        payload: StoryBoundaryUpdateRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ProjectOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        project.story_boundary_text = payload.story_boundary_text.strip()
+        project.story_boundary_rules = [item.model_dump() for item in payload.rules]
+        db.commit()
+        db.refresh(project)
+        return ProjectOut.model_validate(project)
+
+    @router.post("/api/projects/{project_id}/reference-images/discover", response_model=list[ReferenceImageAssetOut])
+    def discover_reference_images(
+        project_id: int,
+        payload: ReferenceImageDiscoverRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> list[ReferenceImageAssetOut]:
+        project = _project_or_404(db, current_user.id, project_id)
+        assets = reference_asset_service.discover_candidates(
+            db,
+            project=project,
+            candidates=[item.model_dump() for item in payload.candidates],
+        )
+        db.commit()
+        for asset in assets:
+            db.refresh(asset)
+        return [ReferenceImageAssetOut.model_validate(item) for item in assets]
+
+    @router.post("/api/projects/{project_id}/reference-images/upload", response_model=ReferenceImageAssetOut)
+    def upload_reference_image(
+        project_id: int,
+        asset_kind: str = Form(default="character_reference"),
+        file: UploadFile = File(...),
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ReferenceImageAssetOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        content_type = (file.content_type or "").lower()
+        if content_type not in {"image/png", "image/jpeg", "image/webp"}:
+            raise HTTPException(status_code=422, detail="只支持 PNG、JPEG 或 WebP 参考图。")
+        raw = file.file.read()
+        if not raw:
+            raise HTTPException(status_code=422, detail="上传文件为空。")
+        if len(raw) > 12 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="参考图不能超过 12MB。")
+        safe_ext = ".png" if content_type == "image/png" else ".jpg" if content_type == "image/jpeg" else ".webp"
+        settings = load_settings()
+        project_dir = f"{project.id:04d}-{_path_slug(project.title)}"
+        asset_dir = settings.output_dir / "projects" / project_dir / "reference_assets"
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(raw).hexdigest()
+        path = asset_dir / f"{digest[:16]}{safe_ext}"
+        path.write_bytes(raw)
+        asset = reference_asset_service.register_uploaded_asset(
+            db,
+            project=project,
+            public_url=_public_asset_url(str(path)),
+            original_filename=file.filename or "reference",
+            asset_kind=asset_kind,
+            content_type=content_type,
+            byte_size=len(raw),
+        )
+        db.commit()
+        db.refresh(asset)
+        return ReferenceImageAssetOut.model_validate(asset)
+
+    @router.get("/api/projects/{project_id}/reference-images", response_model=list[ReferenceImageAssetOut])
+    def list_reference_images(
+        project_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> list[ReferenceImageAssetOut]:
+        project = _project_or_404(db, current_user.id, project_id)
+        return [ReferenceImageAssetOut.model_validate(item) for item in reference_asset_service.list_assets(db, project=project)]
+
+    @router.put("/api/projects/{project_id}/reference-images/{asset_id}", response_model=ReferenceImageAssetOut)
+    def update_reference_image(
+        project_id: int,
+        asset_id: int,
+        payload: ReferenceImageAssetUpdateRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ReferenceImageAssetOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        try:
+            asset = reference_asset_service.update_asset_status(
+                db,
+                project=project,
+                asset_id=asset_id,
+                status=payload.status,
+                mapped_character_name=payload.mapped_character_name,
+                asset_kind=payload.asset_kind,
+                meta=payload.meta,
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="参考图候选不存在。") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        character_reference_profile_service.ensure_profiles(db, project)
+        db.commit()
+        db.refresh(asset)
+        return ReferenceImageAssetOut.model_validate(asset)
+
+    @router.post("/api/projects/{project_id}/reference-images/{asset_id}/classify", response_model=ReferenceImageAssetOut)
+    def classify_reference_image(
+        project_id: int,
+        asset_id: int,
+        payload: ReferenceImageClassifyRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ReferenceImageAssetOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        asset = db.scalar(
+            select(ReferenceImageAsset).where(
+                ReferenceImageAsset.project_id == project.id,
+                ReferenceImageAsset.id == asset_id,
+            )
+        )
+        if asset is None:
+            raise HTTPException(status_code=404, detail="参考图不存在。")
+        known_names = [card.name for card in project.character_cards if card.deleted_at is None]
+        normalized = normalize_reference_classification(payload.hints, known_character_names=known_names)
+        asset.asset_kind = normalized["asset_kind"]
+        asset.mapped_character_name = normalized["mapped_character_name"]
+        existing_meta = json_loads_object(asset.meta_json)
+        asset.meta_json = json_dumps({**existing_meta, **normalized})
+        db.commit()
+        db.refresh(asset)
+        return ReferenceImageAssetOut.model_validate(asset)
+
+    @router.get("/api/projects/{project_id}/reference-images/workflow-state", response_model=ReferenceAssetWorkflowStateOut)
+    def reference_image_workflow_state(
+        project_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ReferenceAssetWorkflowStateOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        return ReferenceAssetWorkflowStateOut(**reference_asset_service.workflow_state(db, project))
+
     @router.post("/api/projects", response_model=ProjectOut)
     def create_project(
         payload: ProjectCreateRequest,
@@ -189,7 +398,10 @@ def register_project_routes(router: APIRouter) -> None:
             style_profile=payload.style_profile,
         )
         _apply_reference_work_payload(project, payload)
+        _apply_visual_style_payload(project, payload)
         db.add(project)
+        db.flush()
+        reference_policy_service.sync_project_reference_facts(db, project)
         db.commit()
         db.refresh(project)
         return ProjectOut.model_validate(project)
@@ -226,9 +438,11 @@ def register_project_routes(router: APIRouter) -> None:
         project.title = payload.title.strip()
         project.genre = payload.genre.strip()
         _apply_reference_work_payload(project, payload)
+        _apply_visual_style_payload(project, payload)
         project.world_brief = payload.world_brief.strip()
         project.writing_rules = payload.writing_rules.strip()
         project.style_profile = payload.style_profile
+        reference_policy_service.sync_project_reference_facts(db, project)
         db.commit()
         db.refresh(project)
         return ProjectOut.model_validate(project)
@@ -359,6 +573,9 @@ def register_project_routes(router: APIRouter) -> None:
         current_user: User = Depends(get_current_user),
     ) -> ProjectDetailResponse:
         project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.latest_for_project(db, project.id)
+        character_reference_profiles = character_reference_profile_service.ensure_profiles(db, project)
+        db.commit()
         generations = db.scalars(
             select(GenerationRun).where(GenerationRun.project_id == project.id).order_by(GenerationRun.created_at.desc())
         ).all()
@@ -379,7 +596,148 @@ def register_project_routes(router: APIRouter) -> None:
             relationship_state_updates=[_relationship_state_out(item) for item in relationship_updates[:20]],
             story_events=[_story_event_out(item) for item in story_events[:20]],
             world_perception_updates=[_world_perception_out(item) for item in world_updates[:20]],
+            character_reference_profiles=[
+                CharacterReferenceProfileOut.model_validate(item)
+                for item in sorted(character_reference_profiles, key=lambda profile: profile.character_card_id)
+            ],
+            context_pack=ContextPackOut(**context_pack_service.as_dict(context_pack)) if context_pack is not None else None,
         )
+
+    @router.get("/api/projects/{project_id}/context-pack", response_model=ContextPackOut | None)
+    def get_context_pack(
+        project_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackOut | None:
+        project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.latest_for_project(db, project.id)
+        if context_pack is None:
+            return None
+        if context_pack_service.is_stale(context_pack, project) and context_pack.status == "confirmed":
+            context_pack.status = "stale"
+            db.commit()
+            db.refresh(context_pack)
+        return ContextPackOut(**context_pack_service.as_dict(context_pack))
+
+    @router.post("/api/projects/{project_id}/context-pack/build", response_model=ContextPackOut)
+    def build_context_pack(
+        project_id: int,
+        payload: ContextPackBuildRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.build(
+            db,
+            project=project,
+            reference_mode=payload.reference_mode,
+            user_notes=payload.user_notes,
+            user_decisions=payload.user_decisions,
+            confirm_after_build=payload.confirm_after_build,
+        )
+        db.commit()
+        db.refresh(context_pack)
+        return ContextPackOut(**context_pack_service.as_dict(context_pack))
+
+    @router.post("/api/projects/{project_id}/context-pack/rebuild", response_model=ContextPackOut)
+    def rebuild_context_pack(
+        project_id: int,
+        payload: ContextPackBuildRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        latest = context_pack_service.latest_for_project(db, project.id)
+        if latest is None:
+            context_pack = context_pack_service.build(
+                db,
+                project=project,
+                reference_mode=payload.reference_mode,
+                user_notes=payload.user_notes,
+                user_decisions=payload.user_decisions,
+                confirm_after_build=payload.confirm_after_build,
+            )
+        else:
+            context_pack_service.update_user_decisions(latest, payload.user_decisions)
+            context_pack = context_pack_service.rebuild(
+                db,
+                project=project,
+                existing=latest,
+                confirm_after_build=payload.confirm_after_build,
+            )
+        db.commit()
+        db.refresh(context_pack)
+        return ContextPackOut(**context_pack_service.as_dict(context_pack))
+
+    @router.post("/api/projects/{project_id}/context-pack/confirm", response_model=ContextPackConfirmResponse)
+    def confirm_context_pack(
+        project_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackConfirmResponse:
+        project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.latest_for_project(db, project.id)
+        if context_pack is None:
+            raise HTTPException(status_code=404, detail="当前项目还没有生成前校对稿。")
+        if context_pack_service.is_stale(context_pack, project):
+            context_pack.status = "stale"
+            db.commit()
+            raise HTTPException(status_code=409, detail="项目设定已变化，需要重新生成校对稿。")
+        context_pack_service.confirm(context_pack)
+        db.commit()
+        db.refresh(context_pack)
+        return ContextPackConfirmResponse(
+            status="confirmed",
+            context_pack=ContextPackOut(**context_pack_service.as_dict(context_pack)),
+        )
+
+    @router.put("/api/projects/{project_id}/context-pack/decisions", response_model=ContextPackOut)
+    def update_context_pack_decisions(
+        project_id: int,
+        payload: ContextPackDecisionRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.latest_for_project(db, project.id)
+        if context_pack is None:
+            raise HTTPException(status_code=404, detail="当前项目还没有生成前校对稿。")
+        context_pack_service.update_user_decisions(context_pack, payload.user_decisions)
+        rebuilt = context_pack_service.build(
+            db,
+            project=project,
+            reference_mode=context_pack.reference_mode,
+            user_notes=context_pack.user_notes,
+            user_decisions=json_loads_object(context_pack.user_decisions_json),
+            confirm_after_build=context_pack.status == "confirmed",
+        )
+        db.commit()
+        db.refresh(rebuilt)
+        return ContextPackOut(**context_pack_service.as_dict(rebuilt))
+
+    @router.put("/api/projects/{project_id}/context-pack/todos", response_model=ContextPackOut)
+    def update_context_pack_todo(
+        project_id: int,
+        payload: ContextPackTodoUpdateRequest,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> ContextPackOut:
+        project = _project_or_404(db, current_user.id, project_id)
+        context_pack = context_pack_service.latest_for_project(db, project.id)
+        if context_pack is None:
+            raise HTTPException(status_code=404, detail="当前项目还没有生成前校对稿。")
+        context_pack_service.update_user_decisions(context_pack, {f"task:{payload.task_id}": payload.status})
+        rebuilt = context_pack_service.build(
+            db,
+            project=project,
+            reference_mode=context_pack.reference_mode,
+            user_notes=context_pack.user_notes,
+            user_decisions=json_loads_object(context_pack.user_decisions_json),
+            confirm_after_build=context_pack.status == "confirmed",
+        )
+        db.commit()
+        db.refresh(rebuilt)
+        return ContextPackOut(**context_pack_service.as_dict(rebuilt))
 
     @router.post("/api/projects/{project_id}/dirty-evolution/trash")
     def trash_dirty_evolution_for_project(
@@ -428,6 +786,11 @@ def register_project_routes(router: APIRouter) -> None:
             personality=payload.personality.strip(),
             story_role=payload.story_role.strip(),
             background=payload.background.strip(),
+            voice_provider=payload.voice_provider.strip(),
+            voice_speaker=payload.voice_speaker.strip(),
+            voice_style=payload.voice_style.strip(),
+            voice_speed=payload.voice_speed,
+            voice_pitch=payload.voice_pitch,
         )
         db.add(card)
         db.commit()
@@ -450,6 +813,11 @@ def register_project_routes(router: APIRouter) -> None:
         card.personality = payload.personality.strip()
         card.story_role = payload.story_role.strip()
         card.background = payload.background.strip()
+        card.voice_provider = payload.voice_provider.strip()
+        card.voice_speaker = payload.voice_speaker.strip()
+        card.voice_style = payload.voice_style.strip()
+        card.voice_speed = payload.voice_speed
+        card.voice_pitch = payload.voice_pitch
         db.commit()
         db.refresh(card)
         return CharacterCardOut.model_validate(card)

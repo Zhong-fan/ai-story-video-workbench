@@ -19,9 +19,9 @@ for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "Get-CimInstan
 )
 
 if not defined BACKEND_FOUND (
-  for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "$conn = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue; if ($conn) { $conn.OwningProcess }"`) do (
+  for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "$conn = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 8500 -State Listen -ErrorAction SilentlyContinue; if ($conn) { $conn.OwningProcess }"`) do (
     set "BACKEND_FOUND=1"
-    echo [1/2] Stopping process on 127.0.0.1:8000 with PID %%P...
+    echo [1/2] Stopping process on 127.0.0.1:8500 with PID %%P...
     powershell -NoProfile -Command "Stop-Process -Id %%P -Force"
   )
 )

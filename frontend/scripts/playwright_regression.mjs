@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
 
-const baseUrl = "http://127.0.0.1:8000/";
+const baseUrl = "http://127.0.0.1:8500/";
 const TEXT = {
   login: "\u767b\u5f55",
   register: "\u6ce8\u518c",

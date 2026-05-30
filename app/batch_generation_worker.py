@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 
@@ -8,10 +9,12 @@ from sqlalchemy import select
 from .batch_generation_service import BatchGenerationService
 from .config import Settings
 from .db import SessionLocal
+from .json_utils import json_loads_object
 from .models import BatchGenerationJob, Storyboard, VideoTask
 from .storyboard_job_service import StoryboardJobService
 from .video_render_service import VideoRenderService
 
+logger = logging.getLogger(__name__)
 
 _worker_thread: threading.Thread | None = None
 _stop_event = threading.Event()
@@ -20,6 +23,7 @@ _stop_event = threading.Event()
 def start_batch_generation_worker(settings: Settings) -> None:
     global _worker_thread
     if _worker_thread is not None and _worker_thread.is_alive():
+        logger.info("后台任务 worker 已在运行：thread=%s", _worker_thread.name)
         return
     _stop_event.clear()
     _mark_stale_running_jobs_retryable()
@@ -30,13 +34,16 @@ def start_batch_generation_worker(settings: Settings) -> None:
         daemon=True,
     )
     _worker_thread.start()
+    logger.info("后台任务 worker 已启动：thread=%s", _worker_thread.name)
 
 
 def stop_batch_generation_worker() -> None:
     _stop_event.set()
+    logger.info("后台任务 worker 收到停止信号")
 
 
 def _worker_loop(settings: Settings) -> None:
+    logger.info("后台任务 worker 循环开始")
     batch_service = BatchGenerationService(settings)
     storyboard_service = StoryboardJobService(settings)
     video_service = VideoRenderService(settings)
@@ -50,14 +57,18 @@ def _worker_loop(settings: Settings) -> None:
                 if not did_work:
                     did_work = _run_next_video_task(db=db, video_service=video_service)
         except Exception:
+            logger.exception("后台任务 worker 执行异常，稍后继续轮询")
             did_work = False
         if not did_work:
             _stop_event.wait(2.0)
+    logger.info("后台任务 worker 循环结束")
 
 
 def _mark_stale_running_jobs_retryable() -> None:
     with SessionLocal() as db:
         jobs = db.scalars(select(BatchGenerationJob).where(BatchGenerationJob.job_status == "running")).all()
+        if jobs:
+            logger.info("服务启动恢复批量正文任务：count=%s", len(jobs))
         for job in jobs:
             job.job_status = "failed"
             job.worker_id = ""
@@ -68,6 +79,8 @@ def _mark_stale_running_jobs_retryable() -> None:
                     task.status = "failed"
                     task.error_message = "服务重启后恢复为可重试状态。"
         storyboards = db.scalars(select(Storyboard).where(Storyboard.status == "running")).all()
+        if storyboards:
+            logger.info("服务启动恢复分镜任务：count=%s", len(storyboards))
         for storyboard in storyboards:
             storyboard.status = "failed"
             storyboard.error_message = "服务重启后恢复为失败状态，可重新创建分镜任务。"
@@ -75,6 +88,8 @@ def _mark_stale_running_jobs_retryable() -> None:
             storyboard.worker_started_at = None
             storyboard.last_heartbeat_at = None
         video_tasks = db.scalars(select(VideoTask).where(VideoTask.task_status == "running")).all()
+        if video_tasks:
+            logger.info("服务启动恢复视频任务：count=%s", len(video_tasks))
         for task in video_tasks:
             task.task_status = "failed"
             task.error_message = "服务重启后恢复为失败状态，可重新创建视频任务。"
@@ -90,12 +105,17 @@ def _run_next_video_task(*, db, video_service: VideoRenderService) -> bool:
     )
     if task is None:
         return False
+    logger.info("开始执行视频任务：task_id=%s storyboard_id=%s", task.id, task.storyboard_id)
     try:
         video_service.render(db=db, task=task)
     except Exception as exc:
+        logger.exception("视频任务失败：task_id=%s", task.id)
         task.task_status = "failed"
         task.error_message = str(exc)
-        video_service._set_progress(task, stage="failed", message=str(exc))
+        payload = json_loads_object(task.progress_json)
+        failure_stage = str(payload.get("current_step") or payload.get("stage") or "video_task").strip() or "video_task"
+        video_service._set_progress(task, stage="failed", message=str(exc), extra={"failure_stage": failure_stage})
+        video_service.record_quality_result(task, status="failed", message=task.error_message or str(exc))
         video_service._add_event(db, task=task, event_type="video_task_failed", message=f"视频生产失败：{exc}")
         db.commit()
     return True

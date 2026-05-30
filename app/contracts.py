@@ -58,6 +58,16 @@ class ProjectCreateRequest(BaseModel):
     reference_work_world_traits: list[str] = []
     reference_work_narrative_constraints: list[str] = []
     reference_work_confidence_note: str = Field(default="", max_length=1000)
+    reference_inheritance_mode: str = Field(default="style_only", pattern="^(style_only|characters_and_world|strict_inherit)$")
+    reference_rewrite_start: str = Field(default="", max_length=4000)
+    reference_authorized_changes: str = Field(default="", max_length=4000)
+    story_boundary_text: str = Field(default="", max_length=12000)
+    visual_style_locked: bool = True
+    visual_style_medium: str = Field(default="", max_length=80)
+    visual_style_artists: list[str] = []
+    visual_style_positive: list[str] = []
+    visual_style_negative: list[str] = []
+    visual_style_notes: str = Field(default="", max_length=4000)
     world_brief: str = Field(default="", max_length=4000)
     writing_rules: str = Field(default="", max_length=2000)
     style_profile: str = Field(
@@ -82,6 +92,17 @@ class ProjectOut(BaseModel):
     reference_work_world_traits: list[str] = []
     reference_work_narrative_constraints: list[str] = []
     reference_work_confidence_note: str
+    reference_inheritance_mode: str
+    reference_rewrite_start: str
+    reference_authorized_changes: str
+    story_boundary_text: str
+    story_boundary_rules: list[dict[str, Any]] = []
+    visual_style_locked: bool
+    visual_style_medium: str
+    visual_style_artists: list[str] = []
+    visual_style_positive: list[str] = []
+    visual_style_negative: list[str] = []
+    visual_style_notes: str
     world_brief: str
     writing_rules: str
     style_profile: str
@@ -121,6 +142,11 @@ class CharacterCardCreateRequest(BaseModel):
     personality: str = Field(default="", max_length=2000)
     story_role: str = Field(default="", max_length=120)
     background: str = Field(default="", max_length=4000)
+    voice_provider: str = Field(default="", max_length=80)
+    voice_speaker: str = Field(default="", max_length=120)
+    voice_style: str = Field(default="", max_length=120)
+    voice_speed: float = Field(default=1.0, ge=0.25, le=4.0)
+    voice_pitch: float = Field(default=0.0, ge=-1.0, le=1.0)
 
 
 class CharacterCardUpdateRequest(CharacterCardCreateRequest):
@@ -135,6 +161,11 @@ class CharacterCardOut(BaseModel):
     personality: str
     story_role: str
     background: str
+    voice_provider: str
+    voice_speaker: str
+    voice_style: str
+    voice_speed: float
+    voice_pitch: float
     created_at: datetime
     updated_at: datetime
 
@@ -248,6 +279,8 @@ class ProjectDetailResponse(BaseModel):
     relationship_state_updates: list[RelationshipStateUpdateOut] = []
     story_events: list[StoryEventOut] = []
     world_perception_updates: list[WorldPerceptionUpdateOut] = []
+    character_reference_profiles: list["CharacterReferenceProfileOut"] = []
+    context_pack: "ContextPackOut | None" = None
 
 
 class ProjectFolderCreateRequest(BaseModel):
@@ -280,7 +313,175 @@ class ReferenceWorkResolvedOut(BaseModel):
     style_traits: list[str]
     world_traits: list[str]
     narrative_constraints: list[str]
+    writing_style: list[str]
+    writing_constraints: list[str]
+    visual_style: list[str]
+    video_constraints: list[str]
+    visual_medium: str
+    visual_artists: list[str]
     confidence_note: str
+
+
+class StoryBoundaryRuleOut(BaseModel):
+    rule_id: str
+    scope_type: str
+    start_chapter_no: int | None = None
+    end_chapter_no: int | None = None
+    rule_type: str
+    subjects: list[str] = []
+    predicate: str
+    instruction: str
+    priority: str = "hard"
+    status: str = "active"
+
+
+class StoryBoundaryParseRequest(BaseModel):
+    story_boundary_text: str = Field(..., min_length=1, max_length=12000)
+
+
+class StoryBoundaryParseResponse(BaseModel):
+    story_boundary_text: str
+    rules: list[StoryBoundaryRuleOut] = []
+
+
+class StoryBoundaryUpdateRequest(BaseModel):
+    story_boundary_text: str = Field(default="", max_length=12000)
+    rules: list[StoryBoundaryRuleOut] = []
+
+
+class ReferenceImageCandidateIn(BaseModel):
+    remote_url: str = Field(..., min_length=1, max_length=1000)
+    asset_kind: str = Field(default="stills", max_length=80)
+    provider: str = Field(default="manual", max_length=80)
+    source_page: str = Field(default="", max_length=1000)
+    mapped_character_name: str = Field(default="", max_length=120)
+
+
+class ReferenceImageDiscoverRequest(BaseModel):
+    candidates: list[ReferenceImageCandidateIn] = []
+
+
+class ReferenceImageAssetOut(BaseModel):
+    id: int
+    project_id: int
+    source_work: str
+    asset_kind: str
+    remote_url: str
+    provider: str
+    source_page: str
+    mapped_character_name: str
+    status: str
+    meta: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReferenceImageAssetUpdateRequest(BaseModel):
+    status: str = Field(..., pattern="^(candidate|approved|rejected)$")
+    mapped_character_name: str = Field(default="", max_length=120)
+    asset_kind: str | None = Field(default=None, max_length=80)
+    meta: dict[str, Any] | None = None
+
+
+class ReferenceImageClassifyRequest(BaseModel):
+    hints: dict[str, Any] = Field(default_factory=dict)
+
+
+class CharacterReferenceProfileOut(BaseModel):
+    id: int
+    project_id: int
+    character_card_id: int
+    reference_character_name: str
+    visual_reference_asset_ids: list[int] = []
+    locked_turnaround_asset_id: int | None = None
+    status: str
+    notes: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReferenceAssetWorkflowStateOut(BaseModel):
+    status: str
+    total_candidates: int
+    pending_count: int
+    approved_count: int
+    rejected_count: int
+
+
+class ContextPackBuildRequest(BaseModel):
+    reference_mode: str = Field(default="hybrid_reference", pattern="^(style_reference|content_reference|hybrid_reference)$")
+    user_notes: str = Field(default="", max_length=4000)
+    confirm_after_build: bool = False
+    user_decisions: dict[str, str] = {}
+
+
+class ContextPackConflictOut(BaseModel):
+    severity: str
+    code: str
+    title: str
+    detail: str
+    related_items: list[str] = []
+
+
+class ContextPackGuidanceOut(BaseModel):
+    title: str
+    detail: str
+    suggested_action: str
+
+
+class ContextPackChoiceQuestionOut(BaseModel):
+    question_id: str
+    question: str
+    options: list[str] = []
+    recommendation: str = ""
+
+
+class ContextPackTodoTaskOut(BaseModel):
+    task_id: str = ""
+    title: str
+    detail: str
+    status: str = "todo"
+
+
+class ContextPackOut(BaseModel):
+    id: int
+    project_id: int
+    version_no: int
+    status: str
+    reference_mode: str
+    user_notes: str
+    source_fingerprint: str
+    project_snapshot: dict[str, Any] = {}
+    character_snapshot: list[dict[str, Any]] = []
+    reference_snapshot: dict[str, Any] = {}
+    source_snapshot: dict[str, Any] = {}
+    conflict_report: list[ContextPackConflictOut] = []
+    user_guidance: list[ContextPackGuidanceOut] = []
+    choice_questions: list[ContextPackChoiceQuestionOut] = []
+    todo_tasks: list[ContextPackTodoTaskOut] = []
+    derived_constraints: dict[str, Any] = {}
+    feed_preview: dict[str, Any] = {}
+    confirmed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ContextPackConfirmResponse(BaseModel):
+    status: str
+    context_pack: ContextPackOut
+
+
+class ContextPackDecisionRequest(BaseModel):
+    user_decisions: dict[str, str] = {}
+
+
+class ContextPackTodoUpdateRequest(BaseModel):
+    task_id: str = Field(..., min_length=1, max_length=120)
+    status: str = Field(..., pattern="^(todo|done|skipped)$")
 
 
 class ProjectFolderOut(BaseModel):
@@ -506,6 +707,7 @@ class DraftVersionOut(BaseModel):
     id: int
     project_id: int
     chapter_outline_id: int
+    chapter_no: int
     generation_run_id: int | None = None
     parent_version_id: int | None = None
     version_no: int
@@ -651,8 +853,12 @@ class BatchGenerationJobOut(BaseModel):
 
 
 class CreateStoryboardRequest(BaseModel):
-    novel_chapter_ids: list[int] = Field(..., min_length=1, max_length=12)
+    source_mode: str = Field(default="novel_chapters", max_length=40)
+    novel_chapter_ids: list[int] = Field(default_factory=list, max_length=12)
     title: str = Field(default="", max_length=255)
+    reference_video_brief: str = Field(default="", max_length=4000)
+    key_image_strategy: str = Field(default="generate_first_frames", max_length=80)
+    reference_image_asset_ids: list[int] = Field(default_factory=list, max_length=50)
 
 
 class StoryboardShotOut(BaseModel):
@@ -663,6 +869,8 @@ class StoryboardShotOut(BaseModel):
     visual_prompt: str
     character_refs: list[Any]
     scene_refs: list[Any]
+    audio_script: dict[str, Any]
+    continuity: dict[str, Any] = Field(default_factory=dict)
     duration_seconds: float
     status: str
 
@@ -674,6 +882,7 @@ class StoryboardOut(BaseModel):
     source_chapter_ids: list[Any]
     status: str
     summary: str
+    progress: dict[str, Any] = {}
     worker_id: str = ""
     worker_started_at: datetime | None = None
     last_heartbeat_at: datetime | None = None
@@ -689,6 +898,7 @@ class UpdateStoryboardShotRequest(BaseModel):
     visual_prompt: str = Field(default="", max_length=8000)
     character_refs: list[Any] = []
     scene_refs: list[Any] = []
+    audio_script: dict[str, Any] = {}
     duration_seconds: float = Field(default=4, ge=0.5, le=60)
     status: str = Field(default="draft", max_length=40)
 
@@ -719,6 +929,43 @@ class UpdateMediaAssetRequest(BaseModel):
     uri: str = Field(default="", max_length=500)
     status: str = Field(default="pending", max_length=40)
     meta: dict[str, Any] = {}
+
+
+class GenerateCharacterTurnaroundRequest(BaseModel):
+    character_card_id: int = Field(..., ge=1)
+    chapter_no: int | None = Field(default=None, ge=1, le=10000)
+    prompt_note: str = Field(default="", max_length=2000)
+
+
+class GenerateShotFirstFrameRequest(BaseModel):
+    shot_id: int = Field(..., ge=1)
+
+
+class GenerateVoiceRequest(BaseModel):
+    voice_profile: str = Field(default="", max_length=120)
+    provider: str = Field(default="", max_length=80)
+    voice_role: str = Field(default="narrator", max_length=40)
+    character_card_id: int | None = Field(default=None, ge=1)
+    dialogue_text: str = Field(default="", max_length=8000)
+    speed: float = Field(default=1.0, ge=0.25, le=4.0)
+    emotion: str = Field(default="", max_length=80)
+    text_override: str = Field(default="", max_length=8000)
+
+
+class GenerateAudioScriptsRequest(BaseModel):
+    dialogue_density: str = Field(default="normal", max_length=40)
+    narration_policy: str = Field(default="minimal", max_length=40)
+    music_policy: str = Field(default="cue_only", max_length=40)
+    sound_effect_policy: str = Field(default="cue_only", max_length=40)
+
+
+class VideoProductionPreflightRequest(BaseModel):
+    generate_character_turnarounds: bool = True
+    generate_audio_scripts: bool = False
+    refresh_audio_scripts: bool = False
+    generate_dialogue_audio: bool = False
+    create_video_task: bool = True
+    fallback_voice_profile: str = Field(default="", max_length=120)
 
 
 class VideoTaskOut(BaseModel):

@@ -1,0 +1,29 @@
+- generic [ref=e4]:
+  - complementary [ref=e5]:
+    - generic [ref=e6]:
+      - paragraph [ref=e7]: 晨流写作台
+      - heading "Chen Flow" [level=1] [ref=e8]
+    - navigation "Primary" [ref=e9]:
+      - button "我的项目" [ref=e10] [cursor=pointer]
+      - button "新建项目" [ref=e11] [cursor=pointer]
+      - button "回收站" [ref=e12] [cursor=pointer]
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: P
+        - strong [ref=e17]: pw_longform_20260516_1
+      - button "退出" [ref=e18] [cursor=pointer]
+  - main [ref=e19]:
+    - generic [ref=e20]:
+      - generic [ref=e21]:
+        - generic [ref=e22]:
+          - paragraph [ref=e23]: 我的小说
+          - heading "全部项目" [level=2] [ref=e24]
+        - generic [ref=e25]:
+          - searchbox "搜索项目" [ref=e27]
+          - button "新建小说项目" [ref=e28] [cursor=pointer]
+      - paragraph [ref=e29]: 还没有项目。
+      - generic [ref=e30]:
+        - generic [ref=e31]: 共 0 条 / 每页 6 条 / 第 1 / 1 页
+        - generic [ref=e32]:
+          - button "上一页" [disabled] [ref=e33]
+          - button "下一页" [disabled] [ref=e34]

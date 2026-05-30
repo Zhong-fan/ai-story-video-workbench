@@ -1,11 +1,15 @@
 from __future__ import annotations
 import json
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
+
+LONG_TEXT = Text().with_variant(MEDIUMTEXT(), "mysql")
 
 
 class TimestampMixin:
@@ -64,6 +68,17 @@ class Project(Base, TimestampMixin):
     reference_work_world_traits_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     reference_work_narrative_constraints_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     reference_work_confidence_note: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    reference_inheritance_mode: Mapped[str] = mapped_column(String(40), default="style_only", nullable=False)
+    reference_rewrite_start: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    reference_authorized_changes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    story_boundary_text: Mapped[str] = mapped_column(LONG_TEXT, default="", nullable=False)
+    story_boundary_rules_json: Mapped[str] = mapped_column(LONG_TEXT, default="[]", nullable=False)
+    visual_style_locked: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    visual_style_medium: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    visual_style_artists_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    visual_style_positive_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    visual_style_negative_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    visual_style_notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
     premise: Mapped[str] = mapped_column(Text, default="", nullable=False)
     world_brief: Mapped[str] = mapped_column(Text, default="", nullable=False)
     writing_rules: Mapped[str] = mapped_column(Text, default="", nullable=False)
@@ -126,6 +141,13 @@ class Project(Base, TimestampMixin):
     )
     task_events: Mapped[list["TaskEvent"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     storyboards: Mapped[list["Storyboard"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    context_packs: Mapped[list["ContextPack"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    reference_facts: Mapped[list["ReferenceFact"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    reference_image_assets: Mapped[list["ReferenceImageAsset"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    character_reference_profiles: Mapped[list["CharacterReferenceProfile"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def reference_work_style_traits(self) -> list[str]:
@@ -151,6 +173,43 @@ class Project(Base, TimestampMixin):
     def reference_work_narrative_constraints(self, value: list[str]) -> None:
         self.reference_work_narrative_constraints_json = json.dumps(_normalize_text_list(value), ensure_ascii=False)
 
+    @property
+    def story_boundary_rules(self) -> list[dict[str, Any]]:
+        return _json_object_list(self.story_boundary_rules_json)
+
+    @story_boundary_rules.setter
+    def story_boundary_rules(self, value: list[dict[str, Any]]) -> None:
+        normalized: list[dict[str, Any]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            normalized.append(item)
+        self.story_boundary_rules_json = json.dumps(normalized, ensure_ascii=False)
+
+    @property
+    def visual_style_artists(self) -> list[str]:
+        return _json_text_list(self.visual_style_artists_json)
+
+    @visual_style_artists.setter
+    def visual_style_artists(self, value: list[str]) -> None:
+        self.visual_style_artists_json = json.dumps(_normalize_text_list(value), ensure_ascii=False)
+
+    @property
+    def visual_style_positive(self) -> list[str]:
+        return _json_text_list(self.visual_style_positive_json)
+
+    @visual_style_positive.setter
+    def visual_style_positive(self, value: list[str]) -> None:
+        self.visual_style_positive_json = json.dumps(_normalize_text_list(value), ensure_ascii=False)
+
+    @property
+    def visual_style_negative(self) -> list[str]:
+        return _json_text_list(self.visual_style_negative_json)
+
+    @visual_style_negative.setter
+    def visual_style_negative(self, value: list[str]) -> None:
+        self.visual_style_negative_json = json.dumps(_normalize_text_list(value), ensure_ascii=False)
+
 
 def _json_text_list(value: str) -> list[str]:
     try:
@@ -164,6 +223,20 @@ def _json_text_list(value: str) -> list[str]:
 
 def _normalize_text_list(value: list[str]) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _json_object_list(value: str) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(value or "[]")
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in payload:
+        if isinstance(item, dict):
+            result.append(item)
+    return result
 
 
 class ProjectFolder(Base, TimestampMixin):
@@ -204,6 +277,11 @@ class CharacterCard(Base, TimestampMixin):
     personality: Mapped[str] = mapped_column(Text, default="", nullable=False)
     story_role: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     background: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    voice_provider: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    voice_speaker: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    voice_style: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    voice_speed: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    voice_pitch: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     project: Mapped["Project"] = relationship(back_populates="character_cards")
@@ -219,6 +297,136 @@ class SourceDocument(Base, TimestampMixin):
     source_kind: Mapped[str] = mapped_column(String(60), default="reference", nullable=False)
 
     project: Mapped["Project"] = relationship(back_populates="source_documents")
+
+
+class ContextPack(Base, TimestampMixin):
+    __tablename__ = "context_packs"
+    __table_args__ = (UniqueConstraint("project_id", "version_no", name="uq_context_packs_project_version"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(String(40), default="draft", nullable=False)
+    reference_mode: Mapped[str] = mapped_column(String(40), default="hybrid_reference", nullable=False)
+    user_notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    source_fingerprint: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    project_snapshot_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    character_snapshot_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    reference_snapshot_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    source_snapshot_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    conflict_report_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    user_decisions_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    derived_constraints_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    feed_preview_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    project: Mapped["Project"] = relationship(back_populates="context_packs")
+
+
+class ReferenceFact(Base, TimestampMixin):
+    __tablename__ = "reference_facts"
+    __table_args__ = (UniqueConstraint("project_id", "reference_key", "fact_type", name="uq_reference_facts_project_key_type"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    fact_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    reference_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    chapter_effective_until: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payload_json: Mapped[str] = mapped_column(LONG_TEXT, default="{}", nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="active", nullable=False)
+
+    project: Mapped["Project"] = relationship(back_populates="reference_facts")
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        try:
+            value = json.loads(self.payload_json or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    @payload.setter
+    def payload(self, value: dict[str, Any]) -> None:
+        self.payload_json = json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False)
+
+
+class ReferenceImageAsset(Base, TimestampMixin):
+    __tablename__ = "reference_image_assets"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "remote_url_hash",
+            name="uq_reference_image_assets_project_url_hash",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    source_work: Mapped[str] = mapped_column(String(255), nullable=False)
+    asset_kind: Mapped[str] = mapped_column(String(80), default="stills", nullable=False)
+    remote_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    remote_url_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str] = mapped_column(String(80), default="manual", nullable=False)
+    source_page: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    mapped_character_name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="candidate", nullable=False)
+    meta_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+
+    project: Mapped["Project"] = relationship(back_populates="reference_image_assets")
+
+    @property
+    def meta(self) -> dict[str, Any]:
+        try:
+            value = json.loads(self.meta_json or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    @meta.setter
+    def meta(self, value: dict[str, Any]) -> None:
+        self.meta_json = json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False)
+
+
+class CharacterReferenceProfile(Base, TimestampMixin):
+    __tablename__ = "character_reference_profiles"
+    __table_args__ = (UniqueConstraint("project_id", "character_card_id", name="uq_character_reference_profiles_project_character"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    character_card_id: Mapped[int] = mapped_column(ForeignKey("character_cards.id"), nullable=False)
+    reference_character_name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    visual_reference_asset_ids_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    locked_turnaround_asset_id: Mapped[int | None] = mapped_column(ForeignKey("media_assets.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), default="unmapped", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+    project: Mapped["Project"] = relationship(back_populates="character_reference_profiles")
+    character_card: Mapped["CharacterCard"] = relationship()
+    locked_turnaround_asset: Mapped["MediaAsset | None"] = relationship(foreign_keys=[locked_turnaround_asset_id])
+
+    @property
+    def visual_reference_asset_ids(self) -> list[int]:
+        ids: list[int] = []
+        for item in _json_text_list(self.visual_reference_asset_ids_json):
+            try:
+                value = int(item)
+            except (TypeError, ValueError):
+                continue
+            if value not in ids:
+                ids.append(value)
+        return ids
+
+    @visual_reference_asset_ids.setter
+    def visual_reference_asset_ids(self, value: list[int]) -> None:
+        normalized: list[int] = []
+        for item in value:
+            try:
+                asset_id = int(item)
+            except (TypeError, ValueError):
+                continue
+            if asset_id not in normalized:
+                normalized.append(asset_id)
+        self.visual_reference_asset_ids_json = json.dumps(normalized, ensure_ascii=False)
 
 
 class ProjectChapter(Base, TimestampMixin):
@@ -479,6 +687,7 @@ class StoryboardShot(Base):
     visual_prompt: Mapped[str] = mapped_column(Text, default="", nullable=False)
     character_refs_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     scene_refs_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    meta_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     duration_seconds: Mapped[float] = mapped_column(Float, default=4.0, nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="draft", nullable=False)
 
@@ -496,7 +705,7 @@ class MediaAsset(Base, TimestampMixin):
     uri: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     prompt: Mapped[str] = mapped_column(Text, default="", nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="pending", nullable=False)
-    meta_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    meta_json: Mapped[str] = mapped_column(LONG_TEXT, default="{}", nullable=False)
 
     project: Mapped["Project"] = relationship()
     storyboard: Mapped["Storyboard | None"] = relationship(back_populates="media_assets")

@@ -18,6 +18,12 @@ import type {
   ProjectPayload,
   ReferenceWorkResolveRequest,
   ReferenceWorkResolved,
+  ReferenceImageAsset,
+  ReferenceImageCandidatePayload,
+  ReferenceImageUpdatePayload,
+  StoryBoundaryParsePayload,
+  StoryBoundaryParseResponse,
+  StoryBoundaryUpdatePayload,
   ProjectSuggestionRequest,
   ProjectSuggestionResponse,
   SourceItem,
@@ -31,6 +37,8 @@ import type {
   BatchGenerationJob,
   BatchGenerationPayload,
   CreateStoryboardPayload,
+  ContextPack,
+  ContextPackBuildPayload,
   GenerateSeriesPlanPayload,
   LongformState,
   OutlineRevisionResponse,
@@ -45,6 +53,10 @@ import type {
   MediaAsset,
   UpdateChapterOutlinePayload,
   UpdateMediaAssetPayload,
+  GenerateCharacterTurnaroundPayload,
+  GenerateVoicePayload,
+  GenerateAudioScriptsPayload,
+  VideoProductionPreflightPayload,
   UpdateStoryboardShotPayload,
   CreateStoryboardShotPayload,
   ReorderStoryboardShotsPayload,
@@ -54,6 +66,17 @@ import type {
 type RequestOptions = RequestInit & {
   token?: string | null;
 };
+
+function describeRequest(input: RequestInfo): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
+function logApi(level: "info" | "error", message: string, details: Record<string, unknown>) {
+  const logger = level === "error" ? console.error : console.info;
+  logger(`[前端接口] ${message}`, details);
+}
 
 const fieldLabels: Record<string, string> = {
   username: "用户名",
@@ -129,10 +152,26 @@ async function request<T>(input: RequestInfo, init: RequestOptions = {}): Promis
     headers.set("Authorization", `Bearer ${init.token}`);
   }
 
-  const response = await fetch(input, {
-    ...init,
-    headers,
-  });
+  const method = init.method ?? "GET";
+  const url = describeRequest(input);
+  const startedAt = performance.now();
+  logApi("info", "请求开始", { method, url });
+
+  let response: Response;
+  try {
+    response = await fetch(input, {
+      ...init,
+      headers,
+    });
+  } catch (error) {
+    logApi("error", "请求网络异常", {
+      method,
+      url,
+      elapsed_ms: Math.round(performance.now() - startedAt),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
@@ -144,10 +183,26 @@ async function request<T>(input: RequestInfo, init: RequestOptions = {}): Promis
     } catch {
       // ignore
     }
+    logApi("error", "请求失败", {
+      method,
+      url,
+      status: response.status,
+      elapsed_ms: Math.round(performance.now() - startedAt),
+      message,
+      request_id: response.headers.get("X-Request-ID"),
+    });
     throw new Error(message);
   }
 
-  return (await response.json()) as T;
+  const payload = (await response.json()) as T;
+  logApi("info", "请求成功", {
+    method,
+    url,
+    status: response.status,
+    elapsed_ms: Math.round(performance.now() - startedAt),
+    request_id: response.headers.get("X-Request-ID"),
+  });
+  return payload;
 }
 
 export const api = {
@@ -167,6 +222,32 @@ export const api = {
       token,
       body: JSON.stringify(payload),
     }),
+  parseStoryBoundaries: (token: string, projectId: number, payload: StoryBoundaryParsePayload) =>
+    request<StoryBoundaryParseResponse>(`/api/projects/${projectId}/story-boundaries/parse`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  updateStoryBoundaries: (token: string, projectId: number, payload: StoryBoundaryUpdatePayload) =>
+    request<Project>(`/api/projects/${projectId}/story-boundaries`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  discoverReferenceImages: (token: string, projectId: number, candidates: ReferenceImageCandidatePayload[]) =>
+    request<ReferenceImageAsset[]>(`/api/projects/${projectId}/reference-images/discover`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ candidates }),
+    }),
+  listReferenceImages: (token: string, projectId: number) =>
+    request<ReferenceImageAsset[]>(`/api/projects/${projectId}/reference-images`, { token }),
+  updateReferenceImage: (token: string, projectId: number, assetId: number, payload: ReferenceImageUpdatePayload) =>
+    request<ReferenceImageAsset>(`/api/projects/${projectId}/reference-images/${assetId}`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify(payload),
+    }),
   suggestProjectBriefing: (token: string, payload: ProjectSuggestionRequest) =>
     request<ProjectSuggestionResponse>("/api/projects/briefing-suggestions", {
       method: "POST",
@@ -179,6 +260,37 @@ export const api = {
     request<Project>(`/api/projects/${projectId}`, { method: "DELETE", token, body: JSON.stringify(payload) }),
   projectDetail: (token: string, projectId: number) =>
     request<ProjectDetailResponse>(`/api/projects/${projectId}`, { token }),
+  contextPack: (token: string, projectId: number) =>
+    request<ContextPack | null>(`/api/projects/${projectId}/context-pack`, { token }),
+  buildContextPack: (token: string, projectId: number, payload: ContextPackBuildPayload) =>
+    request<ContextPack>(`/api/projects/${projectId}/context-pack/build`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  rebuildContextPack: (token: string, projectId: number, payload: ContextPackBuildPayload) =>
+    request<ContextPack>(`/api/projects/${projectId}/context-pack/rebuild`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  confirmContextPack: (token: string, projectId: number) =>
+    request<{ status: string; context_pack: ContextPack }>(`/api/projects/${projectId}/context-pack/confirm`, {
+      method: "POST",
+      token,
+    }),
+  updateContextPackDecisions: (token: string, projectId: number, user_decisions: Record<string, string>) =>
+    request<ContextPack>(`/api/projects/${projectId}/context-pack/decisions`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify({ user_decisions }),
+    }),
+  updateContextPackTodo: (token: string, projectId: number, task_id: string, status: string) =>
+    request<ContextPack>(`/api/projects/${projectId}/context-pack/todos`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify({ task_id, status }),
+    }),
   createProjectChapter: (token: string, projectId: number, payload: ProjectChapterPayload) =>
     request<ProjectChapter>(`/api/projects/${projectId}/chapters`, { method: "POST", token, body: JSON.stringify(payload) }),
   updateProjectChapter: (token: string, projectId: number, chapterId: number, payload: UpdateProjectChapterPayload) =>
@@ -362,10 +474,60 @@ export const api = {
       token,
       body: JSON.stringify(payload),
     }),
+  deleteMediaAsset: (token: string, projectId: number, assetId: number) =>
+    request<{ status: string }>(`/api/projects/${projectId}/media-assets/${assetId}`, {
+      method: "DELETE",
+      token,
+    }),
+  generateCharacterTurnaround: (token: string, projectId: number, payload: GenerateCharacterTurnaroundPayload) =>
+    request<MediaAsset>(`/api/projects/${projectId}/visual-assets/character-turnaround`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  generateShotFirstFrame: (token: string, projectId: number, storyboardId: number, shotId: number) =>
+    request<MediaAsset>(`/api/projects/${projectId}/storyboards/${storyboardId}/shots/${shotId}/first-frame`, {
+      method: "POST",
+      token,
+    }),
+  generateStoryboardVoice: (token: string, projectId: number, storyboardId: number, payload: GenerateVoicePayload) =>
+    request<MediaAsset[]>(`/api/projects/${projectId}/storyboards/${storyboardId}/voice-tasks`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  generateStoryboardAudioScripts: (token: string, projectId: number, storyboardId: number, payload: GenerateAudioScriptsPayload) =>
+    request<Storyboard>(`/api/projects/${projectId}/storyboards/${storyboardId}/audio-scripts`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  generateShotVoice: (token: string, projectId: number, storyboardId: number, shotId: number, payload: GenerateVoicePayload) =>
+    request<MediaAsset>(`/api/projects/${projectId}/storyboards/${storyboardId}/shots/${shotId}/voice`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  prepareVideoProduction: (token: string, projectId: number, storyboardId: number, payload: VideoProductionPreflightPayload) =>
+    request<LongformState>(`/api/projects/${projectId}/storyboards/${storyboardId}/video-production/preflight`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
   updateVideoTask: (token: string, projectId: number, taskId: number, payload: UpdateVideoTaskPayload) =>
     request<VideoTask>(`/api/projects/${projectId}/video-tasks/${taskId}`, {
       method: "PUT",
       token,
       body: JSON.stringify(payload),
+    }),
+  deleteVideoTask: (token: string, projectId: number, taskId: number) =>
+    request<{ status: string }>(`/api/projects/${projectId}/video-tasks/${taskId}`, {
+      method: "DELETE",
+      token,
+    }),
+  deleteStoryboard: (token: string, projectId: number, storyboardId: number) =>
+    request<{ status: string }>(`/api/projects/${projectId}/storyboards/${storyboardId}`, {
+      method: "DELETE",
+      token,
     }),
 };

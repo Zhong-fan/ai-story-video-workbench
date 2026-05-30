@@ -1,0 +1,70 @@
+- generic [ref=e35]:
+  - complementary [ref=e36]:
+    - generic [ref=e37]:
+      - paragraph [ref=e38]: ChenFlow
+      - heading "创作台" [level=1] [ref=e39]
+    - button "返回工作区" [ref=e41] [cursor=pointer]
+    - navigation "Editor" [ref=e42]:
+      - button "项目设定" [ref=e43] [cursor=pointer]
+      - button "生成前校对" [ref=e44] [cursor=pointer]
+      - button "人物卡" [active] [ref=e45] [cursor=pointer]
+      - button "小说创作" [ref=e46] [cursor=pointer]
+      - button "视频创作" [ref=e47] [cursor=pointer]
+      - button "生成过程" [ref=e48] [cursor=pointer]
+      - button "已发布阅读" [ref=e49] [cursor=pointer]
+      - button "作品管理" [ref=e50] [cursor=pointer]
+  - main [ref=e51]:
+    - main [ref=e536]:
+      - generic [ref=e537]:
+        - generic [ref=e538]:
+          - generic [ref=e539]:
+            - paragraph [ref=e540]: 人物卡
+            - heading "添加人物" [level=2] [ref=e541]
+            - paragraph [ref=e542]: 一张卡只放一类信息，让角色的姓名、职责、性格和背景分层展示。
+          - generic [ref=e543]:
+            - button "项目设定" [ref=e544] [cursor=pointer]
+            - button "内容库" [ref=e545] [cursor=pointer]
+        - generic [ref=e546]:
+          - generic [ref=e547]:
+            - generic [ref=e548]:
+              - generic [ref=e549]: 姓名
+              - textbox "姓名" [ref=e550]
+            - generic [ref=e551]:
+              - generic [ref=e552]: 年龄
+              - textbox "年龄" [ref=e553]
+            - generic [ref=e554]:
+              - generic [ref=e555]: 性别
+              - textbox "性别" [ref=e556]
+          - generic [ref=e557]:
+            - generic [ref=e558]: 在小说里的角色
+            - textbox "在小说里的角色" [ref=e559]
+          - generic [ref=e560]:
+            - generic [ref=e561]: 性格
+            - textbox "性格" [ref=e562]
+          - generic [ref=e563]:
+            - generic [ref=e564]: 人物背景
+            - textbox "人物背景" [ref=e565]
+          - generic [ref=e566]:
+            - generic [ref=e567]:
+              - generic [ref=e568]: 配音 Provider
+              - textbox "配音 Provider" [ref=e569]:
+                - /placeholder: 留空使用全局默认
+            - generic [ref=e570]:
+              - generic [ref=e571]: Speaker / Voice
+              - textbox "Speaker / Voice" [ref=e572]:
+                - /placeholder: 例如 BV700_V2_streaming
+          - generic [ref=e573]:
+            - generic [ref=e574]:
+              - generic [ref=e575]: 声音风格
+              - textbox "声音风格" [ref=e576]:
+                - /placeholder: 温柔、克制、少年感
+            - generic [ref=e577]:
+              - generic [ref=e578]: 语速
+              - spinbutton "语速" [ref=e579]: "1"
+            - generic [ref=e580]:
+              - generic [ref=e581]: 音高
+              - spinbutton "音高" [ref=e582]: "0"
+          - button "添加人物卡" [ref=e583] [cursor=pointer]
+      - generic [ref=e586]:
+        - paragraph [ref=e587]: 已有人物
+        - heading "0 张人物卡" [level=2] [ref=e588]

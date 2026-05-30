@@ -1,0 +1,98 @@
+- generic [ref=e35]:
+  - complementary [ref=e36]:
+    - generic [ref=e37]:
+      - paragraph [ref=e38]: ChenFlow
+      - heading "创作台" [level=1] [ref=e39]
+    - button "返回工作区" [ref=e41] [cursor=pointer]
+    - navigation "Editor" [ref=e42]:
+      - button "项目设定" [ref=e43] [cursor=pointer]
+      - button "生成前校对" [active] [ref=e44] [cursor=pointer]
+      - button "人物卡" [ref=e45] [cursor=pointer]
+      - button "小说创作" [ref=e46] [cursor=pointer]
+      - button "视频创作" [ref=e47] [cursor=pointer]
+      - button "生成过程" [ref=e48] [cursor=pointer]
+      - button "已发布阅读" [ref=e49] [cursor=pointer]
+      - button "作品管理" [ref=e50] [cursor=pointer]
+  - main [ref=e51]:
+    - main [ref=e603]:
+      - generic [ref=e604]:
+        - generic [ref=e605]:
+          - generic [ref=e606]:
+            - paragraph [ref=e607]: 生成前校对
+            - heading "Playwright 长篇流水线验证 20260516" [level=2] [ref=e608]
+            - paragraph [ref=e609]: 先把项目设定、人物卡和参考作品整理成一份可见、可确认的创作上下文包。后续概要、正文和视频都应以这份包为准。
+          - generic [ref=e610]:
+            - button "项目设定" [ref=e611] [cursor=pointer]
+            - button "人物卡" [ref=e612] [cursor=pointer]
+        - generic [ref=e613]:
+          - generic [ref=e614]:
+            - generic [ref=e615]: 参考作品使用方式
+            - combobox "参考作品使用方式" [ref=e616]:
+              - option "风格参考" [selected]
+              - option "内容参考"
+          - generic [ref=e617]:
+            - generic [ref=e618]: 本轮校对备注
+            - textbox "本轮校对备注" [ref=e619]:
+              - /placeholder: 例如：优先校对人物姓名、男女主关系、是否符合原著气质。
+          - generic [ref=e620]:
+            - button "重建校对稿" [ref=e621] [cursor=pointer]
+            - button "生成并直接确认" [ref=e622] [cursor=pointer]
+            - button "确认当前上下文包" [ref=e623] [cursor=pointer]
+      - generic [ref=e624]:
+        - generic [ref=e626]:
+          - paragraph [ref=e627]: 当前状态
+          - heading "Context Pack v1" [level=2] [ref=e628]
+          - paragraph [ref=e629]: 状态：stale · 已确认于 2026-05-18T16:04:00
+        - generic [ref=e630]:
+          - article [ref=e631]:
+            - strong [ref=e632]: 硬约束
+            - generic [ref=e633]: 已确认人物姓名不得漂移或替换。
+            - generic [ref=e634]: 已确认人物性别、身份、角色定位不得与人物卡冲突。
+            - generic [ref=e635]: 世界观、写作规则和视觉风格锁定内容必须优先服从。
+          - article [ref=e636]:
+            - strong [ref=e637]: 软约束
+            - generic [ref=e638]: 风格档位：dialogue_driven
+            - generic [ref=e639]: 参考作品默认只提供可迁移的风格、叙事与镜头约束。
+      - generic [ref=e640]:
+        - generic [ref=e642]:
+          - paragraph [ref=e643]: 风险与冲突
+          - heading "本轮校对发现的问题" [level=2] [ref=e644]
+        - generic [ref=e645]:
+          - article [ref=e646]:
+            - strong [ref=e647]: 尚未填写人物卡
+            - generic [ref=e648]: 等级：warning
+            - emphasis [ref=e649]: 没有人物卡时，后续概要、正文和视频链路的人物一致性会明显下降。
+          - article [ref=e650]:
+            - strong [ref=e651]: 辅助素材较少
+            - generic [ref=e652]: 等级：info
+            - emphasis [ref=e653]: 当前除了项目设定和人物卡之外，几乎没有长期资料或补充资料可供约束生成。
+      - generic [ref=e654]:
+        - generic [ref=e656]:
+          - paragraph [ref=e657]: 改进建议
+          - heading "建议用户先怎么改" [level=2] [ref=e658]
+        - article [ref=e660]:
+          - strong [ref=e661]: 先补主要人物卡
+          - generic [ref=e662]: 没有人物卡时，后续概要、正文和视频链路的人物一致性会明显下降。
+          - emphasis [ref=e663]: 至少补齐男女主、关键配角和反派的人物卡，再进入概要和正文生成。
+      - generic [ref=e664]:
+        - generic [ref=e666]:
+          - paragraph [ref=e667]: 待办任务
+          - heading "建议先处理这些项" [level=2] [ref=e668]
+        - article [ref=e670]:
+          - strong [ref=e671]: 补充主要人物卡
+          - generic [ref=e672]: 状态：todo
+          - emphasis [ref=e673]: 至少补齐主角、关键配角和主要冲突角色。
+          - generic [ref=e674]:
+            - button "标记已完成" [ref=e675] [cursor=pointer]
+            - button "标记待处理" [disabled] [ref=e676]
+            - button "标记跳过" [ref=e677] [cursor=pointer]
+      - generic [ref=e678]:
+        - generic [ref=e680]:
+          - paragraph [ref=e681]: 喂料预览
+          - heading "小说链路将收到的上下文" [level=2] [ref=e682]
+        - generic [ref=e683]: "{ \"project_core\": { \"title\": \"Playwright 长篇流水线验证 20260516\", \"genre\": \"都市异能\", \"world_brief\": \"近未来上海，少数人能看见城市缝隙中的异常回声，官方与民间组织都在争夺解释权。\", \"writing_rules\": \"双主角，关系推进清晰，章节结尾保留悬念，对话推动冲突。\" }, \"character_constraints\": [], \"reference_constraints\": { \"mode\": \"style_reference\", \"reference_work\": \"\", \"creator\": \"\", \"medium\": \"\", \"synopsis\": \"\", \"style_traits\": [], \"world_traits\": [], \"narrative_constraints\": [], \"confidence_note\": \"\" }, \"supporting_memories\": [], \"supporting_sources\": [], \"user_decisions\": {}, \"hard_constraints\": [ \"已确认人物姓名不得漂移或替换。\", \"已确认人物性别、身份、角色定位不得与人物卡冲突。\", \"世界观、写作规则和视觉风格锁定内容必须优先服从。\" ], \"soft_constraints\": [ \"风格档位：dialogue_driven\", \"参考作品默认只提供可迁移的风格、叙事与镜头约束。\" ] }"
+      - generic [ref=e684]:
+        - generic [ref=e686]:
+          - paragraph [ref=e687]: 喂料预览
+          - heading "视频链路将收到的上下文" [level=2] [ref=e688]
+        - generic [ref=e689]: "{ \"visual_style_medium\": \"二维动画电影\", \"visual_style_notes\": \"未填写\", \"visual_style_artists\": [], \"character_visual_anchors\": [], \"user_decisions\": {}, \"reference_constraints\": { \"mode\": \"style_reference\", \"reference_work\": \"\", \"creator\": \"\", \"medium\": \"\", \"synopsis\": \"\", \"style_traits\": [], \"world_traits\": [], \"narrative_constraints\": [], \"confidence_note\": \"\" }, \"hard_constraints\": [ \"已确认人物姓名不得漂移或替换。\", \"已确认人物性别、身份、角色定位不得与人物卡冲突。\", \"世界观、写作规则和视觉风格锁定内容必须优先服从。\" ] }"

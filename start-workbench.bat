@@ -67,7 +67,7 @@ popd
 
 echo [4/4] Starting backend server...
 echo.
-echo Open in browser: http://127.0.0.1:8000
+echo Open in browser: http://127.0.0.1:8500
 echo Stop the server with Ctrl+C in this window.
 echo.
 python -m app.api

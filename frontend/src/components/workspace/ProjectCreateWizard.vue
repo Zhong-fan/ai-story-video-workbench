@@ -129,7 +129,7 @@ function previousStep() {
           <p>{{ referenceWorkResolved.synopsis }}</p>
           <div class="assistant-trait-grid">
             <div>
-              <strong>风格特征</strong>
+              <strong>基础风格特征</strong>
               <ul class="choice-card__bullets">
                 <li v-for="item in referenceWorkResolved.style_traits" :key="item">{{ item }}</li>
               </ul>
@@ -140,6 +140,38 @@ function previousStep() {
                 <li v-for="item in referenceWorkResolved.world_traits" :key="item">{{ item }}</li>
               </ul>
             </div>
+          </div>
+          <div class="assistant-trait-grid">
+            <div>
+              <strong>可迁移文风</strong>
+              <ul class="choice-card__bullets">
+                <li v-for="item in referenceWorkResolved.writing_style" :key="item">{{ item }}</li>
+              </ul>
+            </div>
+            <div>
+              <strong>写作约束</strong>
+              <ul class="choice-card__bullets">
+                <li v-for="item in referenceWorkResolved.writing_constraints" :key="item">{{ item }}</li>
+              </ul>
+            </div>
+          </div>
+          <div class="assistant-trait-grid">
+            <div>
+              <strong>视频风格</strong>
+              <ul class="choice-card__bullets">
+                <li v-for="item in referenceWorkResolved.visual_style" :key="item">{{ item }}</li>
+              </ul>
+            </div>
+            <div>
+              <strong>镜头与画面约束</strong>
+              <ul class="choice-card__bullets">
+                <li v-for="item in referenceWorkResolved.video_constraints" :key="item">{{ item }}</li>
+              </ul>
+            </div>
+          </div>
+          <div class="project-meta">
+            <div><span>建议画面媒介</span><strong>{{ referenceWorkResolved.visual_medium || "未给出" }}</strong></div>
+            <div><span>建议风格参考</span><strong>{{ referenceWorkResolved.visual_artists.join(" / ") || "未给出" }}</strong></div>
           </div>
           <div v-if="referenceWorkResolved.narrative_constraints.length">
             <strong>叙事约束</strong>
@@ -158,12 +190,13 @@ function previousStep() {
           <div class="assistant-panel__header">
             <div>
               <strong>已根据参考作品自动补全基础设定</strong>
-              <p>当前会默认继承这部作品的题材倾向、文风、世界特征和写作偏好。可以直接创建，或继续高级编辑。</p>
+              <p>系统已经把这部作品拆成世界特征、写作约束和视频风格约束，并写入项目可编辑字段。你可以直接创建，也可以继续微调。</p>
             </div>
           </div>
           <div class="project-meta">
             <div><span>题材</span><strong>{{ form.genre || "未填写" }}</strong></div>
             <div><span>文风</span><strong>{{ styleProfileOptions.find((item) => item.value === form.style_profile)?.label || form.style_profile }}</strong></div>
+            <div><span>画面媒介</span><strong>{{ form.visual_style_medium || "未填写" }}</strong></div>
           </div>
           <div class="hero__actions">
             <button class="primary-button" type="button" :disabled="loading || !form.title.trim()" @click="emit('submitQuick')">直接创建项目</button>
@@ -266,7 +299,7 @@ function previousStep() {
           <p>{{ form.reference_work_synopsis || "简介未填写。" }}</p>
           <div class="assistant-trait-grid">
             <div>
-              <strong>风格特征</strong>
+              <strong>写作风格线索</strong>
               <ul class="choice-card__bullets">
                 <li v-for="item in form.reference_work_style_traits" :key="item">{{ item }}</li>
               </ul>
@@ -279,7 +312,7 @@ function previousStep() {
             </div>
           </div>
           <div v-if="form.reference_work_narrative_constraints.length">
-            <strong>叙事约束</strong>
+            <strong>写作与改编约束</strong>
             <ul class="choice-card__bullets">
               <li v-for="item in form.reference_work_narrative_constraints" :key="item">{{ item }}</li>
             </ul>

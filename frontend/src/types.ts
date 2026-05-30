@@ -2,10 +2,15 @@ export type ViewKey =
   | "studio"
   | "trash"
   | "projectCreate"
+  | "setupStage"
+  | "novelStage"
+  | "videoStage"
   | "projectSettings"
+  | "contextReview"
   | "characters"
-  | "longform"
-  | "workshop"
+  | "novelCreate"
+  | "videoCreate"
+  | "novelReader"
   | "generationTrace"
   | "novelEditor"
   | "auth";
@@ -50,6 +55,17 @@ export interface Project {
   reference_work_world_traits: string[];
   reference_work_narrative_constraints: string[];
   reference_work_confidence_note: string;
+  reference_inheritance_mode: "style_only" | "characters_and_world" | "strict_inherit";
+  reference_rewrite_start: string;
+  reference_authorized_changes: string;
+  story_boundary_text: string;
+  story_boundary_rules: StoryBoundaryRule[];
+  visual_style_locked: boolean;
+  visual_style_medium: string;
+  visual_style_artists: string[];
+  visual_style_positive: string[];
+  visual_style_negative: string[];
+  visual_style_notes: string;
   world_brief: string;
   writing_rules: string;
   style_profile: string;
@@ -70,6 +86,16 @@ export interface ProjectPayload {
   reference_work_world_traits: string[];
   reference_work_narrative_constraints: string[];
   reference_work_confidence_note: string;
+  reference_inheritance_mode: "style_only" | "characters_and_world" | "strict_inherit";
+  reference_rewrite_start: string;
+  reference_authorized_changes: string;
+  story_boundary_text: string;
+  visual_style_locked: boolean;
+  visual_style_medium: string;
+  visual_style_artists: string[];
+  visual_style_positive: string[];
+  visual_style_negative: string[];
+  visual_style_notes: string;
   world_brief: string;
   writing_rules: string;
   style_profile: string;
@@ -105,7 +131,80 @@ export interface ReferenceWorkResolved {
   style_traits: string[];
   world_traits: string[];
   narrative_constraints: string[];
+  writing_style: string[];
+  writing_constraints: string[];
+  visual_style: string[];
+  video_constraints: string[];
+  visual_medium: string;
+  visual_artists: string[];
   confidence_note: string;
+}
+
+export interface StoryBoundaryRule {
+  rule_id: string;
+  scope_type: "series" | "chapter_range" | "chapter";
+  start_chapter_no?: number | null;
+  end_chapter_no?: number | null;
+  rule_type: string;
+  subjects: string[];
+  predicate: string;
+  instruction: string;
+  priority: string;
+  status: string;
+}
+
+export interface StoryBoundaryParsePayload {
+  story_boundary_text: string;
+}
+
+export interface StoryBoundaryParseResponse {
+  story_boundary_text: string;
+  rules: StoryBoundaryRule[];
+}
+
+export interface StoryBoundaryUpdatePayload {
+  story_boundary_text: string;
+  rules: StoryBoundaryRule[];
+}
+
+export interface ReferenceImageAsset {
+  id: number;
+  project_id: number;
+  source_work: string;
+  asset_kind: string;
+  remote_url: string;
+  provider: string;
+  source_page: string;
+  mapped_character_name: string;
+  status: "candidate" | "approved" | "rejected";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CharacterReferenceProfile {
+  id: number;
+  project_id: number;
+  character_card_id: number;
+  reference_character_name: string;
+  visual_reference_asset_ids: number[];
+  locked_turnaround_asset_id?: number | null;
+  status: "unmapped" | "mapped" | "reference_assets_ready" | "turnaround_candidate_ready" | "turnaround_locked";
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReferenceImageCandidatePayload {
+  remote_url: string;
+  asset_kind?: string;
+  provider?: string;
+  source_page?: string;
+  mapped_character_name?: string;
+}
+
+export interface ReferenceImageUpdatePayload {
+  status: "candidate" | "approved" | "rejected";
+  mapped_character_name: string;
 }
 
 export interface ProjectChapter {
@@ -148,6 +247,11 @@ export interface CharacterCard {
   personality: string;
   story_role: string;
   background: string;
+  voice_provider: string;
+  voice_speaker: string;
+  voice_style: string;
+  voice_speed: number;
+  voice_pitch: number;
   created_at: string;
   updated_at: string;
 }
@@ -159,6 +263,11 @@ export interface CharacterCardPayload {
   personality: string;
   story_role: string;
   background: string;
+  voice_provider: string;
+  voice_speaker: string;
+  voice_style: string;
+  voice_speed: number;
+  voice_pitch: number;
 }
 
 export interface SourceItem {
@@ -252,6 +361,67 @@ export interface ProjectDetailResponse {
   relationship_state_updates: RelationshipStateUpdate[];
   story_events: StoryEventItem[];
   world_perception_updates: WorldPerceptionUpdate[];
+  character_reference_profiles: CharacterReferenceProfile[];
+  context_pack?: ContextPack | null;
+}
+
+export interface ContextPackConflict {
+  severity: string;
+  code: string;
+  title: string;
+  detail: string;
+  related_items: string[];
+}
+
+export interface ContextPackGuidance {
+  title: string;
+  detail: string;
+  suggested_action: string;
+}
+
+export interface ContextPackChoiceQuestion {
+  question_id: string;
+  question: string;
+  options: string[];
+  recommendation: string;
+}
+
+export interface ContextPackTodoTask {
+  task_id: string;
+  title: string;
+  detail: string;
+  status: string;
+}
+
+export interface ContextPack {
+  id: number;
+  project_id: number;
+  version_no: number;
+  status: string;
+  reference_mode: "style_reference" | "content_reference" | "hybrid_reference";
+  user_notes: string;
+  source_fingerprint: string;
+  project_snapshot: Record<string, unknown>;
+  character_snapshot: Array<Record<string, unknown>>;
+  reference_snapshot: Record<string, unknown>;
+  source_snapshot: Record<string, unknown>;
+  conflict_report: ContextPackConflict[];
+  user_decisions: Record<string, string>;
+  user_guidance: ContextPackGuidance[];
+  choice_questions: ContextPackChoiceQuestion[];
+  todo_tasks: ContextPackTodoTask[];
+  derived_constraints: Record<string, unknown>;
+  feed_preview: Record<string, unknown>;
+  confirmed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContextPackBuildPayload {
+  reference_mode: "style_reference" | "content_reference" | "hybrid_reference";
+  user_notes: string;
+  confirm_after_build: boolean;
+  user_decisions?: Record<string, string>;
 }
 
 export interface SeriesPlanVersion {
@@ -297,6 +467,7 @@ export interface DraftVersion {
   id: number;
   project_id: number;
   chapter_outline_id: number;
+  chapter_no: number;
   generation_run_id?: number | null;
   parent_version_id?: number | null;
   version_no: number;
@@ -380,6 +551,8 @@ export interface StoryboardShot {
   visual_prompt: string;
   character_refs: unknown[];
   scene_refs: unknown[];
+  audio_script: Record<string, unknown>;
+  continuity: Record<string, unknown>;
   duration_seconds: number;
   status: string;
 }
@@ -391,6 +564,7 @@ export interface Storyboard {
   source_chapter_ids: unknown[];
   status: string;
   summary: string;
+  progress: Record<string, unknown>;
   worker_id: string;
   worker_started_at?: string | null;
   last_heartbeat_at?: string | null;
@@ -465,6 +639,10 @@ export interface BatchGenerationPayload {
 export interface CreateStoryboardPayload {
   novel_chapter_ids: number[];
   title: string;
+  source_mode?: "novel_chapters" | "image_first_reference" | "existing_images" | "user_brief";
+  reference_video_brief?: string;
+  key_image_strategy?: string;
+  reference_image_asset_ids?: number[];
 }
 
 export interface ReviseDraftPayload {
@@ -489,6 +667,7 @@ export interface UpdateStoryboardShotPayload {
   visual_prompt: string;
   character_refs: unknown[];
   scene_refs: unknown[];
+  audio_script: Record<string, unknown>;
   duration_seconds: number;
   status: string;
 }
@@ -505,6 +684,43 @@ export interface UpdateMediaAssetPayload {
   uri: string;
   status: string;
   meta: Record<string, unknown>;
+}
+
+export interface GenerateCharacterTurnaroundPayload {
+  character_card_id: number;
+  chapter_no?: number | null;
+  prompt_note: string;
+}
+
+export interface GenerateShotFirstFramePayload {
+  shot_id: number;
+}
+
+export interface GenerateVoicePayload {
+  voice_profile?: string;
+  provider?: string;
+  voice_role?: "narrator" | "dialogue";
+  character_card_id?: number | null;
+  dialogue_text?: string;
+  speed?: number;
+  emotion?: string;
+  text_override?: string;
+}
+
+export interface GenerateAudioScriptsPayload {
+  dialogue_density?: string;
+  narration_policy?: string;
+  music_policy?: string;
+  sound_effect_policy?: string;
+}
+
+export interface VideoProductionPreflightPayload {
+  generate_character_turnarounds?: boolean;
+  generate_audio_scripts?: boolean;
+  refresh_audio_scripts?: boolean;
+  generate_dialogue_audio?: boolean;
+  create_video_task?: boolean;
+  fallback_voice_profile?: string;
 }
 
 export interface UpdateVideoTaskPayload {
@@ -574,6 +790,18 @@ export interface NovelCard {
 
 export interface NovelDetail extends NovelCard {
   chapters: NovelChapter[];
+}
+
+export interface ReaderEntry {
+  id: string;
+  source_kind: "published" | "draft";
+  source_id: number;
+  work_title: string;
+  title: string;
+  summary: string;
+  content: string;
+  chapter_no: number;
+  meta: string;
 }
 
 export interface NovelComment {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import socket
 import threading
 from datetime import datetime
@@ -14,6 +15,7 @@ from .api_support_project import _canonical_project_evolution
 from .config import Settings
 from .evolution_service import EvolutionService
 from .json_utils import json_loads_object
+from .context_pack_service import ContextPackService
 from .models import (
     BatchGenerationChapterTask,
     BatchGenerationJob,
@@ -26,11 +28,16 @@ from .models import (
     TaskEvent,
 )
 from .story_service import StoryGenerationService
+from .story_boundary_service import StoryBoundaryService
+
+logger = logging.getLogger(__name__)
 
 
 class BatchGenerationService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.context_pack_service = ContextPackService()
+        self.story_boundary_service = StoryBoundaryService()
 
     ACTIVE_JOB_STATUSES = ("queued", "retry_queued", "running", "pause_requested", "paused", "cancel_requested")
 
@@ -43,6 +50,13 @@ class BatchGenerationService:
         start_chapter_no: int,
         end_chapter_no: int,
     ) -> BatchGenerationJob:
+        logger.info(
+            "创建批量正文任务：project_id=%s series_plan_id=%s chapter_range=%s-%s",
+            project.id,
+            series_plan.id,
+            start_chapter_no,
+            end_chapter_no,
+        )
         active_job = db.scalar(
             select(BatchGenerationJob)
             .where(
@@ -54,6 +68,7 @@ class BatchGenerationService:
             .limit(1)
         )
         if active_job is not None:
+            logger.warning("创建批量正文任务被拒绝：已有活跃任务 job_id=%s status=%s", active_job.id, active_job.job_status)
             raise RuntimeError(f"已有未结束的批量正文任务（#{active_job.id}），请先完成、取消或重试该任务。")
 
         outlines = db.scalars(
@@ -66,9 +81,11 @@ class BatchGenerationService:
             .order_by(ChapterOutline.chapter_no.asc())
         ).all()
         if not outlines:
+            logger.warning("创建批量正文任务被拒绝：章节范围内没有概要 project_id=%s series_plan_id=%s", project.id, series_plan.id)
             raise RuntimeError("没有找到可生成的章节概要。")
         missing_locked = [item.chapter_no for item in outlines if item.status != "outline_locked"]
         if missing_locked:
+            logger.warning("创建批量正文任务被拒绝：章节概要未锁定 chapters=%s", missing_locked)
             raise RuntimeError("以下章节概要尚未锁定：" + "、".join(str(item) for item in missing_locked))
 
         job = BatchGenerationJob(
@@ -77,7 +94,7 @@ class BatchGenerationService:
             start_chapter_no=start_chapter_no,
             end_chapter_no=end_chapter_no,
             job_status="queued",
-            result_summary_json=json.dumps({"generated": [], "failed": []}, ensure_ascii=False),
+            result_summary_json=json.dumps({}, ensure_ascii=False),
         )
         db.add(job)
         db.flush()
@@ -98,8 +115,10 @@ class BatchGenerationService:
             message=f"已创建批量生成任务：第 {start_chapter_no}-{end_chapter_no} 章。",
             payload={"start_chapter_no": start_chapter_no, "end_chapter_no": end_chapter_no},
         )
+        self._update_job_summary(job, generated=[], failed=[])
         db.commit()
         db.refresh(job)
+        logger.info("批量正文任务已创建：job_id=%s task_count=%s", job.id, len(outlines))
         return job
 
     def run_next_queued_job(self, *, db: Session) -> bool:
@@ -111,17 +130,21 @@ class BatchGenerationService:
         )
         if job is None:
             return False
+        logger.info("取到待执行批量正文任务：job_id=%s status=%s", job.id, job.job_status)
         self.run_job(db=db, job=job)
         return True
 
     def run_job(self, *, db: Session, job: BatchGenerationJob) -> BatchGenerationJob:
         if job.job_status in ("paused", "pause_requested", "canceled", "cancel_requested", "completed"):
+            logger.info("跳过批量正文任务：job_id=%s status=%s", job.id, job.job_status)
             return job
         writer = StoryGenerationService(self.settings)
         evolution = EvolutionService(self.settings)
         self._touch_worker(job, started=True)
         job.job_status = "running"
+        logger.info("批量正文任务开始执行：job_id=%s project_id=%s chapter_range=%s-%s", job.id, job.project_id, job.start_chapter_no, job.end_chapter_no)
         self._add_event(db, job=job, event_type="job_started", message="批量生成任务开始执行。")
+        self._update_job_summary(job, generated=[], failed=[])
         db.commit()
 
         tasks = db.scalars(
@@ -140,6 +163,7 @@ class BatchGenerationService:
             outline = task.chapter_outline
             existing_draft = self._latest_draft_for_outline(db, outline.id)
             if existing_draft is not None and task.status not in ("failed", "running"):
+                logger.info("章节已有草稿，标记为完成：job_id=%s chapter_no=%s draft_version_id=%s", job.id, outline.chapter_no, existing_draft.id)
                 task.status = "completed"
                 task.draft_version_id = existing_draft.id
                 task.generation_run_id = existing_draft.generation_run_id
@@ -173,7 +197,9 @@ class BatchGenerationService:
                 message=f"开始生成第 {outline.chapter_no} 章。",
                 payload={"chapter_no": outline.chapter_no, "outline_id": outline.id},
             )
+            self._update_job_summary(job, generated, failed)
             db.commit()
+            logger.info("章节正文开始生成：job_id=%s chapter_no=%s outline_id=%s", job.id, outline.chapter_no, outline.id)
             try:
                 generation, draft = self._generate_one(
                     db=db,
@@ -208,7 +234,15 @@ class BatchGenerationService:
                     payload={"chapter_no": outline.chapter_no, "generation_id": generation.id, "draft_version_id": draft.id},
                 )
                 db.commit()
+                logger.info(
+                    "章节正文生成完成：job_id=%s chapter_no=%s generation_id=%s draft_version_id=%s",
+                    job.id,
+                    outline.chapter_no,
+                    generation.id,
+                    draft.id,
+                )
             except Exception as exc:
+                logger.exception("章节正文生成失败：job_id=%s chapter_no=%s", job.id, outline.chapter_no)
                 failure = {"chapter_no": outline.chapter_no, "outline_id": outline.id, "error": str(exc)}
                 failed.append(failure)
                 task.status = "failed"
@@ -237,6 +271,7 @@ class BatchGenerationService:
         self._add_event(db, job=job, event_type="job_completed", message="批量生成任务已完成。")
         db.commit()
         db.refresh(job)
+        logger.info("批量正文任务完成：job_id=%s generated=%s failed=%s", job.id, len(generated), len(failed))
         return job
 
     def retry_job(self, *, db: Session, job: BatchGenerationJob) -> BatchGenerationJob:
@@ -290,6 +325,7 @@ class BatchGenerationService:
             job.job_status = "pause_requested"
             self._touch_worker(job)
             self._add_event(db, job=job, event_type="job_pause_requested", message="将在当前章节完成后暂停任务。")
+        self._update_job_summary(job, list(self._summary_payload(job).get("generated", [])), list(self._summary_payload(job).get("failed", [])))
         db.commit()
         db.refresh(job)
         return job
@@ -306,6 +342,7 @@ class BatchGenerationService:
         job.worker_started_at = None
         job.last_heartbeat_at = None
         self._add_event(db, job=job, event_type="job_resumed", message="批量生成任务已恢复排队。")
+        self._update_job_summary(job, list(self._summary_payload(job).get("generated", [])), list(self._summary_payload(job).get("failed", [])))
         db.commit()
         db.refresh(job)
         return job
@@ -320,6 +357,7 @@ class BatchGenerationService:
         else:
             self._mark_job_canceled(job)
             self._add_event(db, job=job, event_type="job_canceled", message="批量生成任务已取消。")
+        self._update_job_summary(job, list(self._summary_payload(job).get("generated", [])), list(self._summary_payload(job).get("failed", [])))
         db.commit()
         db.refresh(job)
         return job
@@ -336,13 +374,30 @@ class BatchGenerationService:
     ) -> tuple[GenerationRun, DraftVersion]:
         outline_payload = json_loads_object(outline.outline_json)
         project_chapter = self._ensure_project_chapter(db, project, outline, outline_payload)
-        scene_card = self._build_outline_scene_card(db, project, series_plan, outline, outline_payload)
-        user_prompt = self._outline_to_prompt(outline_payload)
+        context_pack_inputs = self.context_pack_service.resolved_inputs(self.context_pack_service.require_confirmed(db, project))
+        active_story_boundary_rules = self.story_boundary_service.active_rules_for_chapter(
+            context_pack_inputs.get("story_boundary_rules", []),
+            outline.chapter_no,
+        )
+        scene_card = self._build_outline_scene_card(
+            db,
+            project,
+            series_plan,
+            outline,
+            outline_payload,
+            active_story_boundary_rules=active_story_boundary_rules,
+        )
+        user_prompt = self._outline_to_prompt(outline_payload, active_story_boundary_rules=active_story_boundary_rules)
         memories = [{"title": item.title, "content": item.content} for item in project.memories]
+        context_pack_inputs = {**context_pack_inputs, "active_story_boundary_rules": active_story_boundary_rules}
         title, summary, content = writer.generate(
             project_title=project.title,
             genre=project.genre,
             reference_work=project.reference_work,
+            reference_work_synopsis=project.reference_work_synopsis,
+            reference_work_style_traits=project.reference_work_style_traits,
+            reference_work_world_traits=project.reference_work_world_traits,
+            reference_work_narrative_constraints=project.reference_work_narrative_constraints,
             premise=project_chapter.premise,
             world_brief=project.world_brief,
             writing_rules=project.writing_rules,
@@ -352,6 +407,7 @@ class BatchGenerationService:
             scene_card=scene_card,
             memories=memories,
             use_refiner=True,
+            context_pack_inputs=context_pack_inputs,
         )
 
         generation = GenerationRun(
@@ -531,7 +587,30 @@ class BatchGenerationService:
         generated: list[dict[str, Any]],
         failed: list[dict[str, Any]],
     ) -> None:
-        job.result_summary_json = json.dumps({"generated": generated, "failed": failed}, ensure_ascii=False)
+        total = len(job.chapter_tasks)
+        completed = sum(1 for item in job.chapter_tasks if item.status == "completed")
+        running = sum(1 for item in job.chapter_tasks if item.status == "running")
+        queued = sum(1 for item in job.chapter_tasks if item.status in ("queued", "retry_queued"))
+        canceled = sum(1 for item in job.chapter_tasks if item.status == "canceled")
+        payload = {
+            "generated": generated,
+            "failed": failed,
+            "summary": {
+                "stage": job.job_status,
+                "current_step": "chapter_generate" if job.job_status in ("running", "pause_requested") else "",
+                "failure_stage": "chapter_generate" if job.job_status == "failed" else "",
+                "total_chapters": total,
+                "completed_chapters": completed,
+                "failed_chapters": len(failed),
+                "running_chapters": running,
+                "queued_chapters": queued,
+                "canceled_chapters": canceled,
+                "current_chapter_no": job.current_chapter_no,
+                "job_status": job.job_status,
+                "last_updated_at": datetime.utcnow().isoformat(),
+            },
+        }
+        job.result_summary_json = json.dumps(payload, ensure_ascii=False)
 
     def _upsert_generated_summary(
         self,
@@ -576,6 +655,7 @@ class BatchGenerationService:
         series_plan: SeriesPlan,
         outline: ChapterOutline,
         outline_payload: dict[str, Any],
+        active_story_boundary_rules: list[dict[str, Any]] | None = None,
     ) -> str:
         character_updates, relationship_updates, story_events, world_updates = _canonical_project_evolution(db, project)
         recent_events = "\n".join(f"- {item.title}: {item.impact_summary or item.summary}" for item in story_events[:8]) or "- 暂无"
@@ -585,6 +665,9 @@ class BatchGenerationService:
             or "- 暂无"
         )
         recent_world = "\n".join(f"- {item.observer_group} 对 {item.subject_name}: {item.change_summary}" for item in world_updates[:8]) or "- 暂无"
+        active_story_boundary_lines = "\n".join(
+            f"- {item}" for item in self.story_boundary_service.prompt_lines(active_story_boundary_rules or [])
+        ) or "- 暂无"
         return "\n".join(
             [
                 "长篇批量生成场景卡",
@@ -592,7 +675,10 @@ class BatchGenerationService:
                 f"章节：第 {outline.chapter_no} 章 / {outline.title}",
                 "",
                 "章节概要",
-                self._outline_to_prompt(outline_payload),
+                self._outline_to_prompt(outline_payload, active_story_boundary_rules=active_story_boundary_rules),
+                "",
+                "当前故事边界硬约束",
+                active_story_boundary_lines,
                 "",
                 "最近关键事件",
                 recent_events,
@@ -608,16 +694,24 @@ class BatchGenerationService:
             ]
         )
 
-    def _outline_to_prompt(self, outline_payload: dict[str, Any]) -> str:
-        return "\n".join(
-            [
-                f"本章目标：{outline_payload.get('chapter_goal', '')}",
-                f"主要冲突：{outline_payload.get('conflict', '')}",
-                f"情绪基调：{outline_payload.get('emotion_tone', '')}",
-                f"必须发生：{outline_payload.get('must_happen', [])}",
-                f"禁止发生：{outline_payload.get('must_not_happen', [])}",
-                f"角色推进：{outline_payload.get('character_progress', [])}",
-                f"结尾钩子：{outline_payload.get('ending_hook', '')}",
-                f"预计篇幅：{outline_payload.get('estimated_length', '')}",
-            ]
-        ).strip()
+    def _outline_to_prompt(
+        self,
+        outline_payload: dict[str, Any],
+        *,
+        active_story_boundary_rules: list[dict[str, Any]] | None = None,
+    ) -> str:
+        lines = [
+            f"本章目标：{outline_payload.get('chapter_goal', '')}",
+            f"主要冲突：{outline_payload.get('conflict', '')}",
+            f"情绪基调：{outline_payload.get('emotion_tone', '')}",
+            f"必须发生：{outline_payload.get('must_happen', [])}",
+            f"禁止发生：{outline_payload.get('must_not_happen', [])}",
+            f"角色推进：{outline_payload.get('character_progress', [])}",
+            f"结尾钩子：{outline_payload.get('ending_hook', '')}",
+            f"预计篇幅：{outline_payload.get('estimated_length', '')}",
+        ]
+        story_boundary_lines = self.story_boundary_service.prompt_lines(active_story_boundary_rules or [])
+        if story_boundary_lines:
+            lines.append("当前故事边界硬约束：")
+            lines.extend(f"- {item}" for item in story_boundary_lines)
+        return "\n".join(lines).strip()
