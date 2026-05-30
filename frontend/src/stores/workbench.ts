@@ -1244,6 +1244,22 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     }
   }
 
+  async function createImageFirstStoryboard(payload: {
+    project_id: number;
+    title?: string;
+    reference_video_brief: string;
+    reference_image_asset_ids?: number[];
+  }) {
+    return createStoryboard({
+      novel_chapter_ids: [],
+      title: payload.title ?? "",
+      source_mode: "image_first_reference",
+      reference_video_brief: payload.reference_video_brief,
+      key_image_strategy: "generate_first_frames",
+      reference_image_asset_ids: payload.reference_image_asset_ids ?? [],
+    });
+  }
+
   async function reviseDraftVersion(draftVersionId: number, payload: ReviseDraftPayload) {
     if (!token.value || !activeProject.value) return null;
     loading.value = true;
@@ -1673,6 +1689,7 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     resumeBatchGeneration,
     cancelBatchGeneration,
     createStoryboard,
+    createImageFirstStoryboard,
     reviseDraftVersion,
     canonicalizeDraftVersion,
     createVideoTask,

@@ -24,6 +24,11 @@ from .auth import get_current_user
 from .batch_generation_service import BatchGenerationService
 from .config import Settings
 from .context_pack_service import ContextPackService
+from .creative_source_contracts import (
+    normalize_source_mode,
+    source_mode_requires_brief,
+    source_mode_requires_chapters,
+)
 from .contracts import (
     BatchGenerationJobOut,
     BatchGenerationRequest,
@@ -604,13 +609,14 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
             context_pack_service.require_confirmed(db, project)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        source_mode = payload.source_mode.strip() or "novel_chapters"
-        if source_mode not in {"novel_chapters", "image_first_reference", "existing_images"}:
-            raise HTTPException(status_code=422, detail="不支持的分镜来源模式。")
-        if source_mode == "novel_chapters" and not payload.novel_chapter_ids:
+        try:
+            source_mode = normalize_source_mode(payload.source_mode)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if source_mode_requires_chapters(source_mode) and not payload.novel_chapter_ids:
             raise HTTPException(status_code=422, detail="从小说生成分镜时必须选择至少一个章节。")
-        if source_mode in {"image_first_reference", "existing_images"} and not payload.reference_video_brief.strip():
-            raise HTTPException(status_code=422, detail="图片先行视频需要填写目标片段说明。")
+        if source_mode_requires_brief(source_mode) and not payload.reference_video_brief.strip():
+            raise HTTPException(status_code=422, detail="非小说来源视频需要填写目标片段说明。")
         title = payload.title.strip() or (f"{project.title} 读后短片" if source_mode == "novel_chapters" else f"{project.title} 图片先行短片")
         try:
             storyboard = StoryboardJobService(settings).create_job(

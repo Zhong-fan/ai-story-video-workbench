@@ -639,6 +639,10 @@ export interface BatchGenerationPayload {
 export interface CreateStoryboardPayload {
   novel_chapter_ids: number[];
   title: string;
+  source_mode?: "novel_chapters" | "image_first_reference" | "existing_images" | "user_brief";
+  reference_video_brief?: string;
+  key_image_strategy?: string;
+  reference_image_asset_ids?: number[];
 }
 
 export interface ReviseDraftPayload {

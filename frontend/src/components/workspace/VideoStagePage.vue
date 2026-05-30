@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import VideoCreatePage from "./VideoCreatePage.vue";
-import type { CharacterCard, CharacterReferenceProfile, ContextPack, LongformState, NovelCard, NovelDetail, Project } from "../../types";
+import type { CharacterCard, CharacterReferenceProfile, ContextPack, CreateStoryboardPayload, LongformState, NovelCard, NovelDetail, Project } from "../../types";
 
 defineProps<{
   project?: Project | null;
@@ -29,7 +29,7 @@ const emit = defineEmits<{
   (e: "resume-batch", jobId: number): void;
   (e: "cancel-batch", jobId: number): void;
   (e: "open-novel", novelId: number): void;
-  (e: "create-storyboard", value: { novel_chapter_ids: number[]; title: string }): void;
+  (e: "create-storyboard", value: CreateStoryboardPayload): void;
   (e: "revise-draft", value: { draftVersionId: number; feedback_text: string }): void;
   (e: "canonicalize-draft", value: { draftVersionId: number; novel_id?: number | null; author_name: string; visibility: "public" | "private"; tagline: string }): void;
   (e: "create-video-task", storyboardId: number): void;

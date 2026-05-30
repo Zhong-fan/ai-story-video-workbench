@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import PreviewModal from "./PreviewModal.vue";
-import type { BatchGenerationChapterTask, ChapterOutline, CharacterCard, CharacterReferenceProfile, ContextPack, DraftVersion, LongformState, MediaAsset, NovelCard, NovelDetail, Project, SeriesPlan, StoryboardShot, VideoTask } from "../../types";
+import type { BatchGenerationChapterTask, ChapterOutline, CharacterCard, CharacterReferenceProfile, ContextPack, CreateStoryboardPayload, DraftVersion, LongformState, MediaAsset, NovelCard, NovelDetail, Project, SeriesPlan, StoryboardShot, VideoTask } from "../../types";
 
 type PreviewTarget = { kind: "image" | "video" | "audio"; title: string; url: string };
 
@@ -39,7 +39,7 @@ const emit = defineEmits<{
   (e: "resume-batch", jobId: number): void;
   (e: "cancel-batch", jobId: number): void;
   (e: "open-novel", novelId: number): void;
-  (e: "create-storyboard", value: { novel_chapter_ids: number[]; title: string }): void;
+  (e: "create-storyboard", value: CreateStoryboardPayload): void;
   (e: "revise-draft", value: { draftVersionId: number; feedback_text: string }): void;
   (e: "canonicalize-draft", value: { draftVersionId: number; novel_id?: number | null; author_name: string; visibility: "public" | "private"; tagline: string }): void;
   (e: "create-video-task", storyboardId: number): void;
@@ -107,6 +107,9 @@ const feedbackForm = reactive({
 });
 const batchForm = reactive({ series_plan_id: 0, start_chapter_no: 1, end_chapter_no: 1 });
 const storyboardTitle = ref("");
+const storyboardSourceMode = ref<"novel_chapters" | "image_first_reference" | "existing_images" | "user_brief">("novel_chapters");
+const storyboardBrief = ref("");
+const storyboardKeyImageStrategy = ref("generate_first_frames");
 const selectedNovelChapterIds = ref<number[]>([]);
 const selectedDraftVersionId = ref<number | null>(null);
 const draftFeedback = ref("");
@@ -207,6 +210,12 @@ const latestVideoTask = computed(
     props.state.video_tasks[0] ??
     null,
 );
+const canCreateStoryboard = computed(() => {
+  if (storyboardSourceMode.value === "novel_chapters") {
+    return selectedNovelChapterIds.value.length > 0;
+  }
+  return storyboardBrief.value.trim().length > 0;
+});
 const latestVideoShotProgress = computed(() => {
   const shots = latestVideoTask.value?.progress?.shots;
   return Array.isArray(shots) ? shots.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : [];
@@ -501,6 +510,18 @@ function toggleChapter(chapterId: number) {
   selectedNovelChapterIds.value = selectedNovelChapterIds.value.includes(chapterId)
     ? selectedNovelChapterIds.value.filter((item) => item !== chapterId)
     : [...selectedNovelChapterIds.value, chapterId];
+}
+
+function submitStoryboard() {
+  const payload: CreateStoryboardPayload = {
+    novel_chapter_ids: storyboardSourceMode.value === "novel_chapters" ? selectedNovelChapterIds.value : [],
+    title: storyboardTitle.value.trim(),
+    source_mode: storyboardSourceMode.value,
+    reference_video_brief: storyboardSourceMode.value === "novel_chapters" ? "" : storyboardBrief.value.trim(),
+    key_image_strategy: storyboardKeyImageStrategy.value,
+    reference_image_asset_ids: [],
+  };
+  emit("create-storyboard", payload);
 }
 
 function normalizeList(value: unknown) {
@@ -1506,6 +1527,14 @@ function generateTurnaround() {
       <div class="panel-heading"><div><p class="panel-heading__kicker">选章视频化</p><h2>读后短片分镜</h2></div></div>
       <div class="form-stack">
         <label class="field">
+          <span>分镜来源</span>
+          <select v-model="storyboardSourceMode">
+            <option value="novel_chapters">小说章节</option>
+            <option value="image_first_reference">图片先行</option>
+            <option value="user_brief">自由简报</option>
+          </select>
+        </label>
+        <label class="field">
           <span>已发布作品</span>
           <select :value="currentNovel?.id || ''" @change="emit('open-novel', Number(($event.target as HTMLSelectElement).value))">
             <option value="" disabled>选择作品</option>
@@ -1513,15 +1542,26 @@ function generateTurnaround() {
           </select>
         </label>
         <label class="field"><span>短片标题</span><input v-model="storyboardTitle" maxlength="255" /></label>
-        <div class="card-list" v-if="publishedChapters.length">
+        <div class="card-list" v-if="storyboardSourceMode === 'novel_chapters' && publishedChapters.length">
           <label v-for="chapter in publishedChapters" :key="chapter.id" class="memory-card memory-card--select">
             <input type="checkbox" :checked="selectedNovelChapterIds.includes(chapter.id)" @change="toggleChapter(chapter.id)" />
             <strong>#{{ chapter.chapter_no }} {{ chapter.title }}</strong>
             <span>{{ chapter.summary }}</span>
           </label>
         </div>
-        <p v-else class="empty-text">只有已发布/定稿章节可生成分镜。</p>
-        <button class="primary-button" :disabled="loading || !selectedNovelChapterIds.length" @click="emit('create-storyboard', { novel_chapter_ids: selectedNovelChapterIds, title: storyboardTitle.trim() })">生成分镜稿</button>
+        <p v-else-if="storyboardSourceMode === 'novel_chapters'" class="empty-text">只有已发布/定稿章节可生成分镜。</p>
+        <label v-if="storyboardSourceMode !== 'novel_chapters'" class="field">
+          <span>目标片段</span>
+          <textarea v-model="storyboardBrief" rows="4" maxlength="2000" />
+        </label>
+        <label v-if="storyboardSourceMode === 'image_first_reference'" class="field">
+          <span>关键图策略</span>
+          <select v-model="storyboardKeyImageStrategy">
+            <option value="generate_first_frames">先生成关键图</option>
+            <option value="use_existing_images">使用已有图片</option>
+          </select>
+        </label>
+        <button class="primary-button" :disabled="loading || !canCreateStoryboard" @click="submitStoryboard">生成分镜稿</button>
       </div>
     </section>
 

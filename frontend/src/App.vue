@@ -17,7 +17,7 @@ import ProjectSettingsPanel from "./components/workspace/ProjectSettingsPanel.vu
 import StudioWorkspacePanel from "./components/workspace/StudioWorkspacePanel.vue";
 import { useAuthFlow } from "./composables/useAuthFlow";
 import { useWorkbenchStore } from "./stores/workbench";
-import type { CharacterCard, ProjectChapter, ProjectCreateDraft, ProjectPayload, ReaderEntry, ReferenceWorkResolved, StoryBoundaryRule, TrashItem, ViewKey } from "./types";
+import type { CharacterCard, CreateStoryboardPayload, ProjectChapter, ProjectCreateDraft, ProjectPayload, ReaderEntry, ReferenceWorkResolved, StoryBoundaryRule, TrashItem, ViewKey } from "./types";
 
 const store = useWorkbenchStore();
 const {
@@ -1202,7 +1202,7 @@ async function redirectToContextReviewOnContextError() {
   }
 }
 
-async function submitCreateStoryboard(payload: { novel_chapter_ids: number[]; title: string }) {
+async function submitCreateStoryboard(payload: CreateStoryboardPayload) {
   if (!store.hasConfirmedContextPack()) {
     await openContextReview();
     return;
