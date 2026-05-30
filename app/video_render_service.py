@@ -18,6 +18,7 @@ from .config import Settings
 from .jimeng_video_client import JimengVideoClient
 from .json_utils import ensure_list, json_dumps, json_loads_list, json_loads_object
 from .models import MediaAsset, NovelChapter, StoryboardShot, TaskEvent, VideoTask
+from .video_quality_service import VideoQualityService
 from .visual_style_prompt import build_visual_generation_prompt, project_visual_style_summary
 
 
@@ -395,10 +396,20 @@ class VideoRenderService:
         self._mark_step(task, "compose", "completed")
         self._clear_current_shot(task)
         self._set_progress(task, stage="completed", message="视频生产完成。", extra={"output_uri": task.output_uri, "provider": provider})
+        self.record_quality_result(task, status="completed", message="Video generation completed.")
         self._add_event(db, task=task, event_type="video_task_completed", message="视频生产完成。", payload={"output_uri": task.output_uri})
         db.commit()
         db.refresh(task)
         return task
+
+    def record_quality_result(self, task: VideoTask, *, status: str, message: str) -> None:
+        payload = json_loads_object(task.progress_json)
+        payload["video_quality_result"] = VideoQualityService().build_result(
+            task=task,
+            status=status,
+            message=message,
+        )
+        task.progress_json = json_dumps(payload)
 
     def _require_config(self) -> None:
         if self._jimeng_enabled():

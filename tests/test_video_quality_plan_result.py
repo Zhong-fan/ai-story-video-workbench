@@ -107,6 +107,57 @@ class VideoQualityPlanResultTests(unittest.TestCase):
             self.assertEqual(quality_plan["shots"][0]["shot_no"], 1)
             self.assertEqual(quality_plan["shots"][0]["purpose"], "A light appears on a rainy street.")
 
+    def test_video_quality_result_marks_completed_output_as_passed(self) -> None:
+        from app.json_utils import json_dumps
+        from app.video_quality_service import VideoQualityService
+
+        with self.SessionLocal() as session:
+            storyboard = session.get(Storyboard, self.storyboard_id)
+            task = VideoTask(
+                project_id=self.project_id,
+                storyboard=storyboard,
+                task_status="completed",
+                output_uri="output/video_tasks/1/final.mp4",
+                progress_json=json_dumps({"video_quality_plan": VideoQualityService().build_quality_plan(storyboard)}),
+                error_message="",
+            )
+            session.add(task)
+            session.flush()
+
+            result = VideoQualityService().build_result(task=task, status="completed", message="Video generation completed.")
+
+            self.assertEqual(result["status"], "passed")
+            self.assertTrue(result["checked_against_plan"])
+            self.assertEqual(result["short_film_structure"], "passed")
+
+    def test_video_render_service_records_quality_result(self) -> None:
+        from app.json_utils import json_dumps
+        from app.video_quality_service import VideoQualityService
+        from app.video_render_service import VideoRenderService
+
+        with self.SessionLocal() as session:
+            storyboard = session.get(Storyboard, self.storyboard_id)
+            task = VideoTask(
+                project_id=self.project_id,
+                storyboard=storyboard,
+                task_status="completed",
+                output_uri="output/video_tasks/1/final.mp4",
+                progress_json=json_dumps({"video_quality_plan": VideoQualityService().build_quality_plan(storyboard)}),
+                error_message="",
+            )
+            session.add(task)
+            session.flush()
+
+            VideoRenderService(load_settings()).record_quality_result(
+                task,
+                status="completed",
+                message="Video generation completed.",
+            )
+
+            progress = json_loads_object(task.progress_json)
+            self.assertEqual(progress["video_quality_result"]["status"], "passed")
+            self.assertTrue(progress["video_quality_result"]["checked_against_plan"])
+
 
 if __name__ == "__main__":
     unittest.main()
