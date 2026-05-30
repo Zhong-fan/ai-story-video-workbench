@@ -12,6 +12,7 @@ workspace/
 output/
 state/
 data/
+.worktrees/
 
 .pytest_cache/
 .mypy_cache/
