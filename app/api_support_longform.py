@@ -268,6 +268,7 @@ def _storyboard_progress(storyboard: Storyboard, events: list[TaskEvent]) -> dic
         "failure_stage": failure_stage,
         "status": storyboard.status,
         "source_mode": str(queued_payload.get("source_mode") or "novel_chapters"),
+        "source_trace": queued_payload.get("source_trace") if isinstance(queued_payload.get("source_trace"), dict) else {},
         "reference_video_brief": str(queued_payload.get("reference_video_brief") or ""),
         "key_image_strategy": str(queued_payload.get("key_image_strategy") or "generate_first_frames"),
         "reference_image_asset_ids": queued_payload.get("reference_image_asset_ids") if isinstance(queued_payload.get("reference_image_asset_ids"), list) else [],

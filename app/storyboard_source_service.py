@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .creative_source_contracts import build_source_trace
 from .json_utils import json_dumps
 from .models import Novel, NovelChapter, Project, ReferenceImageAsset
 
@@ -20,6 +21,7 @@ class StoryboardSourceArtifact:
     reference_image_asset_ids: list[int] = field(default_factory=list)
     chapters: list[NovelChapter] = field(default_factory=list)
     reference_image_notes: list[str] = field(default_factory=list)
+    source_trace: dict[str, Any] = field(default_factory=dict)
 
     def event_payload(self) -> dict[str, Any]:
         return {
@@ -28,6 +30,7 @@ class StoryboardSourceArtifact:
             "reference_video_brief": self.reference_video_brief,
             "key_image_strategy": self.key_image_strategy,
             "reference_image_asset_ids": self.reference_image_asset_ids,
+            "source_trace": self.source_trace,
         }
 
     def source_chapter_ids_json(self) -> str:
@@ -62,6 +65,13 @@ class StoryboardSourceService:
                 title=title,
                 source_chapter_ids=novel_chapter_ids,
                 chapters=chapters,
+                source_trace=build_source_trace(
+                    source_mode=source_mode,
+                    novel_chapter_ids=novel_chapter_ids,
+                    reference_video_brief="",
+                    reference_image_asset_ids=[],
+                    key_image_strategy=key_image_strategy,
+                ),
             )
 
         reference_assets = db.scalars(
@@ -78,6 +88,13 @@ class StoryboardSourceService:
             key_image_strategy=key_image_strategy,
             reference_image_asset_ids=[asset.id for asset in reference_assets],
             reference_image_notes=[self._reference_image_note(asset) for asset in reference_assets],
+            source_trace=build_source_trace(
+                source_mode=source_mode,
+                novel_chapter_ids=[],
+                reference_video_brief=reference_video_brief.strip(),
+                reference_image_asset_ids=[asset.id for asset in reference_assets],
+                key_image_strategy=key_image_strategy,
+            ),
         )
 
     def _chapters_for_project(

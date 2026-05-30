@@ -165,7 +165,12 @@ class StoryboardJobService:
                 message="分镜内容已返回，正在整理镜头。",
                 payload={"raw_shot_count": len(ensure_list(generated.get("shots")))},
             )
-            shot_count = self._replace_shots(db, storyboard=storyboard, shots=ensure_list(generated.get("shots")))
+            shot_count = self._replace_shots(
+                db,
+                storyboard=storyboard,
+                shots=ensure_list(generated.get("shots")),
+                source_payload=source_payload,
+            )
             if shot_count <= 0:
                 raise RuntimeError("分镜模型没有返回可用镜头。")
             storyboard.status = "draft"
@@ -223,10 +228,18 @@ class StoryboardJobService:
             .order_by(NovelChapter.chapter_no.asc())
         ).all()
 
-    def _replace_shots(self, db: Session, *, storyboard: Storyboard, shots: list[Any]) -> int:
+    def _replace_shots(
+        self,
+        db: Session,
+        *,
+        storyboard: Storyboard,
+        shots: list[Any],
+        source_payload: dict[str, Any] | None = None,
+    ) -> int:
         valid_shots = [item for item in shots if isinstance(item, dict)]
         if not valid_shots:
             return 0
+        source_payload = source_payload or {"source_mode": "novel_chapters"}
         for existing in list(storyboard.shots):
             db.delete(existing)
         db.flush()
@@ -234,6 +247,16 @@ class StoryboardJobService:
         for index, shot_payload in enumerate(valid_shots, start=1):
             shot_no = int(shot_payload.get("shot_no") or index)
             continuity = self._normalize_continuity(shot_payload.get("continuity"), shot_no=shot_no)
+            source_mode = str(source_payload.get("source_mode") or "novel_chapters")
+            source_trace = source_payload.get("source_trace") if isinstance(source_payload.get("source_trace"), dict) else {}
+            if not source_trace:
+                source_trace = {
+                    "source_mode": source_mode,
+                    "novel_chapter_ids": ensure_list(source_payload.get("novel_chapter_ids")),
+                    "reference_video_brief": str(source_payload.get("reference_video_brief") or ""),
+                    "reference_image_asset_ids": ensure_list(source_payload.get("reference_image_asset_ids")),
+                    "key_image_strategy": str(source_payload.get("key_image_strategy") or "generate_first_frames"),
+                }
             db.add(
                 StoryboardShot(
                     storyboard=storyboard,
@@ -244,6 +267,8 @@ class StoryboardJobService:
                     scene_refs_json=json_dumps(ensure_list(shot_payload.get("scene_refs"))),
                     meta_json=json_dumps(
                         {
+                            "source_mode": source_mode,
+                            "source_trace": source_trace,
                             "audio_script": self._normalize_audio_script(shot_payload.get("audio_script")),
                             "continuity": continuity,
                         }
