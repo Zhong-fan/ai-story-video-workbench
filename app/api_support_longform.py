@@ -247,6 +247,8 @@ def _storyboard_out(storyboard: Storyboard) -> StoryboardOut:
 def _storyboard_progress(storyboard: Storyboard, events: list[TaskEvent]) -> dict[str, Any]:
     latest_event = events[-1] if events else None
     latest_payload = json_loads_object(latest_event.payload_json) if latest_event is not None else {}
+    queued_event = next((item for item in events if item.event_type == "storyboard_queued"), None)
+    queued_payload = json_loads_object(queued_event.payload_json) if queued_event is not None else {}
     preflight_event = next((item for item in reversed(events) if item.event_type == "storyboard_preflight_completed"), None)
     preflight_summary = json_loads_object(preflight_event.payload_json) if preflight_event is not None else {}
     shot_count = len(storyboard.shots)
@@ -265,6 +267,10 @@ def _storyboard_progress(storyboard: Storyboard, events: list[TaskEvent]) -> dic
         "current_step": current_step,
         "failure_stage": failure_stage,
         "status": storyboard.status,
+        "source_mode": str(queued_payload.get("source_mode") or "novel_chapters"),
+        "reference_video_brief": str(queued_payload.get("reference_video_brief") or ""),
+        "key_image_strategy": str(queued_payload.get("key_image_strategy") or "generate_first_frames"),
+        "reference_image_asset_ids": queued_payload.get("reference_image_asset_ids") if isinstance(queued_payload.get("reference_image_asset_ids"), list) else [],
         "source_chapter_count": len(source_chapter_ids),
         "shot_count": shot_count,
         "last_event_type": last_event_type,

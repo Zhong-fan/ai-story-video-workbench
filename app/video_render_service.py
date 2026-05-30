@@ -72,6 +72,9 @@ class VideoRenderService:
         for shot in shots:
             self._set_current_shot(task, shot=shot, step="jimeng_submit")
             first_frame_asset = self._shot_first_frame_asset(task=task, shot=shot)
+            requires_i2v = self._shot_requires_i2v(shot)
+            if requires_i2v and first_frame_asset is None:
+                raise RuntimeError("图片先行镜头必须使用首帧图生视频，不能回退到文生视频。")
             prompt = self._build_jimeng_prompt(task, shot, first_frame_asset=first_frame_asset)
             self._set_progress(
                 task,
@@ -105,6 +108,8 @@ class VideoRenderService:
                         frames=self.settings.jimeng_frames,
                         aspect_ratio=self.settings.jimeng_aspect_ratio,
                     )
+                elif requires_i2v:
+                    raise RuntimeError("图片先行镜头必须使用首帧图生视频，不能回退到文生视频。")
                 else:
                     jimeng_task_id, submit_response = text_client.submit_text_to_video(
                         prompt=prompt,
@@ -234,6 +239,8 @@ class VideoRenderService:
         for shot in shots:
             self._set_current_shot(task, shot=shot, step="image_generate")
             first_frame_asset = self._shot_first_frame_asset(task=task, shot=shot)
+            if self._shot_requires_i2v(shot) and (first_frame_asset is None or not first_frame_asset.uri or not Path(first_frame_asset.uri).exists()):
+                raise RuntimeError("图片先行镜头必须使用首帧图生视频，不能回退到文生视频。")
             if first_frame_asset is not None and first_frame_asset.uri and Path(first_frame_asset.uri).exists():
                 self._set_progress(task, stage="image", message=f"复用镜头 {shot.shot_no} 已确认首帧。", extra={"shot_no": shot.shot_no, "used_first_frame": True})
                 self._add_event(db, task=task, event_type="video_task_image", message=f"复用镜头 {shot.shot_no} 已确认首帧。")
@@ -447,6 +454,12 @@ class VideoRenderService:
 
     def _build_image_prompt(self, task: VideoTask, shot: StoryboardShot) -> str:
         return build_visual_generation_prompt(project=task.project, shot=shot, include_narration=False, max_length=1800)
+
+    def _shot_requires_i2v(self, shot: StoryboardShot) -> bool:
+        meta = json_loads_object(shot.meta_json)
+        continuity = meta.get("continuity") if isinstance(meta.get("continuity"), dict) else {}
+        source_mode = str(meta.get("source_mode") or continuity.get("source_mode") or "").strip()
+        return bool(continuity.get("requires_i2v")) or source_mode in {"image_first_reference", "existing_images"}
 
     def _wait_for_jimeng_result(self, *, client: JimengVideoClient, task_id: str) -> tuple[str, dict[str, Any]]:
         deadline = time.monotonic() + self.settings.jimeng_poll_timeout_seconds

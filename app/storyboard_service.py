@@ -150,3 +150,92 @@ class StoryboardService:
         if not isinstance(payload.get("shots"), list):
             raise RuntimeError("分镜模型没有返回 shots。")
         return payload
+
+    def generate_image_first_storyboard(
+        self,
+        *,
+        project: Project,
+        title: str,
+        reference_video_brief: str,
+        reference_image_notes: list[str],
+        context_pack_inputs: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        video_feed = context_pack_inputs.get("video_feed", {}) if isinstance(context_pack_inputs, dict) else {}
+        project_snapshot = context_pack_inputs.get("project_snapshot", {}) if isinstance(context_pack_inputs, dict) else {}
+        reference_constraints = video_feed.get("reference_constraints", {}) if isinstance(video_feed, dict) else {}
+        character_directory = [
+            {"character_card_id": card.id, "name": card.name, "story_role": card.story_role}
+            for card in project.character_cards
+            if card.deleted_at is None
+        ]
+        system_prompt = dedent(
+            """
+            你是图片先行的视频分镜导演。请先规划关键图，再规划图生视频镜头。
+            输出必须是严格 JSON，不要输出 Markdown。
+            """
+        ).strip()
+        prompt = f"""
+项目：{project_snapshot.get("title") or project.title}
+类型：{project_snapshot.get("genre") or project.genre}
+短片标题：{title}
+
+{build_visual_style_block(project)}
+
+参考作品约束：
+{reference_constraints}
+
+已确认参考图说明：
+{reference_image_notes}
+
+角色 ID 目录：
+{character_directory}
+
+用户目标片段：
+{reference_video_brief}
+
+请输出：
+{{
+  "title": "...",
+  "summary": "短片概述",
+  "shots": [
+    {{
+      "shot_no": 1,
+      "narration_text": "旁白/字幕文本",
+      "visual_prompt": "先用于生成关键首帧图片的最终画面提示词，包含画面媒介、美术方向、角色、场景、构图、景别、机位、光影、色彩和空气质感",
+      "character_refs": [{{"character_card_id": 1, "name": "角色名", "role": "角色在镜头中的作用"}}],
+      "scene_refs": [{{"name": "场景名", "role": "场景用途"}}],
+      "continuity": {{
+        "shot_type": "new|continuation|camera_move|transition",
+        "depends_on_shot_no": null,
+        "first_frame_source": "generated",
+        "requires_i2v": true,
+        "end_frame_usage": "none|feeds_next",
+        "camera_motion": "无|推进|横移|摇镜|拉远",
+        "character_state_delta": "角色状态变化",
+        "continuity_constraints": ["必须保持的角色、服装、场景和构图连续性"]
+      }},
+      "audio_script": {{}},
+      "duration_seconds": 4
+    }}
+  ]
+}}
+
+要求：
+- 生成 3 到 8 个镜头。
+- 每个镜头都必须先生成关键首帧，再用图生视频推进。
+- 每个镜头的 continuity.requires_i2v 必须为 true。
+- 每个镜头的 continuity.first_frame_source 必须为 generated，除非是 continuation 或 camera_move 且明确依赖上一镜头。
+- 只继承参考作品的可迁移特征，例如媒介、光影、构图节奏、天气、色彩关系和情绪质感。
+- 不要复刻参考作品的具体角色设计、专有名词、具体剧情或具体镜头。
+- character_refs 必须返回对象数组，character_card_id 必须来自“角色 ID 目录”；无法确定时保留 name 并省略 ID。
+""".strip()
+        response = self.llm.generate(
+            model=self.settings.utility_model,
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            json_mode=True,
+        )
+        payload = parse_json_object(response.text)
+        if not isinstance(payload.get("shots"), list):
+            raise RuntimeError("分镜模型没有返回 shots。")
+        return payload

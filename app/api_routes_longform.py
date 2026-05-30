@@ -100,6 +100,8 @@ def _video_quality_gate_failures(db: Session, *, settings: Settings, project: Pr
             failures.append(f"镜头 {shot.shot_no} 有角色引用，但没有可用的锁定三视图。")
         meta = json_loads_object(shot.meta_json)
         continuity = meta.get("continuity") if isinstance(meta.get("continuity"), dict) else {}
+        source_mode = str(meta.get("source_mode") or continuity.get("source_mode") or "").strip()
+        image_first_shot = source_mode in {"image_first_reference", "existing_images"}
         requires_i2v = continuity.get("requires_i2v") is not False
         first_frame_source = str(continuity.get("first_frame_source") or "generated")
         if requires_i2v and first_frame_source == "generated":
@@ -113,7 +115,10 @@ def _video_quality_gate_failures(db: Session, *, settings: Settings, project: Pr
                 )
             )
             if first_frame is None:
-                failures.append(f"镜头 {shot.shot_no} 需要首帧，但还没有完成的首帧素材。")
+                if image_first_shot:
+                    failures.append(f"镜头 {shot.shot_no} 图片先行镜头缺少已完成首帧。")
+                else:
+                    failures.append(f"镜头 {shot.shot_no} 需要首帧，但还没有完成的首帧素材。")
     return failures
 
 
@@ -599,7 +604,14 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
             context_pack_service.require_confirmed(db, project)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        title = payload.title.strip() or f"{project.title} 读后短片"
+        source_mode = payload.source_mode.strip() or "novel_chapters"
+        if source_mode not in {"novel_chapters", "image_first_reference", "existing_images"}:
+            raise HTTPException(status_code=422, detail="不支持的分镜来源模式。")
+        if source_mode == "novel_chapters" and not payload.novel_chapter_ids:
+            raise HTTPException(status_code=422, detail="从小说生成分镜时必须选择至少一个章节。")
+        if source_mode in {"image_first_reference", "existing_images"} and not payload.reference_video_brief.strip():
+            raise HTTPException(status_code=422, detail="图片先行视频需要填写目标片段说明。")
+        title = payload.title.strip() or (f"{project.title} 读后短片" if source_mode == "novel_chapters" else f"{project.title} 图片先行短片")
         try:
             storyboard = StoryboardJobService(settings).create_job(
                 db=db,
@@ -607,6 +619,10 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                 current_user_id=current_user.id,
                 novel_chapter_ids=payload.novel_chapter_ids,
                 title=title,
+                source_mode=source_mode,
+                reference_video_brief=payload.reference_video_brief,
+                key_image_strategy=payload.key_image_strategy,
+                reference_image_asset_ids=payload.reference_image_asset_ids,
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

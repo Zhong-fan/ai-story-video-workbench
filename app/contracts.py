@@ -853,8 +853,12 @@ class BatchGenerationJobOut(BaseModel):
 
 
 class CreateStoryboardRequest(BaseModel):
-    novel_chapter_ids: list[int] = Field(..., min_length=1, max_length=12)
+    source_mode: str = Field(default="novel_chapters", max_length=40)
+    novel_chapter_ids: list[int] = Field(default_factory=list, max_length=12)
     title: str = Field(default="", max_length=255)
+    reference_video_brief: str = Field(default="", max_length=4000)
+    key_image_strategy: str = Field(default="generate_first_frames", max_length=80)
+    reference_image_asset_ids: list[int] = Field(default_factory=list, max_length=50)
 
 
 class StoryboardShotOut(BaseModel):
