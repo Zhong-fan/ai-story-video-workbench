@@ -966,6 +966,11 @@ function nextWorkspacePage() {
   workspacePage.value = Math.min(workspaceTotalPages.value, workspacePage.value + 1);
 }
 
+async function openWorkspaceProject(projectId: number) {
+  await store.selectProject(projectId);
+  openSetupStage();
+}
+
 async function deleteProjectToTrash(projectId: number) {
   await store.deleteProject(projectId);
 }
@@ -2008,7 +2013,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               :loading="loading"
               @update:workspace-search="workspaceSearch = $event"
               @open-project-create="openProjectCreate()"
-              @open-project="async (projectId) => { await store.selectProject(projectId); openSetupStage(); }"
+              @open-project="openWorkspaceProject"
               @delete-project="deleteProjectToTrash"
               @previous-page="previousWorkspacePage()"
               @next-page="nextWorkspacePage()"

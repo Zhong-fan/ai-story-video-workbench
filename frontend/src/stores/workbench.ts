@@ -1260,6 +1260,21 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     });
   }
 
+  async function createBriefStoryboard(payload: {
+    project_id: number;
+    title?: string;
+    reference_video_brief: string;
+  }) {
+    return createStoryboard({
+      novel_chapter_ids: [],
+      title: payload.title ?? "",
+      source_mode: "user_brief",
+      reference_video_brief: payload.reference_video_brief,
+      key_image_strategy: "generate_first_frames",
+      reference_image_asset_ids: [],
+    });
+  }
+
   async function reviseDraftVersion(draftVersionId: number, payload: ReviseDraftPayload) {
     if (!token.value || !activeProject.value) return null;
     loading.value = true;
@@ -1690,6 +1705,7 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     cancelBatchGeneration,
     createStoryboard,
     createImageFirstStoryboard,
+    createBriefStoryboard,
     reviseDraftVersion,
     canonicalizeDraftVersion,
     createVideoTask,
