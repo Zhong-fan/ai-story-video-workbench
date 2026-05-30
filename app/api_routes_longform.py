@@ -90,6 +90,7 @@ from .storyboard_job_service import StoryboardJobService
 from .visual_asset_service import CharacterReferenceProfileService
 from .visual_asset_service import VisualAssetService
 from .visual_style_prompt import build_visual_generation_prompt, project_visual_style_summary
+from .video_quality_service import VideoQualityService
 from .voice_service import VoiceService
 
 logger = logging.getLogger(__name__)
@@ -666,14 +667,17 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         if existing_task is not None:
             return _video_task_out(existing_task)
         service = MediaPipelineService()
+        progress = json_loads_object(service.task_progress_json(storyboard=storyboard))
+        progress["video_quality_plan"] = VideoQualityService().build_quality_plan(storyboard)
         task = VideoTask(
             project_id=project.id,
             storyboard=storyboard,
             task_status="queued",
             output_uri="",
-            progress_json=service.task_progress_json(storyboard=storyboard),
+            progress_json=json_dumps(progress),
             error_message="",
         )
+        db.add(task)
         existing_asset_keys = {
             (asset.shot_id, asset.asset_type)
             for asset in db.scalars(select(MediaAsset).where(MediaAsset.storyboard_id == storyboard.id)).all()
@@ -724,7 +728,6 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
                 )
                 existing_asset_keys.add((shot.id, "subtitle"))
         storyboard.status = "video_queued"
-        db.add(task)
         db.flush()
         _add_video_task_event(
             db,
