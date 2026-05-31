@@ -12,9 +12,11 @@ import NovelStagePage from "./components/workspace/NovelStagePage.vue";
 import VideoStagePage from "./components/workspace/VideoStagePage.vue";
 import GenerationTracePanel from "./components/workspace/GenerationTracePanel.vue";
 import ContextReviewPage from "./components/workspace/ContextReviewPage.vue";
-import ProjectCreateWizard from "./components/workspace/ProjectCreateWizard.vue";
 import ProjectSettingsPanel from "./components/workspace/ProjectSettingsPanel.vue";
+import WorkspaceProjectCreatePanel from "./components/workspace/WorkspaceProjectCreatePanel.vue";
 import StudioWorkspacePanel from "./components/workspace/StudioWorkspacePanel.vue";
+import WorkspaceSidebar from "./components/workspace/WorkspaceSidebar.vue";
+import WorkspaceTrashPanel from "./components/workspace/WorkspaceTrashPanel.vue";
 import { useAuthFlow } from "./composables/useAuthFlow";
 import { useWorkbenchStore } from "./stores/workbench";
 import type { CharacterCard, CreateStoryboardPayload, ProjectChapter, ProjectCreateDraft, ProjectPayload, ReaderEntry, ReferenceWorkResolved, StoryBoundaryRule, TrashItem, ViewKey } from "./types";
@@ -1975,32 +1977,17 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
         >
           {{ mobileSidebarOpen ? "收起菜单" : "打开菜单" }}
         </button>
-        <aside id="primary-sidebar" class="sidebar panel panel--paper" :class="{ 'sidebar--mobile-open': mobileSidebarOpen }">
-          <div class="brand brand--sidebar">
-            <p class="eyebrow">晨流写作台</p>
-            <h1>Chen Flow</h1>
-          </div>
-          <nav class="sidebar-nav" aria-label="Primary">
-            <button class="sidebar-nav__item sidebar-nav__item--main" :class="{ 'sidebar-nav__item--active': currentView === 'studio' }" @click="goToView('studio')">我的项目</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'projectCreate' }" @click="openProjectCreate()">新建项目</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'trash' }" @click="goToView('trash')">回收站</button>
-          </nav>
-          <div class="sidebar__footer">
-            <template v-if="isAuthenticated">
-              <div class="sidebar-user">
-                <div class="sidebar-user__avatar">{{ (currentUser?.username?.slice(0, 1) ?? "U").toUpperCase() }}</div>
-                <div class="sidebar-user__meta">
-                  <strong>{{ currentUser?.username }}</strong>
-                </div>
-              </div>
-              <button class="ghost-button ghost-button--small" @click="store.logout()">退出</button>
-            </template>
-            <template v-else>
-              <button class="ghost-button ghost-button--small" @click="openAuthPanel('login', 'studio')">登录</button>
-              <button class="primary-button primary-button--compact" @click="openAuthPanel('register', 'studio')">创建账号</button>
-            </template>
-          </div>
-        </aside>
+        <WorkspaceSidebar
+          :current-view="currentView"
+          :is-authenticated="isAuthenticated"
+          :username="currentUser?.username"
+          :mobile-open="mobileSidebarOpen"
+          @go="goToView"
+          @open-project-create="openProjectCreate()"
+          @login="openAuthPanel('login', 'studio')"
+          @register="openAuthPanel('register', 'studio')"
+          @logout="store.logout()"
+        />
 
         <main class="main-shell">
           <template v-if="currentView === 'studio'">
@@ -2021,71 +2008,44 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
           </template>
 
           <template v-else-if="currentView === 'trash'">
-            <section class="section-banner panel panel--paper">
-              <div><p class="panel-heading__kicker">回收站</p><h2>已删除内容</h2></div>
-              <div class="hero__stats">
-                <span>项目 {{ trashSummary.project }}</span>
-                <span>作品 {{ trashSummary.novel }}</span>
-                <span>人物卡 {{ trashSummary.character_card }}</span>
-                <span>脏演化 {{ trashSummary.dirty_evolution }}</span>
-              </div>
-            </section>
-            <section class="panel">
-              <div class="card-list" v-if="trashItems.length">
-                <article v-for="item in trashItems" :key="`${item.item_type}-${item.item_id}`" class="memory-card">
-                  <strong>{{ item.title }}</strong>
-                  <span>{{ item.subtitle || item.item_type }}</span>
-                  <em>{{ formatDateTime(item.deleted_at) }}</em>
-                  <button class="ghost-button ghost-button--small" type="button" @click="restoreTrash(item)">恢复</button>
-                </article>
-              </div>
-              <p v-else class="empty-text">回收站目前是空的。</p>
-            </section>
+            <WorkspaceTrashPanel
+              :trash-items="trashItems"
+              :trash-summary="trashSummary"
+              @restore="restoreTrash"
+            />
           </template>
 
           <template v-else-if="currentView === 'projectCreate'">
-            <main v-if="isAuthenticated" class="workspace workspace--single">
-              <section class="panel panel--paper">
-                <div class="panel-heading">
-                  <div>
-                    <p class="panel-heading__kicker">新建项目</p>
-                    <h2>先把小说的核心设定立住</h2>
-                    <p class="panel-heading__desc">项目层只放长期有效的信息：题材、世界设定、写作偏好和文风。具体剧情前提留到章节里写。</p>
-                  </div>
-                </div>
-                <ProjectCreateWizard
-                  :loading="loading"
-                  :step="projectCreateStep"
-                  :form="projectForm"
-                  :genre-option-cards="genreOptionCards"
-                  :style-profile-options="styleProfileOptions"
-                  :reference-work-input="referenceWorkInput"
-                  :reference-work-resolved="referenceWorkResolved"
-                  :reference-work-confirmed="projectForm.reference_work_confirmed"
-                  :assistant-loading-kind="assistantLoadingKind"
-                  :assistant-seed-world="assistantSeedWorld"
-                  :assistant-seed-writing="assistantSeedWriting"
-                  :world-suggestions="worldSuggestions"
-                  :writing-suggestions="writingSuggestions"
-                  @update:step="projectCreateStep = $event"
-                  @submit="submitCreateProject()"
-                  @submit-quick="submitCreateProject()"
-                  @update:title="projectForm.title = $event"
-                  @update:genre="projectForm.genre = $event"
-                  @update:reference-work-input="referenceWorkInput = $event"
-                  @resolve-reference-work="resolveReferenceWork()"
-                  @confirm-reference-work="confirmReferenceWork()"
-                  @clear-reference-work="clearReferenceWorkResolution()"
-                  @update:world-brief="projectForm.world_brief = $event"
-                  @update:writing-rules="projectForm.writing_rules = $event"
-                  @update:style-profile="projectForm.style_profile = $event"
-                  @update:assistant-seed-world="assistantSeedWorld = $event"
-                  @update:assistant-seed-writing="assistantSeedWriting = $event"
-                  @generate-suggestion="generateProjectSuggestion($event, projectForm)"
-                  @use-suggestion="appendOrReplaceField(projectForm, $event.kind, $event.text, $event.mode)"
-                />
-              </section>
-            </main>
+            <WorkspaceProjectCreatePanel
+              v-if="isAuthenticated"
+              :loading="loading"
+              :step="projectCreateStep"
+              :form="projectForm"
+              :genre-option-cards="genreOptionCards"
+              :style-profile-options="styleProfileOptions"
+              :reference-work-input="referenceWorkInput"
+              :reference-work-resolved="referenceWorkResolved"
+              :assistant-loading-kind="assistantLoadingKind"
+              :assistant-seed-world="assistantSeedWorld"
+              :assistant-seed-writing="assistantSeedWriting"
+              :world-suggestions="worldSuggestions"
+              :writing-suggestions="writingSuggestions"
+              @update:step="projectCreateStep = $event"
+              @submit="submitCreateProject()"
+              @update:title="projectForm.title = $event"
+              @update:genre="projectForm.genre = $event"
+              @update:reference-work-input="referenceWorkInput = $event"
+              @resolve-reference-work="resolveReferenceWork()"
+              @confirm-reference-work="confirmReferenceWork()"
+              @clear-reference-work="clearReferenceWorkResolution()"
+              @update:world-brief="projectForm.world_brief = $event"
+              @update:writing-rules="projectForm.writing_rules = $event"
+              @update:style-profile="projectForm.style_profile = $event"
+              @update:assistant-seed-world="assistantSeedWorld = $event"
+              @update:assistant-seed-writing="assistantSeedWriting = $event"
+              @generate-suggestion="generateProjectSuggestion($event, projectForm)"
+              @use-suggestion="appendOrReplaceField(projectForm, $event.kind, $event.text, $event.mode)"
+            />
           </template>
         </main>
       </div>

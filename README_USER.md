@@ -83,15 +83,29 @@
 
 ## 本地启动
 
-如果你在本机运行这个项目，通常这样启动：
+如果你在本机运行这个项目，推荐直接双击根目录：
+
+```text
+start-workbench.bat
+```
+
+它会自动检查 Docker / Python / npm，启动 MySQL，构建前端，然后启动后端。启动后打开：
+
+```text
+http://127.0.0.1:8500
+```
+
+如果 Docker Desktop 没启动，脚本会直接提示你先启动 Docker。
+
+手动启动时通常是这三步：
 
 1. 启动 MySQL
 2. 构建前端
 3. 启动后端
 
-也可以直接运行仓库里的：
+PowerShell 入口：
 
-- `start-workbench.bat`
+- `start-workbench.ps1`
 - `scripts/start-workbench.ps1`
 
 ## 说明

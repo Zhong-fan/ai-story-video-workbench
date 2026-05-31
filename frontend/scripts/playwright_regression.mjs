@@ -1,17 +1,6 @@
 import { chromium } from "playwright";
 
 const baseUrl = "http://127.0.0.1:8500/";
-const TEXT = {
-  login: "\u767b\u5f55",
-  register: "\u6ce8\u518c",
-  registerAndLogin: "\u6ce8\u518c\u5e76\u767b\u5f55",
-  allWorks: "\u5168\u90e8\u4f5c\u54c1",
-  menuOpen: "\u6253\u5f00\u83dc\u5355",
-  viewAllWorks: "\u67e5\u770b\u5168\u90e8\u4f5c\u54c1",
-  emptyUser: "\u8bf7\u8f93\u5165\u7528\u6237\u540d",
-  noMatch: "\u6ca1\u6709\u627e\u5230\u5339\u914d\u7684\u4f5c\u54c1",
-  logout: "\u9000\u51fa",
-};
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -32,24 +21,30 @@ function buttonByText(page, text) {
 }
 
 async function openAuth(page, mode = "login") {
-  await buttonByText(page, TEXT.login).click();
+  await buttonByText(page, mode === "register" ? "创建账号" : "登录").click();
   await page.locator(".auth-modal").waitFor();
   if (mode === "register") {
-    await buttonByText(page, TEXT.register).click();
+    await page.locator(".auth-modal button").filter({ hasText: "注册" }).first().click();
   }
+}
+
+async function closeAuth(page) {
+  const closeButton = page.locator(".auth-modal button").filter({ hasText: "稍后再说" }).first();
+  if (await closeButton.isVisible()) await closeButton.click();
 }
 
 async function registerFreshUser(page) {
   const username = `reg_${Date.now()}`;
-  const password = "Regression123";
+  const password = "Regression123!";
   await openAuth(page, "register");
   await page.locator('input[autocomplete="username"]').fill(username);
   await page.locator('input[autocomplete="new-password"]').fill(password);
   await page.locator(".auth-modal form input").nth(2).fill(password);
   const challenge = await page.locator(".captcha-box").textContent();
   await page.locator('input[inputmode="numeric"]').fill(solveCaptcha(challenge ?? ""));
-  await buttonByText(page, TEXT.registerAndLogin).click();
+  await buttonByText(page, "注册并登录").click();
   await page.locator(".auth-modal").waitFor({ state: "detached", timeout: 10000 });
+  await page.locator(".sidebar-user").filter({ hasText: username }).waitFor();
   return { username, password };
 }
 
@@ -65,34 +60,54 @@ async function testEmptyLoginDoesNotPost(page) {
   await page.waitForTimeout(700);
   page.off("request", onRequest);
   assert(requests.length === 0, "Empty login should not send /api/auth/login");
-  await page.locator(".field-error").filter({ hasText: TEXT.emptyUser }).waitFor();
-}
-
-async function testSearchEmptyState(page) {
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await buttonByText(page, TEXT.allWorks).click();
-  await page.locator('input[type="search"]').first().fill("不存在的关键字xyz");
-  await page.locator(".empty-panel").filter({ hasText: TEXT.noMatch }).waitFor();
-  await buttonByText(page, TEXT.viewAllWorks).waitFor();
+  await page.locator(".field-error").filter({ hasText: "请输入用户名" }).waitFor();
+  await closeAuth(page);
 }
 
 async function testMobileLayout(page) {
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.setViewportSize({ width: 390, height: 844 });
-  await buttonByText(page, TEXT.menuOpen).waitFor();
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await buttonByText(page, "打开菜单").waitFor();
   const mainBox = await page.locator("main").boundingBox();
   assert(mainBox && mainBox.width > 300, "Mobile main content should remain readable");
-  await buttonByText(page, TEXT.menuOpen).click();
+  await buttonByText(page, "打开菜单").click();
   await page.locator("nav[aria-label='Primary']").waitFor();
+  await page.setViewportSize({ width: 1440, height: 900 });
 }
 
-async function testLikeRequiresLoginAndResumes(page) {
+async function createProject(page, title) {
+  await buttonByText(page, "新建项目").click();
+  await page.getByRole("heading", { name: "先把小说的核心设定立住" }).waitFor();
+  await page.getByRole("textbox", { name: "小说标题" }).fill(title);
+  await buttonByText(page, "下一步").click();
+  await page.getByRole("textbox", { name: "世界观" }).fill("雨夜城市中，人们会在短暂烟火里听见未来一天的心声。");
+  await page.getByRole("textbox", { name: "写作偏好" }).fill("轻小说节奏，重视人物互动，每章都要推进关系变化。");
+  await buttonByText(page, "下一步").click();
+  await buttonByText(page, "创建项目").click();
+  await page.getByText(title).first().waitFor({ timeout: 15000 });
+}
+
+async function testProjectCreateDeleteRestore(page) {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await buttonByText(page, TEXT.allWorks).click();
-  await page.locator(".novel-card__toggle--heart").first().click();
-  await page.locator(".auth-modal").waitFor();
   await registerFreshUser(page);
-  await page.locator(".novel-card__toggle--heart.novel-card__toggle--active").first().waitFor({ timeout: 10000 });
+  const projectTitle = `回归测试项目 ${Date.now()}`;
+
+  await createProject(page, projectTitle);
+  await buttonByText(page, "返回工作区").click();
+  await buttonByText(page, projectTitle).waitFor();
+
+  const projectCard = page.locator(".memory-card").filter({ hasText: projectTitle }).first();
+  await projectCard.getByRole("button", { name: "删除" }).click();
+  await page.locator(".empty-text").filter({ hasText: "还没有项目" }).waitFor();
+
+  await buttonByText(page, "回收站").click();
+  await page.locator(".memory-card").filter({ hasText: projectTitle }).first().waitFor();
+  await page.getByText("项目 1", { exact: true }).waitFor();
+  await page.locator(".memory-card").filter({ hasText: projectTitle }).first().getByRole("button", { name: "恢复" }).click();
+  await page.locator(".empty-text").filter({ hasText: "回收站目前是空的" }).waitFor();
+
+  await buttonByText(page, "我的项目").click();
+  await buttonByText(page, projectTitle).waitFor();
 }
 
 async function main() {
@@ -100,12 +115,14 @@ async function main() {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.setDefaultTimeout(15000);
 
-  await testEmptyLoginDoesNotPost(page);
-  await testSearchEmptyState(page);
-  await testMobileLayout(page);
-  await testLikeRequiresLoginAndResumes(page);
+  try {
+    await testEmptyLoginDoesNotPost(page);
+    await testMobileLayout(page);
+    await testProjectCreateDeleteRestore(page);
+  } finally {
+    await browser.close();
+  }
 
-  await browser.close();
   console.log("playwright regression passed");
 }
 

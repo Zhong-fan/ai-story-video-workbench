@@ -239,6 +239,33 @@ CHENFLOW_TTS_VOICE=
 
 ## 本地启动
 
+推荐直接双击根目录：
+
+```text
+start-workbench.bat
+```
+
+它会调用 `start-workbench.ps1`，依次检查 Docker / Python / npm，启动 MySQL，必要时安装依赖，构建前端，然后启动后端。启动完成后打开：
+
+```text
+http://127.0.0.1:8500
+```
+
+PowerShell 也可以直接运行：
+
+```powershell
+.\start-workbench.ps1
+```
+
+常用参数：
+
+```powershell
+.\start-workbench.ps1 -NoBackend -SkipBuild -SkipNpmInstall
+.\start-workbench.ps1 -WithEmbedding
+```
+
+如果只想手动启动，可以按下面的步骤执行。
+
 启动 MySQL：
 
 ```powershell
@@ -272,10 +299,9 @@ python -m app.api
 
 后端会把 `frontend/dist` 里的 SPA 挂在 `http://127.0.0.1:8500`。
 
-也可以使用封装脚本：
+兼容入口：
 
 ```text
-start-workbench.bat
 scripts/start-workbench.ps1
 ```
 
