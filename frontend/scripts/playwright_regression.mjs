@@ -99,7 +99,7 @@ async function testProjectCreateDeleteRestore(page) {
   await buttonByText(page, "返回工作区").click();
   await buttonByText(page, projectTitle).waitFor();
 
-  const projectCard = page.locator(".memory-card").filter({ hasText: projectTitle }).first();
+  const projectCard = page.locator(".project-home-card").filter({ hasText: projectTitle }).first();
   await projectCard.getByRole("button", { name: "删除" }).click();
   await page.locator(".empty-text").filter({ hasText: "还没有项目" }).waitFor();
 

@@ -94,6 +94,7 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         self.assertIn("AI生成剧本", regression_source)
         self.assertIn("自主输入", regression_source)
         self.assertIn("先把项目核心设定立住", regression_source)
+        self.assertIn(".project-home-card", regression_source)
         self.assertNotIn("先把小说的核心设定立住", regression_source)
         self.assertNotIn("小说标题", regression_source)
         self.assertNotIn('"我的项目"', regression_source)
@@ -102,6 +103,7 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         audit_source = PLAYWRIGHT_AUDIT.read_text(encoding="utf-8")
 
         self.assertIn('path.resolve("output/playwright-audit")', audit_source)
+        self.assertIn('createRequire(new URL("../frontend/package.json", import.meta.url))', audit_source)
         self.assertNotIn("E:/Computer/Wyc_Xc/MVP", audit_source)
 
 

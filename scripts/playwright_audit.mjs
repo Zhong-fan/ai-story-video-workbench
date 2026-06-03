@@ -1,9 +1,11 @@
-import { chromium } from "playwright";
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 const baseUrl = "http://127.0.0.1:8500/";
 const outDir = path.resolve("output/playwright-audit");
+const requireFromFrontend = createRequire(new URL("../frontend/package.json", import.meta.url));
+const { chromium } = requireFromFrontend("playwright");
 
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
