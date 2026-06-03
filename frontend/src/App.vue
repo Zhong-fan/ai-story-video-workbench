@@ -14,6 +14,7 @@ import GenerationTracePanel from "./components/workspace/GenerationTracePanel.vu
 import ContextReviewPage from "./components/workspace/ContextReviewPage.vue";
 import ProjectSettingsPanel from "./components/workspace/ProjectSettingsPanel.vue";
 import WorkspaceProjectCreatePanel from "./components/workspace/WorkspaceProjectCreatePanel.vue";
+import AssetLibraryPanel from "./components/workspace/AssetLibraryPanel.vue";
 import StudioWorkspacePanel from "./components/workspace/StudioWorkspacePanel.vue";
 import WorkspaceSidebar from "./components/workspace/WorkspaceSidebar.vue";
 import WorkspaceTrashPanel from "./components/workspace/WorkspaceTrashPanel.vue";
@@ -42,6 +43,8 @@ const {
 } = storeToRefs(store);
 
 const currentView = ref<ViewKey>("studio");
+const activeStudioAgent = ref<"shortDrama" | "novel" | "anime">(readPersistedStudioAgent());
+const projectCreateMode = ref<"upload" | "ai" | "manual">("manual");
 const authError = ref("");
 const workspaceSearch = ref("");
 const showPublishPanel = ref(false);
@@ -63,6 +66,7 @@ const legacyPersistedNovelChapterIdKey = "graph_mvp_selected_novel_chapter_id";
 const legacyGenerationPromptDraftPrefix = "graph_mvp_generation_prompt_";
 const restorableViews: ViewKey[] = [
   "studio",
+  "assetLibrary",
   "trash",
   "projectCreate",
   "setupStage",
@@ -448,12 +452,32 @@ function goToView(view: ViewKey) {
     openAuthPanel("register", view);
     return;
   }
-  if (view !== "auth" && !isAuthenticated.value && ["studio", "trash", "setupStage", "novelStage", "videoStage", "projectSettings", "contextReview", "characters", "novelCreate", "videoCreate", "novelReader", "generationTrace", "novelEditor"].includes(view)) {
+  if (view !== "auth" && !isAuthenticated.value && ["studio", "assetLibrary", "trash", "setupStage", "novelStage", "videoStage", "projectSettings", "contextReview", "characters", "novelCreate", "videoCreate", "novelReader", "generationTrace", "novelEditor"].includes(view)) {
     openAuthPanel("login", view);
     return;
   }
   currentView.value = view;
   mobileSidebarOpen.value = false;
+}
+
+function selectStudioAgent(agent: "shortDrama" | "novel" | "anime") {
+  if (!isAuthenticated.value) {
+    openAuthPanel("login", "studio");
+    return;
+  }
+  activeStudioAgent.value = agent;
+  localStorage.setItem("chenflow_active_studio_agent", agent);
+  currentView.value = "studio";
+  mobileSidebarOpen.value = false;
+}
+
+function readPersistedStudioAgent() {
+  const value = localStorage.getItem("chenflow_active_studio_agent");
+  return value === "novel" || value === "anime" || value === "shortDrama" ? value : "shortDrama";
+}
+
+function startCreateFromStudio(mode: "upload" | "ai" | "manual") {
+  openProjectCreate(mode);
 }
 
 function formatDateTime(value: string | undefined) {
@@ -811,7 +835,8 @@ function editCharacterCard(card: CharacterCard) {
   characterForm.voice_pitch = card.voice_pitch;
 }
 
-function openProjectCreate() {
+function openProjectCreate(mode: "upload" | "ai" | "manual" = "manual") {
+  projectCreateMode.value = mode;
   if (!isAuthenticated.value) {
     openAuthPanel("register", "projectCreate");
     return;
@@ -1979,10 +2004,12 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
         </button>
         <WorkspaceSidebar
           :current-view="currentView"
+          :active-agent="activeStudioAgent"
           :is-authenticated="isAuthenticated"
           :username="currentUser?.username"
           :mobile-open="mobileSidebarOpen"
           @go="goToView"
+          @select-agent="selectStudioAgent"
           @open-project-create="openProjectCreate()"
           @login="openAuthPanel('login', 'studio')"
           @register="openAuthPanel('register', 'studio')"
@@ -1992,6 +2019,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
         <main class="main-shell">
           <template v-if="currentView === 'studio'">
             <StudioWorkspacePanel
+              :active-agent="activeStudioAgent"
               :workspace-search="workspaceSearch"
               :projects="pagedWorkspaceProjects"
               :workspace-page="workspacePage"
@@ -1999,11 +2027,19 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               :workspace-total-pages="workspaceTotalPages"
               :loading="loading"
               @update:workspace-search="workspaceSearch = $event"
-              @open-project-create="openProjectCreate()"
+              @start-create="startCreateFromStudio"
               @open-project="openWorkspaceProject"
               @delete-project="deleteProjectToTrash"
               @previous-page="previousWorkspacePage()"
               @next-page="nextWorkspacePage()"
+            />
+          </template>
+
+          <template v-else-if="currentView === 'assetLibrary'">
+            <AssetLibraryPanel
+              :projects="projects"
+              :media-assets="longformState.media_assets"
+              :loading="loading"
             />
           </template>
 
@@ -2019,6 +2055,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
             <WorkspaceProjectCreatePanel
               v-if="isAuthenticated"
               :loading="loading"
+              :creation-mode="projectCreateMode"
               :step="projectCreateStep"
               :form="projectForm"
               :genre-option-cards="genreOptionCards"

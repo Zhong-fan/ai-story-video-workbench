@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import ProjectCreateWizard from "./ProjectCreateWizard.vue";
 import type { ProjectCreateDraft, ReferenceWorkResolved } from "../../types";
 
@@ -6,21 +7,7 @@ type StyleProfileOption = { value: string; label: string; description: string; b
 type GenreOptionCard = { value: string; label: string; description: string };
 type SuggestionKind = "world_brief" | "writing_rules";
 type WizardStep = 1 | 2 | 3;
-
-defineProps<{
-  loading: boolean;
-  step: WizardStep;
-  form: ProjectCreateDraft;
-  genreOptionCards: GenreOptionCard[];
-  styleProfileOptions: StyleProfileOption[];
-  referenceWorkInput: string;
-  referenceWorkResolved: ReferenceWorkResolved | null;
-  assistantLoadingKind?: SuggestionKind | "reference_work" | null;
-  assistantSeedWorld: string;
-  assistantSeedWriting: string;
-  worldSuggestions: string[];
-  writingSuggestions: string[];
-}>();
+type CreationMode = "upload" | "ai" | "manual";
 
 const emit = defineEmits<{
   (e: "update:step", value: WizardStep): void;
@@ -39,6 +26,43 @@ const emit = defineEmits<{
   (e: "generate-suggestion", kind: SuggestionKind): void;
   (e: "use-suggestion", payload: { kind: SuggestionKind; text: string; mode: "replace" | "append" }): void;
 }>();
+
+const props = defineProps<{
+  loading: boolean;
+  creationMode: CreationMode;
+  step: WizardStep;
+  form: ProjectCreateDraft;
+  genreOptionCards: GenreOptionCard[];
+  styleProfileOptions: StyleProfileOption[];
+  referenceWorkInput: string;
+  referenceWorkResolved: ReferenceWorkResolved | null;
+  assistantLoadingKind?: SuggestionKind | "reference_work" | null;
+  assistantSeedWorld: string;
+  assistantSeedWriting: string;
+  worldSuggestions: string[];
+  writingSuggestions: string[];
+}>();
+
+const createHeader = computed(() => {
+  const copies: Record<CreationMode, { kicker: string; title: string; description: string }> = {
+    upload: {
+      kicker: "上传剧本建项目",
+      title: "把已有剧本整理成可生产项目",
+      description: "先录入剧本标题、题材和原始梗概；创建后继续拆章节、做分镜和视频资产。",
+    },
+    ai: {
+      kicker: "AI 生成剧本",
+      title: "先定义方向，再让 AI 扩写剧本",
+      description: "用题材、人设、参考作品和视觉风格搭好项目底座；创建后进入小说或短剧生成链路。",
+    },
+    manual: {
+      kicker: "自主输入",
+      title: "先把项目核心设定立住",
+      description: "项目层只放长期有效的信息：题材、世界设定、写作偏好和文风。具体剧情前提留到章节里写。",
+    },
+  };
+  return copies[props.creationMode];
+});
 </script>
 
 <template>
@@ -46,13 +70,14 @@ const emit = defineEmits<{
     <section class="panel panel--paper">
       <div class="panel-heading">
         <div>
-          <p class="panel-heading__kicker">新建项目</p>
-          <h2>先把小说的核心设定立住</h2>
-          <p class="panel-heading__desc">项目层只放长期有效的信息：题材、世界设定、写作偏好和文风。具体剧情前提留到章节里写。</p>
+          <p class="panel-heading__kicker">{{ createHeader.kicker }}</p>
+          <h2>{{ createHeader.title }}</h2>
+          <p class="panel-heading__desc">{{ createHeader.description }}</p>
         </div>
       </div>
       <ProjectCreateWizard
         :loading="loading"
+        :creation-mode="creationMode"
         :step="step"
         :form="form"
         :genre-option-cards="genreOptionCards"

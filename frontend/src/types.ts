@@ -1,5 +1,6 @@
 export type ViewKey =
   | "studio"
+  | "assetLibrary"
   | "trash"
   | "projectCreate"
   | "setupStage"

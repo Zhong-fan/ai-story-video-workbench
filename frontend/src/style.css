@@ -71,7 +71,7 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   background:
-    linear-gradient(180deg, #f5f8fd 0%, #eaf4ff 42%, #f8eef6 100%);
+    linear-gradient(180deg, #fff7fb 0%, #f7fbff 45%, #fff0f7 100%);
 }
 
 #app::before,
@@ -925,8 +925,8 @@ button {
 
 .primary-button {
   color: oklch(99% 0.004 20);
-  background: linear-gradient(135deg, color-mix(in oklab, var(--rose-strong) 88%, white), color-mix(in oklab, var(--rose) 70%, white));
-  box-shadow: 0 10px 22px color-mix(in oklab, var(--rose) 22%, transparent);
+  background: linear-gradient(135deg, #f06f9b, #f5a0b8);
+  box-shadow: 0 12px 26px rgba(240, 111, 155, 0.2);
 }
 
 .primary-button--compact,

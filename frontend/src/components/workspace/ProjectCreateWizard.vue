@@ -1,13 +1,16 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import type { ProjectPayload, ReferenceWorkResolved } from "../../types";
 
 type StyleProfileOption = { value: string; label: string; description: string; bullets?: string[] };
 type GenreOptionCard = { value: string; label: string; description: string };
 type SuggestionKind = "world_brief" | "writing_rules";
 type WizardStep = 1 | 2 | 3;
+type CreationMode = "upload" | "ai" | "manual";
 
 const props = defineProps<{
   loading: boolean;
+  creationMode: CreationMode;
   step: WizardStep;
   form: ProjectPayload;
   genreOptionCards: GenreOptionCard[];
@@ -48,6 +51,27 @@ function nextStep() {
 function previousStep() {
   if (props.step > 1) emit("update:step", (props.step - 1) as WizardStep);
 }
+
+const creationModeCopy = computed(() => {
+  const copies: Record<CreationMode, { titleLabel: string; titlePlaceholder: string; worldHint: string }> = {
+    upload: {
+      titleLabel: "上传剧本建项目",
+      titlePlaceholder: "例如：已有剧本标题 / 第一季短剧项目",
+      worldHint: "粘贴剧本梗概、主要人物、已有分集说明，或记录原始剧本存放位置。",
+    },
+    ai: {
+      titleLabel: "AI 生成剧本",
+      titlePlaceholder: "例如：雨夜重逢 / 逆袭短剧企划",
+      worldHint: "写清目标题材、主角处境、爽点、反转、受众和短剧节奏要求。",
+    },
+    manual: {
+      titleLabel: "自主输入",
+      titlePlaceholder: "先给项目一个能区分的工作标题",
+      worldHint: "写清世界观、长期规则、主角状态、关系基线和不可变设定。",
+    },
+  };
+  return copies[props.creationMode];
+});
 </script>
 
 <template>
@@ -70,8 +94,8 @@ function previousStep() {
     <section v-if="step === 1" class="panel panel--paper">
       <div class="form-stack">
         <label class="field">
-          <span>小说标题</span>
-          <input :value="form.title" maxlength="255" placeholder="先给项目一个能区分的工作标题" @input="emit('update:title', ($event.target as HTMLInputElement).value)" />
+          <span>{{ creationModeCopy.titleLabel }}</span>
+          <input :value="form.title" maxlength="255" :placeholder="creationModeCopy.titlePlaceholder" @input="emit('update:title', ($event.target as HTMLInputElement).value)" />
         </label>
 
         <label class="field">
@@ -230,7 +254,7 @@ function previousStep() {
       <div class="form-stack">
         <label class="field">
           <span>世界观</span>
-          <textarea :value="form.world_brief" rows="6" maxlength="4000" @input="emit('update:worldBrief', ($event.target as HTMLTextAreaElement).value)" />
+          <textarea :value="form.world_brief" rows="6" maxlength="4000" :placeholder="creationModeCopy.worldHint" @input="emit('update:worldBrief', ($event.target as HTMLTextAreaElement).value)" />
         </label>
         <section class="assistant-panel">
           <div class="assistant-panel__header">

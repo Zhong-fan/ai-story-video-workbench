@@ -10,6 +10,9 @@ PROJECT_LIBRARY_PANEL = ROOT / "frontend" / "src" / "components" / "workspace" /
 WORKSPACE_SIDEBAR = ROOT / "frontend" / "src" / "components" / "workspace" / "WorkspaceSidebar.vue"
 WORKSPACE_TRASH_PANEL = ROOT / "frontend" / "src" / "components" / "workspace" / "WorkspaceTrashPanel.vue"
 WORKSPACE_PROJECT_CREATE_PANEL = ROOT / "frontend" / "src" / "components" / "workspace" / "WorkspaceProjectCreatePanel.vue"
+PROJECT_CREATE_WIZARD = ROOT / "frontend" / "src" / "components" / "workspace" / "ProjectCreateWizard.vue"
+STUDIO_WORKSPACE_PANEL = ROOT / "frontend" / "src" / "components" / "workspace" / "StudioWorkspacePanel.vue"
+ASSET_LIBRARY_PANEL = ROOT / "frontend" / "src" / "components" / "workspace" / "AssetLibraryPanel.vue"
 
 
 class FrontendWorkspaceCleanupTests(unittest.TestCase):
@@ -51,7 +54,35 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         self.assertIn("<WorkspaceProjectCreatePanel", app_source)
         self.assertNotIn("先把小说的核心设定立住", app_source)
         self.assertIn("ProjectCreateWizard", project_create_source)
-        self.assertIn("先把小说的核心设定立住", project_create_source)
+        self.assertIn("先把项目核心设定立住", project_create_source)
+
+    def test_agent_workspace_create_modes_are_wired_to_project_create(self) -> None:
+        app_source = APP_VUE.read_text(encoding="utf-8")
+        studio_source = STUDIO_WORKSPACE_PANEL.read_text(encoding="utf-8")
+        project_create_source = WORKSPACE_PROJECT_CREATE_PANEL.read_text(encoding="utf-8")
+        wizard_source = PROJECT_CREATE_WIZARD.read_text(encoding="utf-8")
+
+        self.assertIn('activeStudioAgent = ref<"shortDrama" | "novel" | "anime">', app_source)
+        self.assertIn('projectCreateMode = ref<"upload" | "ai" | "manual">', app_source)
+        self.assertIn(":creation-mode=\"projectCreateMode\"", app_source)
+        self.assertIn("emit('start-create', 'upload')", studio_source)
+        self.assertIn("emit('start-create', 'ai')", studio_source)
+        self.assertIn("emit('start-create', 'manual')", studio_source)
+        self.assertIn("creationMode", project_create_source)
+        self.assertIn("上传剧本建项目", wizard_source)
+        self.assertIn("AI 生成剧本", wizard_source)
+        self.assertIn("自主输入", wizard_source)
+
+    def test_asset_library_is_real_read_only_view_not_disabled_stub(self) -> None:
+        app_source = APP_VUE.read_text(encoding="utf-8")
+        asset_source = ASSET_LIBRARY_PANEL.read_text(encoding="utf-8")
+
+        self.assertIn("import AssetLibraryPanel", app_source)
+        self.assertIn("assetLibrary", app_source)
+        self.assertTrue(ASSET_LIBRARY_PANEL.exists())
+        self.assertNotIn("上传待接入", asset_source)
+        self.assertNotIn("disabled>上传", asset_source)
+        self.assertIn("按项目管理图片和视频资产", asset_source)
 
 
 if __name__ == "__main__":
