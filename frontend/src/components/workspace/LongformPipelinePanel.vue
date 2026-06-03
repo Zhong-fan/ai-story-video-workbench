@@ -223,7 +223,7 @@ const latestVideoShotProgress = computed(() => {
 const latestStoryboardAssets = computed(() => {
   const storyboardId = latestStoryboard.value?.id ?? null;
   if (!storyboardId) return [];
-  return props.state.media_assets.filter((asset) => asset.storyboard_id === storyboardId).slice(0, 18);
+  return props.state.media_assets.filter((asset) => asset.storyboard_id === storyboardId);
 });
 const canonicalDraftCount = computed(() => props.state.draft_versions.filter((draft) => draft.status === "chapter_canonical").length);
 const latestStoryboardLockedShotCount = computed(() => latestStoryboard.value?.shots.filter((shot) => shot.status === "locked").length ?? 0);
@@ -236,6 +236,18 @@ const latestStoryboardDialogueAssetCount = computed(
 const latestStoryboardFirstFrameCount = computed(
   () => latestStoryboardAssets.value.filter((asset) => asset.asset_type === "shot_first_frame" && asset.status === "completed").length,
 );
+const latestStoryboardLastFrameCount = computed(
+  () => latestStoryboardAssets.value.filter((asset) => asset.asset_type === "shot_last_frame" && asset.status === "completed").length,
+);
+const latestStoryboardVideoGateReason = computed(() => {
+  const storyboard = latestStoryboard.value;
+  if (!storyboard) return "";
+  for (const shot of storyboard.shots) {
+    const reason = shotVideoGateReason(shot);
+    if (reason) return `视频门禁：${reason}`;
+  }
+  return "";
+});
 const assetSummary = computed(() => {
   const counts: Record<string, number> = {};
   for (const asset of latestStoryboardAssets.value) {
@@ -243,7 +255,7 @@ const assetSummary = computed(() => {
   }
   return counts;
 });
-const visualAssets = computed(() => props.state.media_assets.filter((asset) => asset.asset_type.startsWith("character_") || asset.asset_type.startsWith("scene_") || asset.asset_type === "shot_first_frame"));
+const visualAssets = computed(() => props.state.media_assets.filter((asset) => asset.asset_type.startsWith("character_") || asset.asset_type.startsWith("scene_") || asset.asset_type === "shot_first_frame" || asset.asset_type === "shot_last_frame"));
 const videoOutputs = computed(() => props.state.video_tasks.filter((task) => typeof task.progress.public_url === "string" && task.progress.public_url));
 const headerStats = computed(() =>
   isNovelMode.value
@@ -388,7 +400,7 @@ const productionChecklist = computed(() => [
     done: latestStoryboardFirstFrameCount.value > 0 || visualAssets.value.length > 0,
     detail:
       latestStoryboard.value
-        ? `角色/首帧等视觉资产 ${visualAssets.value.length} 个，其中镜头首帧 ${latestStoryboardFirstFrameCount.value} 个。`
+        ? `角色/首帧等视觉资产 ${visualAssets.value.length} 个，其中镜头首帧 ${latestStoryboardFirstFrameCount.value} 个，尾帧 ${latestStoryboardLastFrameCount.value} 个。`
         : "角色三视图和镜头首帧不是必需，但会明显提升可控性。",
   },
 ]);
@@ -766,6 +778,7 @@ function assetTypeLabel(type: string) {
     subtitle: "字幕",
     character_turnaround: "角色三视图",
     shot_first_frame: "首帧",
+    shot_last_frame: "尾帧",
   };
   return labels[type] ?? type;
 }
@@ -865,7 +878,13 @@ function storyboardAssetSummary(asset: MediaAsset) {
   if (asset.asset_type === "subtitle") return [shotNo, "字幕素材"].filter(Boolean).join(" / ");
   if (asset.asset_type === "image") return [shotNo, "画面参考"].filter(Boolean).join(" / ");
   if (asset.asset_type === "video") return [shotNo, "镜头片段"].filter(Boolean).join(" / ");
+  if (asset.asset_type === "shot_first_frame") return [shotNo, "镜头首帧"].filter(Boolean).join(" / ");
+  if (asset.asset_type === "shot_last_frame") return [shotNo, "镜头尾帧"].filter(Boolean).join(" / ");
   return shotNo || "已生成素材";
+}
+
+function shotContinuity(shot: StoryboardShot) {
+  return shot.continuity && typeof shot.continuity === "object" ? shot.continuity as Record<string, unknown> : {};
 }
 
 function shotCharacterNames(shot: StoryboardShot) {
@@ -894,6 +913,45 @@ function shotSceneNames(shot: StoryboardShot) {
 
 function shotFirstFrameAsset(shotId: number) {
   return latestStoryboardAssets.value.find((asset) => asset.asset_type === "shot_first_frame" && Number(asset.shot_id || 0) === shotId) ?? null;
+}
+
+function shotLastFrameAsset(shotId: number) {
+  return latestStoryboardAssets.value.find((asset) => asset.asset_type === "shot_last_frame" && Number(asset.shot_id || 0) === shotId) ?? null;
+}
+
+function shotByNo(shotNo: number) {
+  return latestStoryboard.value?.shots.find((shot) => shot.shot_no === shotNo) ?? null;
+}
+
+function shotDependencyNo(shot: StoryboardShot) {
+  const raw = shotContinuity(shot).depends_on_shot_no;
+  const value = Number(raw || 0);
+  return value > 0 ? value : Math.max(shot.shot_no - 1, 1);
+}
+
+function dependencyLastFrameAsset(shot: StoryboardShot) {
+  const dependency = shotByNo(shotDependencyNo(shot));
+  return dependency ? shotLastFrameAsset(dependency.id) : null;
+}
+
+function shotFrameStrategyLabel(shot: StoryboardShot) {
+  const continuity = shotContinuity(shot);
+  const firstFrameSource = String(continuity.first_frame_source || "generated");
+  if (firstFrameSource === "previous_last_frame") return `继承上一镜头尾帧（镜头 ${shotDependencyNo(shot)}）`;
+  return "新首帧";
+}
+
+function shotVideoGateReason(shot: StoryboardShot) {
+  const continuity = shotContinuity(shot);
+  if (continuity.requires_i2v === false) return "";
+  const firstFrameSource = String(continuity.first_frame_source || "generated");
+  if (firstFrameSource === "previous_last_frame") {
+    return dependencyLastFrameAsset(shot) ? "" : `镜头 ${shot.shot_no} 依赖镜头 ${shotDependencyNo(shot)} 缺少已完成尾帧。`;
+  }
+  if (firstFrameSource === "generated" && !shotFirstFrameAsset(shot.id)) {
+    return `镜头 ${shot.shot_no} 需要首帧，但还没有完成的首帧素材。`;
+  }
+  return "";
 }
 
 function videoOutputSummary(task: VideoTask) {
@@ -1574,11 +1632,12 @@ function generateTurnaround() {
           <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !latestStoryboard.shots.length" @click="emit('generate-audio-scripts', latestStoryboard.id)">从正文生成对白脚本</button>
           <button class="ghost-button ghost-button--small" type="button" :disabled="loading || !latestStoryboard.shots.length" @click="emit('generate-storyboard-voice', latestStoryboard.id)">生成全部角色对白</button>
           <button class="primary-button primary-button--small" type="button" :disabled="loading || !latestStoryboard.shots.length" @click="emit('prepare-video-production', latestStoryboard.id)">准备视觉并开始视频生产</button>
-          <button class="ghost-button ghost-button--small" type="button" :disabled="loading || latestStoryboard.status !== 'draft' || !latestStoryboard.shots.length" @click="emit('create-video-task', latestStoryboard.id)">创建视频导出任务</button>
+          <button class="ghost-button ghost-button--small" type="button" :disabled="loading || latestStoryboard.status !== 'draft' || !latestStoryboard.shots.length || Boolean(latestStoryboardVideoGateReason)" @click="emit('create-video-task', latestStoryboard.id)">创建视频导出任务</button>
           <button class="ghost-button ghost-button--small" type="button" :disabled="loading" @click="emit('delete-storyboard', { storyboardId: latestStoryboard.id })">删除分镜稿</button>
         </div>
       </div>
       <p class="empty-text">{{ storyboardSummary() }}</p>
+      <p v-if="latestStoryboardVideoGateReason" class="empty-text">{{ latestStoryboardVideoGateReason }}</p>
       <p v-if="storyboardPreflightSummaryText()" class="empty-text">{{ storyboardPreflightSummaryText() }}</p>
       <p v-if="latestStoryboard.error_message" class="empty-text">{{ latestStoryboard.error_message }}</p>
       <div v-if="latestStoryboard.events.length" class="card-list">
@@ -1615,9 +1674,12 @@ function generateTurnaround() {
           <p v-if="shotActionHint(shot)" class="empty-text">{{ shotActionHint(shot) }}</p>
           <span v-if="shotCharacterNames(shot).length">角色：{{ shotCharacterNames(shot).join("，") }}</span>
           <span v-if="shotSceneNames(shot).length">场景：{{ shotSceneNames(shot).join("，") }}</span>
+          <p class="empty-text">首帧策略：{{ shotFrameStrategyLabel(shot) }}</p>
           <p v-if="shotFirstFrameAsset(shot.id)" class="empty-text">
             首帧：{{ isAssetLocked(shotFirstFrameAsset(shot.id)!) ? "已锁定" : "未锁定" }}
           </p>
+          <p v-if="shotLastFrameAsset(shot.id)" class="empty-text">尾帧：已完成</p>
+          <p v-if="shotVideoGateReason(shot)" class="empty-text">{{ shotVideoGateReason(shot) }}</p>
           <div class="card-list" v-if="shotDialogues(shot).length">
             <div v-for="(dialogue, index) in shotDialogues(shot)" :key="index" class="memory-card">
               <strong>{{ dialogue.character_name || "角色" }} / {{ dialogue.emotion || "novel_dialog" }}</strong>

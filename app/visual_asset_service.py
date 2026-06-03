@@ -187,7 +187,6 @@ class VisualAssetService:
         shot: StoryboardShot,
         context_pack_inputs: dict[str, Any] | None = None,
     ) -> MediaAsset:
-        self._require_jimeng_image_config()
         existing_assets = db.query(MediaAsset).filter(
             MediaAsset.project_id == project.id,
             MediaAsset.storyboard_id == storyboard.id,
@@ -199,6 +198,64 @@ class VisualAssetService:
             if asset.status == "completed" and meta.get("locked") is True:
                 return asset
 
+        previous_last_frame = self._previous_last_frame_asset(db=db, project=project, storyboard=storyboard, shot=shot)
+        if previous_last_frame is not None:
+            asset = next((item for item in existing_assets if item.asset_type == "shot_first_frame"), None)
+            if asset is None:
+                asset = MediaAsset(
+                    project_id=project.id,
+                    storyboard=storyboard,
+                    shot=shot,
+                    asset_type="shot_first_frame",
+                    uri=previous_last_frame.uri,
+                    prompt=previous_last_frame.prompt,
+                    status="completed",
+                    meta_json=json_dumps({}),
+                )
+                db.add(asset)
+            asset.uri = previous_last_frame.uri
+            asset.prompt = previous_last_frame.prompt
+            asset.status = "completed"
+            existing_meta = self._compact_asset_meta(json_loads_object(asset.meta_json))
+            asset.meta_json = json_dumps(
+                {
+                    **existing_meta,
+                    "shot_id": shot.id,
+                    "shot_no": shot.shot_no,
+                    "locked": False,
+                    "source": "previous_last_frame",
+                    "source_last_frame_asset_id": previous_last_frame.id,
+                    "depends_on_shot_id": previous_last_frame.shot_id,
+                    "depends_on_shot_no": json_loads_object(previous_last_frame.meta_json).get("shot_no"),
+                    "mime_type": previous_last_frame.meta_json and (json_loads_object(previous_last_frame.meta_json).get("mime_type") or "image/png"),
+                    "context_pack_id": context_pack_inputs.get("context_pack_id") if isinstance(context_pack_inputs, dict) else None,
+                    "context_pack_version": context_pack_inputs.get("context_pack_version") if isinstance(context_pack_inputs, dict) else None,
+                    "context_pack_reference_mode": context_pack_inputs.get("reference_mode") if isinstance(context_pack_inputs, dict) else None,
+                }
+            )
+            db.add(
+                TaskEvent(
+                    project_id=project.id,
+                    storyboard=storyboard,
+                    event_type="visual_asset_shot_first_frame_completed",
+                    message=f"镜头 {shot.shot_no} 首帧已继承上一镜头尾帧。",
+                    payload_json=json_dumps(
+                        {
+                            "asset_type": "shot_first_frame",
+                            "shot_id": shot.id,
+                            "shot_no": shot.shot_no,
+                            "source": "previous_last_frame",
+                            "source_last_frame_asset_id": previous_last_frame.id,
+                            "uri": previous_last_frame.uri,
+                        }
+                    ),
+                )
+            )
+            db.commit()
+            db.refresh(asset)
+            return asset
+
+        self._require_jimeng_image_config()
         locked_references = self.locked_turnaround_references(db=db, project=project, shot=shot)
         prompt = build_visual_generation_prompt(project=project, shot=shot, include_narration=False, max_length=1800)
         if locked_references:
@@ -312,6 +369,43 @@ class VisualAssetService:
         )
         db.commit()
         db.refresh(asset)
+        return asset
+
+    def _previous_last_frame_asset(
+        self,
+        *,
+        db: Session,
+        project: Project,
+        storyboard: Storyboard,
+        shot: StoryboardShot,
+    ) -> MediaAsset | None:
+        meta = json_loads_object(shot.meta_json)
+        continuity = meta.get("continuity") if isinstance(meta.get("continuity"), dict) else {}
+        if str(continuity.get("first_frame_source") or "").strip() != "previous_last_frame":
+            return None
+        try:
+            dependency_shot_no = int(continuity.get("depends_on_shot_no"))
+        except (TypeError, ValueError):
+            dependency_shot_no = shot.shot_no - 1
+        dependency_shot = db.scalar(
+            select(StoryboardShot).where(
+                StoryboardShot.storyboard_id == storyboard.id,
+                StoryboardShot.shot_no == max(dependency_shot_no, 1),
+            )
+        )
+        if dependency_shot is None:
+            raise RuntimeError(f"镜头 {shot.shot_no} 依赖镜头 {max(dependency_shot_no, 1)} 不存在，无法继承尾帧。")
+        asset = db.scalar(
+            select(MediaAsset).where(
+                MediaAsset.project_id == project.id,
+                MediaAsset.storyboard_id == storyboard.id,
+                MediaAsset.shot_id == dependency_shot.id,
+                MediaAsset.asset_type == "shot_last_frame",
+                MediaAsset.status == "completed",
+            )
+        )
+        if asset is None:
+            raise RuntimeError(f"镜头 {shot.shot_no} 依赖镜头 {dependency_shot.shot_no} 缺少已完成尾帧。")
         return asset
 
     def locked_turnaround_references(

@@ -12,6 +12,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import Settings
@@ -358,6 +359,7 @@ class VideoRenderService:
                 composed_status="completed",
                 composed_uri=str(composed_path),
             )
+            self._write_shot_last_frame_asset(db=db, task=task, shot=shot, video_path=composed_path, output_dir=output_dir)
             return composed_path
 
         if dialogue_assets:
@@ -366,6 +368,7 @@ class VideoRenderService:
         else:
             warning = "镜头没有对白音频，已直接使用原始视频片段。"
             self._update_shot_progress(task, shot, dialogue_status="missing", composed_status="completed", composed_uri=str(segment_path), warning=warning)
+        self._write_shot_last_frame_asset(db=db, task=task, shot=shot, video_path=segment_path, output_dir=output_dir)
         return segment_path
 
     def _finalize_video_task(
@@ -713,6 +716,9 @@ class VideoRenderService:
         )
 
     def _shot_first_frame_asset(self, *, task: VideoTask, shot: StoryboardShot) -> MediaAsset | None:
+        previous_last_frame = self._previous_last_frame_asset(task=task, shot=shot)
+        if previous_last_frame is not None:
+            return previous_last_frame
         candidates = [
             asset
             for asset in task.storyboard.media_assets
@@ -722,6 +728,92 @@ class VideoRenderService:
             return None
         locked = [asset for asset in candidates if json_loads_object(asset.meta_json).get("locked") is True]
         return locked[0] if locked else candidates[0]
+
+    def _previous_last_frame_asset(self, *, task: VideoTask, shot: StoryboardShot) -> MediaAsset | None:
+        meta = json_loads_object(shot.meta_json)
+        continuity = meta.get("continuity") if isinstance(meta.get("continuity"), dict) else {}
+        if str(continuity.get("first_frame_source") or "").strip() != "previous_last_frame":
+            return None
+        try:
+            dependency_shot_no = int(continuity.get("depends_on_shot_no"))
+        except (TypeError, ValueError):
+            dependency_shot_no = shot.shot_no - 1
+        dependency_shot_no = max(dependency_shot_no, 1)
+        dependency_shot = next((item for item in task.storyboard.shots if item.shot_no == dependency_shot_no), None)
+        if dependency_shot is None:
+            return None
+        candidates = [
+            asset
+            for asset in task.storyboard.media_assets
+            if asset.shot_id == dependency_shot.id and asset.asset_type == "shot_last_frame" and asset.status == "completed"
+        ]
+        if not candidates:
+            return None
+        locked = [asset for asset in candidates if json_loads_object(asset.meta_json).get("locked") is True]
+        return locked[0] if locked else candidates[0]
+
+    def _write_shot_last_frame_asset(
+        self,
+        *,
+        db: Session,
+        task: VideoTask,
+        shot: StoryboardShot,
+        video_path: Path,
+        output_dir: Path,
+    ) -> None:
+        last_frame_path = output_dir / f"shot-{shot.shot_no:03d}-last-frame.png"
+        self._extract_last_frame(video_path=video_path, image_path=last_frame_path)
+        source_video = db.scalar(
+            select(MediaAsset).where(
+                MediaAsset.storyboard_id == task.storyboard_id,
+                MediaAsset.shot_id == shot.id,
+                MediaAsset.asset_type == "video",
+                MediaAsset.status == "completed",
+                MediaAsset.uri == str(video_path),
+            )
+        )
+        if source_video is None:
+            source_video = db.scalar(
+                select(MediaAsset).where(
+                    MediaAsset.storyboard_id == task.storyboard_id,
+                    MediaAsset.shot_id == shot.id,
+                    MediaAsset.asset_type == "video",
+                    MediaAsset.status == "completed",
+                )
+            )
+        self._upsert_asset(
+            db,
+            task=task,
+            shot=shot,
+            asset_type="shot_last_frame",
+            uri=str(last_frame_path),
+            prompt=f"Last frame extracted from shot {shot.shot_no} video.",
+            status="completed",
+            meta={
+                "source_video_asset_id": source_video.id if source_video is not None else None,
+                "shot_id": shot.id,
+                "shot_no": shot.shot_no,
+                "source_video_uri": str(video_path),
+                "mime_type": "image/png",
+            },
+        )
+
+    def _extract_last_frame(self, *, video_path: Path, image_path: Path) -> None:
+        self._run_ffmpeg(
+            [
+                self.settings.ffmpeg_path,
+                "-y",
+                "-sseof",
+                "-0.1",
+                "-i",
+                str(video_path),
+                "-frames:v",
+                "1",
+                "-update",
+                "1",
+                str(image_path),
+            ]
+        )
 
     def _resolvable_asset_url(self, asset: MediaAsset) -> str:
         meta = json_loads_object(asset.meta_json)

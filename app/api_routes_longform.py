@@ -110,7 +110,23 @@ def _video_quality_gate_failures(db: Session, *, settings: Settings, project: Pr
         image_first_shot = source_mode in {"image_first_reference", "existing_images"}
         requires_i2v = continuity.get("requires_i2v") is not False
         first_frame_source = str(continuity.get("first_frame_source") or "generated")
-        if requires_i2v and first_frame_source == "generated":
+        if requires_i2v and first_frame_source == "previous_last_frame":
+            dependency_shot_no = _continuity_dependency_shot_no(continuity, shot)
+            dependency_shot = next((item for item in storyboard.shots if item.shot_no == dependency_shot_no), None)
+            last_frame = None
+            if dependency_shot is not None:
+                last_frame = db.scalar(
+                    select(MediaAsset).where(
+                        MediaAsset.project_id == project.id,
+                        MediaAsset.storyboard_id == storyboard.id,
+                        MediaAsset.shot_id == dependency_shot.id,
+                        MediaAsset.asset_type == "shot_last_frame",
+                        MediaAsset.status == "completed",
+                    )
+                )
+            if last_frame is None:
+                failures.append(f"镜头 {shot.shot_no} 依赖镜头 {dependency_shot_no} 缺少已完成尾帧。")
+        elif requires_i2v and first_frame_source == "generated":
             first_frame = db.scalar(
                 select(MediaAsset).where(
                     MediaAsset.project_id == project.id,
@@ -126,6 +142,15 @@ def _video_quality_gate_failures(db: Session, *, settings: Settings, project: Pr
                 else:
                     failures.append(f"镜头 {shot.shot_no} 需要首帧，但还没有完成的首帧素材。")
     return failures
+
+
+def _continuity_dependency_shot_no(continuity: dict, shot: StoryboardShot) -> int:
+    value = continuity.get("depends_on_shot_no")
+    try:
+        dependency = int(value)
+    except (TypeError, ValueError):
+        dependency = shot.shot_no - 1
+    return max(dependency, 1)
 
 
 def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:

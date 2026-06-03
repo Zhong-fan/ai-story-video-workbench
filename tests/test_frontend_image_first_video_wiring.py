@@ -24,6 +24,14 @@ class FrontendImageFirstVideoWiringTests(unittest.TestCase):
         self.assertIn("先生成关键图", pipeline_source)
         self.assertIn("shot_first_frame", pipeline_source)
 
+    def test_continuity_tail_frame_ui_is_wired(self) -> None:
+        pipeline_source = (ROOT / "frontend" / "src" / "components" / "workspace" / "LongformPipelinePanel.vue").read_text(encoding="utf-8")
+
+        self.assertIn("shot_last_frame", pipeline_source)
+        self.assertIn("previous_last_frame", pipeline_source)
+        self.assertIn("继承上一镜头尾帧", pipeline_source)
+        self.assertIn("视频门禁", pipeline_source)
+
 
 if __name__ == "__main__":
     unittest.main()
