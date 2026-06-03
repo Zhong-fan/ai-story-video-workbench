@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .json_utils import json_dumps, json_loads_object
+from .media_asset_recycle import media_asset_file_path
 from .models import CharacterCard, MediaAsset, Project, Storyboard, StoryboardShot
 
 
@@ -185,9 +186,12 @@ class VoiceService:
         )
         db.flush()
 
-        output_dir = self._output_dir(project=project, storyboard=storyboard)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        audio_path = output_dir / self._audio_file_name(shot=shot, asset_type=asset_type, character=character, dialogue_index=dialogue_index)
+        audio_path = media_asset_file_path(
+            asset,
+            settings=self.settings,
+            file_name=self._audio_file_name(shot=shot, asset_type=asset_type, character=character, dialogue_index=dialogue_index),
+        )
+        audio_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             self._write_tts_audio(
                 path=audio_path,

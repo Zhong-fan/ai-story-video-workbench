@@ -17,6 +17,10 @@ def media_asset_code(asset_id: int) -> str:
     return f"m{asset_id:06d}"
 
 
+def media_asset_file_path(asset: MediaAsset, *, settings: Settings, file_name: str, deleted: bool = False) -> Path:
+    return _media_asset_dir(asset, settings=settings, deleted=deleted) / file_name
+
+
 def soft_delete_media_asset(asset: MediaAsset, *, settings: Settings) -> None:
     original_uri = asset.uri
     source = _uri_to_path(original_uri, settings=settings)
@@ -74,7 +78,7 @@ def restore_media_asset(asset: MediaAsset, *, settings: Settings) -> None:
 
 def _media_asset_dir(asset: MediaAsset, *, settings: Settings, deleted: bool) -> Path:
     bucket = "deleted" if deleted else "assets"
-    return settings.output_dir / "projects" / project_code(asset.project_id) / bucket / "media" / media_asset_code(asset.id)
+    return _output_dir(settings) / "projects" / project_code(asset.project_id) / bucket / "media" / media_asset_code(asset.id)
 
 
 def _file_name_for_uri(uri: str, *, asset: MediaAsset) -> str:
@@ -87,13 +91,23 @@ def _uri_to_path(uri: str, *, settings: Settings) -> Path | None:
         return None
     normalized = uri.replace("\\", "/")
     if normalized.startswith("/output/"):
-        return settings.output_dir / normalized.removeprefix("/output/")
+        return _output_dir(settings) / normalized.removeprefix("/output/")
     if normalized.startswith("output/"):
         return settings.root_dir / normalized
     path = Path(uri)
     if path.is_absolute():
         return path
     return settings.root_dir / path
+
+
+def _output_dir(settings: Settings) -> Path:
+    value = getattr(settings, "output_dir", None)
+    if value is not None:
+        return Path(value)
+    root_dir = getattr(settings, "root_dir", None)
+    if root_dir is not None:
+        return Path(root_dir) / "output"
+    return Path("output")
 
 
 def _unique_path(path: Path) -> Path:

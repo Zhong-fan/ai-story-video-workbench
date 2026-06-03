@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from .config import Settings
 from .jimeng_image_client import JimengImageClient
 from .json_utils import json_dumps, json_loads_list, json_loads_object
+from .media_asset_recycle import media_asset_file_path
 from .models import CharacterCard, CharacterReferenceProfile, MediaAsset, Project, ReferenceImageAsset, Storyboard, StoryboardShot, TaskEvent
 from .video_render_service import VideoRenderService
 from .visual_style_prompt import build_character_visual_prompt, build_visual_generation_prompt, project_visual_style_summary
@@ -193,6 +194,7 @@ class VisualAssetService:
             MediaAsset.storyboard_id == storyboard.id,
             MediaAsset.shot_id == shot.id,
             MediaAsset.asset_type == "shot_first_frame",
+            MediaAsset.deleted_at.is_(None),
         ).all()
         for asset in existing_assets:
             meta = json_loads_object(asset.meta_json)
@@ -299,9 +301,23 @@ class VisualAssetService:
                 raise RuntimeError("即梦图片接口没有返回 task_id 或图片 URL。")
             result_response = submit_response
 
-        output_dir = self._shot_visual_output_dir(project=project, storyboard=storyboard, shot=shot)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        image_path = output_dir / f"shot-{shot.shot_no:03d}-first-frame-v001.png"
+        asset = next((item for item in existing_assets if item.asset_type == "shot_first_frame"), None)
+        if asset is None:
+            asset = MediaAsset(
+                project_id=project.id,
+                storyboard=storyboard,
+                shot=shot,
+                asset_type="shot_first_frame",
+                uri="",
+                prompt=prompt,
+                status="processing",
+                meta_json=json_dumps({}),
+            )
+            db.add(asset)
+            db.flush()
+
+        image_path = media_asset_file_path(asset, settings=self.settings, file_name=f"shot-{shot.shot_no:03d}-first-frame-v001.png")
+        image_path.parent.mkdir(parents=True, exist_ok=True)
         self._save_image_payload(payload=image_payload, path=image_path)
         provider_debug_path = self._provider_debug_path(image_path)
         self._write_provider_debug_sidecar(
@@ -316,20 +332,6 @@ class VisualAssetService:
                 "result_response": self._sanitize_provider_payload(result_response),
             },
         )
-
-        asset = next((item for item in existing_assets if item.asset_type == "shot_first_frame"), None)
-        if asset is None:
-            asset = MediaAsset(
-                project_id=project.id,
-                storyboard=storyboard,
-                shot=shot,
-                asset_type="shot_first_frame",
-                uri=str(image_path),
-                prompt=prompt,
-                status="completed",
-                meta_json=json_dumps({}),
-            )
-            db.add(asset)
 
         asset.uri = str(image_path)
         asset.prompt = prompt
@@ -569,9 +571,21 @@ class VisualAssetService:
                 raise RuntimeError("即梦图片接口没有返回 task_id 或图片 URL。")
             result_response = submit_response
 
-        output_dir = self._visual_output_dir(project=project, chapter_no=chapter_no, character=character)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        image_path = output_dir / f"turnaround-v{next_version:03d}.png"
+        asset = MediaAsset(
+            project_id=project.id,
+            storyboard_id=None,
+            shot_id=None,
+            asset_type="character_turnaround",
+            uri="",
+            prompt=prompt,
+            status="processing",
+            meta_json=json_dumps({}),
+        )
+        db.add(asset)
+        db.flush()
+
+        image_path = media_asset_file_path(asset, settings=self.settings, file_name=f"turnaround-v{next_version:03d}.png")
+        image_path.parent.mkdir(parents=True, exist_ok=True)
         self._save_image_payload(payload=image_payload, path=image_path)
         provider_debug_path = self._provider_debug_path(image_path)
         self._write_provider_debug_sidecar(
@@ -586,44 +600,35 @@ class VisualAssetService:
                 "result_response": self._sanitize_provider_payload(result_response),
             },
         )
-
-        asset = MediaAsset(
-            project_id=project.id,
-            storyboard_id=None,
-            shot_id=None,
-            asset_type="character_turnaround",
-            uri=str(image_path),
-            prompt=prompt,
-            status="completed",
-            meta_json=json_dumps(
-                {
-                    "character_card_id": character.id,
-                    "character_name": character.name,
-                    "version": next_version,
-                    "candidate_version": next_version,
-                    "candidate_status": "candidate",
-                    "locked": False,
-                    "views": ["front", "side", "back"],
-                    "visual_reference_asset_ids": [asset.id for asset in reference_assets],
-                    "visual_reference_image_count": len(reference_images),
-                    "provider": "jimeng",
-                    "req_key": self.settings.jimeng_image_req_key,
-                    "jimeng_task_id": task_id,
-                    "provider_debug_uri": str(provider_debug_path),
-                    "submit_summary": self._summarize_jimeng_image_response(submit_response),
-                    "result_summary": self._summarize_jimeng_image_response(result_response),
-                    "image_source": image_payload["kind"],
-                    "width": self.settings.jimeng_image_width,
-                    "height": self.settings.jimeng_image_height,
-                    "mime_type": "image/png",
-                    "visual_style": project_visual_style_summary(project),
-                    "context_pack_id": context_pack_inputs.get("context_pack_id") if isinstance(context_pack_inputs, dict) else None,
-                    "context_pack_version": context_pack_inputs.get("context_pack_version") if isinstance(context_pack_inputs, dict) else None,
-                    "context_pack_reference_mode": context_pack_inputs.get("reference_mode") if isinstance(context_pack_inputs, dict) else None,
-                }
-            ),
+        asset.uri = str(image_path)
+        asset.status = "completed"
+        asset.meta_json = json_dumps(
+            {
+                "character_card_id": character.id,
+                "character_name": character.name,
+                "version": next_version,
+                "candidate_version": next_version,
+                "candidate_status": "candidate",
+                "locked": False,
+                "views": ["front", "side", "back"],
+                "visual_reference_asset_ids": [asset.id for asset in reference_assets],
+                "visual_reference_image_count": len(reference_images),
+                "provider": "jimeng",
+                "req_key": self.settings.jimeng_image_req_key,
+                "jimeng_task_id": task_id,
+                "provider_debug_uri": str(provider_debug_path),
+                "submit_summary": self._summarize_jimeng_image_response(submit_response),
+                "result_summary": self._summarize_jimeng_image_response(result_response),
+                "image_source": image_payload["kind"],
+                "width": self.settings.jimeng_image_width,
+                "height": self.settings.jimeng_image_height,
+                "mime_type": "image/png",
+                "visual_style": project_visual_style_summary(project),
+                "context_pack_id": context_pack_inputs.get("context_pack_id") if isinstance(context_pack_inputs, dict) else None,
+                "context_pack_version": context_pack_inputs.get("context_pack_version") if isinstance(context_pack_inputs, dict) else None,
+                "context_pack_reference_mode": context_pack_inputs.get("reference_mode") if isinstance(context_pack_inputs, dict) else None,
+            }
         )
-        db.add(asset)
         db.add(
             TaskEvent(
                 project_id=project.id,
