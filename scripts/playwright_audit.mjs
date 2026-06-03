@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const baseUrl = "http://127.0.0.1:8500/";
-const outDir = path.resolve("E:/Computer/Wyc_Xc/MVP/output/playwright-audit");
+const outDir = path.resolve("output/playwright-audit");
 
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });

@@ -13,6 +13,8 @@ WORKSPACE_PROJECT_CREATE_PANEL = ROOT / "frontend" / "src" / "components" / "wor
 PROJECT_CREATE_WIZARD = ROOT / "frontend" / "src" / "components" / "workspace" / "ProjectCreateWizard.vue"
 STUDIO_WORKSPACE_PANEL = ROOT / "frontend" / "src" / "components" / "workspace" / "StudioWorkspacePanel.vue"
 ASSET_LIBRARY_PANEL = ROOT / "frontend" / "src" / "components" / "workspace" / "AssetLibraryPanel.vue"
+PLAYWRIGHT_REGRESSION = ROOT / "frontend" / "scripts" / "playwright_regression.mjs"
+PLAYWRIGHT_AUDIT = ROOT / "scripts" / "playwright_audit.mjs"
 
 
 class FrontendWorkspaceCleanupTests(unittest.TestCase):
@@ -83,6 +85,24 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         self.assertNotIn("上传待接入", asset_source)
         self.assertNotIn("disabled>上传", asset_source)
         self.assertIn("按项目管理图片和视频资产", asset_source)
+
+    def test_playwright_regression_targets_current_agent_workspace(self) -> None:
+        regression_source = PLAYWRIGHT_REGRESSION.read_text(encoding="utf-8")
+
+        self.assertIn("短剧Agent", regression_source)
+        self.assertIn("上传剧本", regression_source)
+        self.assertIn("AI生成剧本", regression_source)
+        self.assertIn("自主输入", regression_source)
+        self.assertIn("先把项目核心设定立住", regression_source)
+        self.assertNotIn("先把小说的核心设定立住", regression_source)
+        self.assertNotIn("小说标题", regression_source)
+        self.assertNotIn('"我的项目"', regression_source)
+
+    def test_playwright_audit_writes_to_repo_output_directory(self) -> None:
+        audit_source = PLAYWRIGHT_AUDIT.read_text(encoding="utf-8")
+
+        self.assertIn('path.resolve("output/playwright-audit")', audit_source)
+        self.assertNotIn("E:/Computer/Wyc_Xc/MVP", audit_source)
 
 
 if __name__ == "__main__":

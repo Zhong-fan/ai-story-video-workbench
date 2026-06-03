@@ -76,9 +76,12 @@ async function testMobileLayout(page) {
 }
 
 async function createProject(page, title) {
-  await buttonByText(page, "新建项目").click();
-  await page.getByRole("heading", { name: "先把小说的核心设定立住" }).waitFor();
-  await page.getByRole("textbox", { name: "小说标题" }).fill(title);
+  await page.getByRole("heading", { name: "短剧Agent" }).waitFor();
+  await buttonByText(page, "上传剧本").waitFor();
+  await buttonByText(page, "AI生成剧本").waitFor();
+  await buttonByText(page, "自主输入").click();
+  await page.getByRole("heading", { name: "先把项目核心设定立住" }).waitFor();
+  await page.getByRole("textbox", { name: "自主输入" }).fill(title);
   await buttonByText(page, "下一步").click();
   await page.getByRole("textbox", { name: "世界观" }).fill("雨夜城市中，人们会在短暂烟火里听见未来一天的心声。");
   await page.getByRole("textbox", { name: "写作偏好" }).fill("轻小说节奏，重视人物互动，每章都要推进关系变化。");
@@ -106,7 +109,7 @@ async function testProjectCreateDeleteRestore(page) {
   await page.locator(".memory-card").filter({ hasText: projectTitle }).first().getByRole("button", { name: "恢复" }).click();
   await page.locator(".empty-text").filter({ hasText: "回收站目前是空的" }).waitFor();
 
-  await buttonByText(page, "我的项目").click();
+  await buttonByText(page, "短剧Agent").click();
   await buttonByText(page, projectTitle).waitFor();
 }
 

@@ -259,6 +259,14 @@ cd frontend
 npm run build
 ```
 
+Playwright 浏览器回归，需先启动完整后端和 MySQL：
+
+```powershell
+.\start-workbench.ps1 -SkipBuild -SkipNpmInstall
+cd frontend
+npm run test:regression
+```
+
 长篇流水线 smoke，需先启动后端：
 
 ```powershell
