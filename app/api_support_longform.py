@@ -320,4 +320,5 @@ def _media_asset_out(asset: MediaAsset) -> MediaAssetOut:
         meta=meta,
         created_at=asset.created_at,
         updated_at=asset.updated_at,
+        deleted_at=asset.deleted_at,
     )

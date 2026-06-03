@@ -706,6 +706,7 @@ class MediaAsset(Base, TimestampMixin):
     prompt: Mapped[str] = mapped_column(Text, default="", nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="pending", nullable=False)
     meta_json: Mapped[str] = mapped_column(LONG_TEXT, default="{}", nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     project: Mapped["Project"] = relationship()
     storyboard: Mapped["Storyboard | None"] = relationship(back_populates="media_assets")

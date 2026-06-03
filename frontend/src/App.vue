@@ -340,6 +340,7 @@ const trashSummary = computed<Record<TrashItem["item_type"], number>>(() => ({
   novel: trashItems.value.filter((item) => item.item_type === "novel").length,
   character_card: trashItems.value.filter((item) => item.item_type === "character_card").length,
   dirty_evolution: trashItems.value.filter((item) => item.item_type === "dirty_evolution").length,
+  media_asset: trashItems.value.filter((item) => item.item_type === "media_asset").length,
 }));
 const managedNovels = computed(() => {
   const activeProjectId = activeProject.value?.project.id ?? null;

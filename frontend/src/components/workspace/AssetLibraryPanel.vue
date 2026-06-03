@@ -45,6 +45,10 @@ function projectAssetStats(projectId: number) {
     global: scoped.filter(isGlobalAsset).length,
   };
 }
+
+function formatProjectCode(value: number) {
+  return `P${String(value).padStart(6, "0")}`;
+}
 </script>
 
 <template>
@@ -119,7 +123,7 @@ function projectAssetStats(projectId: number) {
             <span>{{ project.title.slice(0, 1) }}</span>
           </div>
           <div>
-            <strong>{{ project.title }}</strong>
+            <strong>{{ formatProjectCode(project.id) }} · {{ project.title }}</strong>
             <span>{{ project.genre }}</span>
           </div>
           <div class="asset-project-card__stats">

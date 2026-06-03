@@ -601,6 +601,7 @@ export interface MediaAsset {
   meta: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export interface LongformState {
@@ -742,7 +743,7 @@ export interface ProjectFolder {
 }
 
 export interface TrashItem {
-  item_type: "project" | "novel" | "character_card" | "dirty_evolution";
+  item_type: "project" | "novel" | "character_card" | "dirty_evolution" | "media_asset";
   item_id: number;
   title: string;
   subtitle: string;
@@ -841,7 +842,7 @@ export interface DeletePayload {
 }
 
 export interface RestoreTrashPayload {
-  item_type: "project" | "novel" | "character_card" | "dirty_evolution";
+  item_type: "project" | "novel" | "character_card" | "dirty_evolution" | "media_asset";
 }
 
 export interface AppendNovelChapterPayload {

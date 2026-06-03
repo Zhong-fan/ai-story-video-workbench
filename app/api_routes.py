@@ -16,7 +16,7 @@ def register_routes(
     settings: Settings,
 ) -> None:
     register_auth_routes(router, settings=settings)
-    register_project_routes(router)
+    register_project_routes(router, settings=settings)
     register_novel_routes(router, settings=settings)
     register_generation_routes(router, settings=settings)
     register_longform_routes(router, settings=settings)

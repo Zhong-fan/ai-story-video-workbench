@@ -511,7 +511,7 @@ class TrashItemOut(BaseModel):
 
 
 class RestoreTrashItemRequest(BaseModel):
-    item_type: str = Field(..., pattern="^(project|novel|character_card|dirty_evolution)$")
+    item_type: str = Field(..., pattern="^(project|novel|character_card|dirty_evolution|media_asset)$")
 
 
 class MyWorkspaceOut(BaseModel):
@@ -923,6 +923,7 @@ class MediaAssetOut(BaseModel):
     meta: dict[str, Any]
     created_at: datetime
     updated_at: datetime
+    deleted_at: datetime | None = None
 
 
 class UpdateMediaAssetRequest(BaseModel):

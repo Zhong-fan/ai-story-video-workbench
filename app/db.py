@@ -29,6 +29,7 @@ REFERENCE_IMAGE_ASSET_SCHEMA_MIGRATION = "20260519_0016_reference_image_asset_sc
 CHARACTER_REFERENCE_PROFILE_SCHEMA_MIGRATION = "20260520_0017_character_reference_profile_schema"
 REFERENCE_IMAGE_ASSET_URL_HASH_MIGRATION = "20260520_0018_reference_image_asset_url_hash"
 REFERENCE_IMAGE_ASSET_META_MIGRATION = "20260523_0019_reference_image_asset_meta"
+MEDIA_ASSET_DELETED_AT_MIGRATION = "20260603_0020_media_asset_deleted_at"
 
 
 settings = load_settings()
@@ -176,6 +177,12 @@ def _migrate_schema() -> None:
             REFERENCE_IMAGE_ASSET_META_MIGRATION,
             "Reference image asset metadata for uploaded assets and AI classification state",
             _migrate_reference_image_asset_meta_schema,
+        )
+        _run_schema_migration(
+            connection,
+            MEDIA_ASSET_DELETED_AT_MIGRATION,
+            "Soft-delete media assets for recycle bin restore",
+            _migrate_media_asset_deleted_at_schema,
         )
     _backfill_character_reference_profiles()
 
@@ -643,6 +650,14 @@ def _migrate_media_asset_meta_mediumtext(connection) -> None:
         return
     connection.execute(text("UPDATE media_assets SET meta_json = '{}' WHERE meta_json IS NULL"))
     connection.execute(text("ALTER TABLE media_assets MODIFY COLUMN meta_json MEDIUMTEXT NOT NULL"))
+
+
+def _migrate_media_asset_deleted_at_schema(connection) -> None:
+    if "media_assets" not in _table_names():
+        return
+    media_asset_columns = _column_names("media_assets")
+    if "deleted_at" not in media_asset_columns:
+        connection.execute(text("ALTER TABLE media_assets ADD COLUMN deleted_at DATETIME NULL"))
 
 
 def _migrate_story_boundary_schema(connection) -> None:

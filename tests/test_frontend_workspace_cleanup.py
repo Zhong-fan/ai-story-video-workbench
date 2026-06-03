@@ -86,6 +86,18 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         self.assertNotIn("disabled>上传", asset_source)
         self.assertIn("按项目管理图片和视频资产", asset_source)
 
+    def test_workspace_surfaces_project_and_media_asset_codes(self) -> None:
+        app_source = APP_VUE.read_text(encoding="utf-8")
+        studio_source = STUDIO_WORKSPACE_PANEL.read_text(encoding="utf-8")
+        asset_source = ASSET_LIBRARY_PANEL.read_text(encoding="utf-8")
+        trash_source = WORKSPACE_TRASH_PANEL.read_text(encoding="utf-8")
+
+        self.assertIn("media_asset", app_source)
+        self.assertIn("formatProjectCode", studio_source)
+        self.assertIn("formatProjectCode", asset_source)
+        self.assertIn("formatProjectCode", trash_source)
+        self.assertIn("M${String(item.item_id).padStart(6, \"0\")}", trash_source)
+
     def test_playwright_regression_targets_current_agent_workspace(self) -> None:
         regression_source = PLAYWRIGHT_REGRESSION.read_text(encoding="utf-8")
 

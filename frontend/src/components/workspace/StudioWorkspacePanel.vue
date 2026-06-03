@@ -56,6 +56,10 @@ function formatUpdatedAt(value: string) {
     minute: "2-digit",
   });
 }
+
+function formatProjectCode(value: number) {
+  return `P${String(value).padStart(6, "0")}`;
+}
 </script>
 
 <template>
@@ -113,7 +117,7 @@ function formatUpdatedAt(value: string) {
               <span>{{ project.title.slice(0, 1) }}</span>
             </div>
             <div class="project-home-card__body">
-              <strong>{{ project.title }}</strong>
+              <strong>{{ formatProjectCode(project.id) }} · {{ project.title }}</strong>
               <span>{{ project.genre || "未设置题材" }}</span>
               <em>修改于 {{ formatUpdatedAt(project.updated_at) }}</em>
             </div>

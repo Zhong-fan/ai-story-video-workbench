@@ -136,6 +136,7 @@ class CharacterReferenceProfileService:
                 MediaAsset.project_id == project.id,
                 MediaAsset.asset_type == "character_turnaround",
                 MediaAsset.status == "completed",
+                MediaAsset.deleted_at.is_(None),
             )
         ).all()
         character_turnarounds: list[MediaAsset] = []
@@ -459,6 +460,7 @@ class VisualAssetService:
             sibling_assets = db.query(MediaAsset).filter(
                 MediaAsset.project_id == project.id,
                 MediaAsset.asset_type == "character_turnaround",
+                MediaAsset.deleted_at.is_(None),
             ).all()
             for sibling in sibling_assets:
                 if sibling.id == asset.id:

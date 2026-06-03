@@ -60,6 +60,7 @@ from .contracts import (
 )
 from .db import get_db
 from .json_utils import ensure_list, json_dumps, json_loads_list, json_loads_object
+from .media_asset_recycle import soft_delete_media_asset
 from .models import (
     ArcPlan,
     BatchGenerationJob,
@@ -122,6 +123,7 @@ def _video_quality_gate_failures(db: Session, *, settings: Settings, project: Pr
                         MediaAsset.shot_id == dependency_shot.id,
                         MediaAsset.asset_type == "shot_last_frame",
                         MediaAsset.status == "completed",
+                        MediaAsset.deleted_at.is_(None),
                     )
                 )
             if last_frame is None:
@@ -134,6 +136,7 @@ def _video_quality_gate_failures(db: Session, *, settings: Settings, project: Pr
                     MediaAsset.shot_id == shot.id,
                     MediaAsset.asset_type == "shot_first_frame",
                     MediaAsset.status == "completed",
+                    MediaAsset.deleted_at.is_(None),
                 )
             )
             if first_frame is None:
@@ -794,7 +797,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
 
         if payload.generate_character_turnarounds:
             turnaround_assets = db.scalars(
-                select(MediaAsset).where(MediaAsset.project_id == project.id, MediaAsset.asset_type == "character_turnaround")
+                select(MediaAsset).where(MediaAsset.project_id == project.id, MediaAsset.asset_type == "character_turnaround", MediaAsset.deleted_at.is_(None))
             ).all()
             existing_turnarounds = {
                 json_loads_object(asset.meta_json).get("character_card_id")
@@ -1114,7 +1117,7 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         current_user: User = Depends(get_current_user),
     ) -> MediaAssetOut:
         project = _project_or_404(db, current_user.id, project_id)
-        asset = db.scalar(select(MediaAsset).where(MediaAsset.project_id == project.id, MediaAsset.id == asset_id))
+        asset = db.scalar(select(MediaAsset).where(MediaAsset.project_id == project.id, MediaAsset.id == asset_id, MediaAsset.deleted_at.is_(None)))
         if asset is None:
             raise HTTPException(status_code=404, detail="素材不存在。")
         asset.uri = payload.uri.strip()
@@ -1139,11 +1142,14 @@ def register_longform_routes(router: APIRouter, *, settings: Settings) -> None:
         current_user: User = Depends(get_current_user),
     ) -> dict[str, str]:
         project = _project_or_404(db, current_user.id, project_id)
-        asset = db.scalar(select(MediaAsset).where(MediaAsset.project_id == project.id, MediaAsset.id == asset_id))
+        asset = db.scalar(select(MediaAsset).where(MediaAsset.project_id == project.id, MediaAsset.id == asset_id, MediaAsset.deleted_at.is_(None)))
         if asset is None:
             raise HTTPException(status_code=404, detail="素材不存在。")
         is_locked_turnaround = asset.asset_type == "character_turnaround" and json_loads_object(asset.meta_json).get("locked") is True
-        db.delete(asset)
+        try:
+            soft_delete_media_asset(asset, settings=settings)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         db.flush()
         if is_locked_turnaround:
             CharacterReferenceProfileService().ensure_profiles(db, project)
@@ -1403,7 +1409,7 @@ def _state_out(db: Session, project: Project) -> SeriesPlanningStateOut:
     jobs = db.scalars(select(BatchGenerationJob).where(BatchGenerationJob.project_id == project.id).order_by(BatchGenerationJob.created_at.desc())).all()
     storyboards = db.scalars(select(Storyboard).where(Storyboard.project_id == project.id).order_by(Storyboard.created_at.desc())).all()
     video_tasks = db.scalars(select(VideoTask).where(VideoTask.project_id == project.id).order_by(VideoTask.created_at.desc())).all()
-    media_assets = db.scalars(select(MediaAsset).where(MediaAsset.project_id == project.id).order_by(MediaAsset.created_at.desc())).all()
+    media_assets = db.scalars(select(MediaAsset).where(MediaAsset.project_id == project.id, MediaAsset.deleted_at.is_(None)).order_by(MediaAsset.created_at.desc())).all()
     return SeriesPlanningStateOut(
         series_plans=[_series_plan_out(item) for item in plans],
         draft_versions=[_draft_version_out(item) for item in drafts],

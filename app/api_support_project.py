@@ -22,6 +22,7 @@ from .contracts import (
 from .models import (
     CharacterCard,
     CharacterStateUpdate,
+    MediaAsset,
     Novel,
     Project,
     ProjectChapter,
@@ -137,6 +138,24 @@ def _trash_items_for_user(db: Session, user_id: int) -> list[TrashItemOut]:
                 item_id=item.id,
                 title=item.name,
                 subtitle=item.story_role,
+                deleted_at=item.deleted_at or item.updated_at,
+                project_id=item.project_id,
+            )
+        )
+
+    deleted_media_assets = db.scalars(
+        select(MediaAsset)
+        .join(Project, MediaAsset.project_id == Project.id)
+        .where(Project.owner_id == user_id, MediaAsset.deleted_at.is_not(None))
+        .order_by(MediaAsset.deleted_at.desc())
+    ).all()
+    for item in deleted_media_assets:
+        items.append(
+            TrashItemOut(
+                item_type="media_asset",
+                item_id=item.id,
+                title=item.asset_type,
+                subtitle=item.status,
                 deleted_at=item.deleted_at or item.updated_at,
                 project_id=item.project_id,
             )

@@ -68,14 +68,16 @@ from .contracts import (
     SourceOut,
 )
 from .db import get_db
-from .config import load_settings
+from .config import Settings, load_settings
 from .context_pack_service import ContextPackService
 from .json_utils import json_dumps, json_loads_object
+from .media_asset_recycle import restore_media_asset
 from .models import (
     CharacterCard,
     CharacterStateUpdate,
     ContextPack,
     GenerationRun,
+    MediaAsset,
     Memory,
     Novel,
     Project,
@@ -126,7 +128,8 @@ def _apply_visual_style_payload(project: Project, payload: ProjectCreateRequest 
     project.visual_style_notes = payload.visual_style_notes.strip()
 
 
-def register_project_routes(router: APIRouter) -> None:
+def register_project_routes(router: APIRouter, *, settings: Settings | None = None) -> None:
+    active_settings = settings or load_settings()
     context_pack_service = ContextPackService()
     story_boundary_service = StoryBoundaryService()
     reference_asset_service = ReferenceAssetService()
@@ -554,6 +557,18 @@ def register_project_routes(router: APIRouter) -> None:
             if item is None:
                 raise HTTPException(status_code=404, detail="脏演化记录不存在。")
             item.deleted_at = None
+        elif payload.item_type == "media_asset":
+            item = db.scalar(
+                select(MediaAsset)
+                .join(Project, MediaAsset.project_id == Project.id)
+                .where(MediaAsset.id == item_id, Project.owner_id == current_user.id, MediaAsset.deleted_at.is_not(None))
+            )
+            if item is None:
+                raise HTTPException(status_code=404, detail="素材不存在。")
+            try:
+                restore_media_asset(item, settings=active_settings)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
         else:
             item = db.scalar(
                 select(CharacterCard)
