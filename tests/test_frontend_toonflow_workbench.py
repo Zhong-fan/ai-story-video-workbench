@@ -38,10 +38,16 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         self.assertIn("出片", source)
         self.assertIn("toon-canvas", source)
         self.assertIn("批量生产设置", source)
-        self.assertIn("输入生产指令", source)
         self.assertNotIn("视频创作", source)
         self.assertNotIn("小说创作", source)
         self.assertNotIn("动画资产", source)
+
+    def test_agent_panel_does_not_show_fake_command_input(self) -> None:
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        self.assertNotIn("输入生产指令", source)
+        self.assertNotIn("toon-agent__input", source)
+        self.assertIn("toon-agent__status", source)
 
     def test_asset_cards_wire_existing_asset_actions(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")

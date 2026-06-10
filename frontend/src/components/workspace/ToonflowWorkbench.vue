@@ -592,7 +592,11 @@ function itemCode(item: TrashItem) {
             <li>资产：提取角色、场景、道具并生成图像。</li>
             <li>出片：组织分镜、首帧、配音和视频任务。</li>
           </ul>
-          <div class="toon-agent__input">输入生产指令...</div>
+          <div class="toon-agent__status" aria-label="项目状态摘要">
+            <span>章节 {{ chapterCount }}</span>
+            <span>分镜 {{ storyboardCount }}</span>
+            <span>视频任务 {{ videoTaskCount }}</span>
+          </div>
         </aside>
       </section>
     </main>
@@ -1196,16 +1200,24 @@ function itemCode(item: TrashItem) {
   padding-left: 20px;
 }
 
-.toon-agent__input {
-  min-height: 86px;
-  display: grid;
-  align-items: end;
+.toon-agent__status {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
   margin-top: auto;
   border: 1px solid rgba(20, 16, 20, 0.1);
   border-radius: 14px;
   padding: 14px;
-  color: color-mix(in oklab, var(--ink-soft) 74%, white);
   background: rgba(255, 255, 255, 0.62);
+}
+
+.toon-agent__status span {
+  border-radius: 999px;
+  background: rgba(255, 239, 246, 0.72);
+  color: color-mix(in oklab, var(--rose-strong) 52%, var(--ink));
+  padding: 0.28rem 0.56rem;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 @media (max-width: 1180px) {
