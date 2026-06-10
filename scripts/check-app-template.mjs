@@ -23,9 +23,23 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
-const novelEditorPanels = source.match(/<NovelEditorPanel\b/g) ?? [];
-if (novelEditorPanels.length !== 1) {
-  console.error(`Expected exactly one NovelEditorPanel, found ${novelEditorPanels.length}.`);
+const toonflowWorkbench = source.match(/<ToonflowWorkbench\b/g) ?? [];
+if (toonflowWorkbench.length !== 1) {
+  console.error(`Expected exactly one ToonflowWorkbench, found ${toonflowWorkbench.length}.`);
+  process.exit(1);
+}
+
+const legacyWorkspacePanels = [
+  "NovelEditorPanel",
+  "NovelStagePage",
+  "VideoStagePage",
+  "LongformPipelinePanel",
+  "WorkspaceSidebar",
+  "WorkspaceProjectCreatePanel",
+].filter((name) => source.includes(name));
+
+if (legacyWorkspacePanels.length > 0) {
+  console.error(`App.vue still references legacy workspace panels: ${legacyWorkspacePanels.join(", ")}`);
   process.exit(1);
 }
 

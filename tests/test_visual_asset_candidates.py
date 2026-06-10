@@ -149,7 +149,7 @@ class VisualAssetCandidateTests(unittest.TestCase):
             self.assertTrue(new_asset.uri.endswith("turnaround-v002.png"))
 
     def test_workspace_panel_mentions_candidate_actions(self) -> None:
-        panel_source = Path("frontend/src/components/workspace/LongformPipelinePanel.vue").read_text(encoding="utf-8")
+        panel_source = Path("frontend/src/components/workspace/ToonflowWorkbench.vue").read_text(encoding="utf-8")
 
         self.assertIn("候选 v", panel_source)
         self.assertIn("设为采用", panel_source)
