@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import type { LongformState, Project, ProjectCreateDraft, ProjectDetailResponse, TrashItem } from "../../types";
+import type { LongformState, MediaAsset, Project, ProjectCreateDraft, ProjectDetailResponse, TrashItem } from "../../types";
 
 type CreationMode = "upload" | "ai" | "manual";
 type WorkbenchModule = "projects" | "script" | "assets" | "production" | "settings" | "trash";
@@ -33,6 +33,8 @@ const emit = defineEmits<{
   (e: "open-project", projectId: number): void;
   (e: "delete-project", projectId: number): void;
   (e: "restore-trash", item: TrashItem): void;
+  (e: "update-media-asset", assetId: number, meta: Record<string, unknown>): void;
+  (e: "delete-media-asset", assetId: number): void;
   (e: "update:workspace-search", value: string): void;
   (e: "update:title", value: string): void;
   (e: "update:genre", value: string): void;
@@ -198,6 +200,17 @@ function assetCandidateLabel(asset: { meta: Record<string, unknown> }) {
   if (version) return `候选 v${version}${status === "locked" ? " · 已采用" : ""}`;
   if (status === "locked") return "已采用";
   return "候选资产";
+}
+
+function assetIsLocked(asset: MediaAsset) {
+  return asset.meta?.locked === true || asset.meta?.candidate_status === "locked";
+}
+
+function assetLockMeta(locked: boolean) {
+  return {
+    locked,
+    candidate_status: locked ? "locked" : "candidate",
+  };
 }
 
 function itemCode(item: TrashItem) {
@@ -424,9 +437,9 @@ function itemCode(item: TrashItem) {
               <span class="toon-asset-card__candidate">{{ assetCandidateLabel(asset) }}</span>
               <p>{{ asset.prompt || asset.status || "素材已归档到项目。" }}</p>
               <div class="toon-asset-card__actions" aria-label="候选资产状态">
-                <span>设为采用</span>
-                <span>取消采用</span>
-                <span>删除候选</span>
+                <button v-if="!assetIsLocked(asset)" type="button" :disabled="loading" @click="emit('update-media-asset', asset.id, assetLockMeta(true))">设为采用</button>
+                <button v-else type="button" :disabled="loading" @click="emit('update-media-asset', asset.id, assetLockMeta(false))">取消采用</button>
+                <button type="button" :disabled="loading" @click="emit('delete-media-asset', asset.id)">删除候选</button>
               </div>
             </article>
             <article v-if="!mediaAssets.length" class="toon-node toon-node--empty">
@@ -542,7 +555,8 @@ function itemCode(item: TrashItem) {
 .toon-topbar nav button:hover,
 .toon-user button:hover,
 .toon-button:hover,
-.toon-project-card footer button:hover {
+.toon-project-card footer button:hover,
+.toon-asset-card__actions button:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.86);
 }
@@ -558,6 +572,7 @@ function itemCode(item: TrashItem) {
 .toon-button:focus-visible,
 .toon-project-card:focus-visible,
 .toon-project-card footer button:focus-visible,
+.toon-asset-card__actions button:focus-visible,
 .toon-create input:focus-visible,
 .toon-create textarea:focus-visible,
 .toon-select select:focus-visible,
@@ -619,6 +634,7 @@ function itemCode(item: TrashItem) {
 .toon-button,
 .toon-user button,
 .toon-project-card footer button,
+.toon-asset-card__actions button,
 .toon-batch button {
   min-height: 42px;
   border: 1px solid rgba(20, 16, 20, 0.1);
@@ -941,7 +957,7 @@ function itemCode(item: TrashItem) {
   flex-wrap: wrap;
 }
 
-.toon-asset-card__actions span {
+.toon-asset-card__actions button {
   min-height: 34px;
   display: inline-grid;
   align-items: center;
@@ -951,6 +967,12 @@ function itemCode(item: TrashItem) {
   color: color-mix(in oklab, var(--ink-soft) 82%, white);
   padding: 0 10px;
   font-size: 0.76rem;
+}
+
+.toon-asset-card__actions button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+  transform: none;
 }
 
 .toon-canvas--production {
@@ -1047,7 +1069,7 @@ function itemCode(item: TrashItem) {
   }
 
   .toon-project-card footer button,
-  .toon-asset-card__actions span {
+  .toon-asset-card__actions button {
     width: 100%;
   }
 }

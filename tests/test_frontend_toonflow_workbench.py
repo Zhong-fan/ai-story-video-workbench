@@ -43,6 +43,23 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         self.assertNotIn("小说创作", source)
         self.assertNotIn("动画资产", source)
 
+    def test_asset_cards_wire_existing_asset_actions(self) -> None:
+        app_source = APP_VUE.read_text(encoding="utf-8")
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        self.assertIn('(e: "update-media-asset"', source)
+        self.assertIn('(e: "delete-media-asset"', source)
+        self.assertIn('candidate_status: locked ? "locked" : "candidate"', source)
+        self.assertIn('@click="emit(\'update-media-asset\', asset.id, assetLockMeta(true))"', source)
+        self.assertIn('@click="emit(\'update-media-asset\', asset.id, assetLockMeta(false))"', source)
+        self.assertIn('@click="emit(\'delete-media-asset\', asset.id)"', source)
+        self.assertNotIn("<span>设为采用</span>", source)
+        self.assertNotIn("<span>取消采用</span>", source)
+        self.assertNotIn("<span>删除候选</span>", source)
+
+        self.assertIn('@update-media-asset="updateMediaAsset"', app_source)
+        self.assertIn('@delete-media-asset="store.deleteMediaAsset"', app_source)
+
     def test_project_create_is_not_restored_as_startup_view(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")
         restorable_block = app_source.split("const restorableViews: ViewKey[] = [", 1)[1].split("];", 1)[0]

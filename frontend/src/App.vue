@@ -6,7 +6,7 @@ import AuthModal from "./components/auth/AuthModal.vue";
 import ToonflowWorkbench from "./components/workspace/ToonflowWorkbench.vue";
 import { useAuthFlow } from "./composables/useAuthFlow";
 import { useWorkbenchStore } from "./stores/workbench";
-import type { ProjectCreateDraft, ProjectPayload, TrashItem, ViewKey } from "./types";
+import type { ProjectCreateDraft, ProjectPayload, TrashItem, UpdateMediaAssetPayload, ViewKey } from "./types";
 
 const store = useWorkbenchStore();
 const {
@@ -161,6 +161,20 @@ async function restoreTrash(item: TrashItem) {
   await store.restoreTrashItem(item.item_id, item.item_type);
 }
 
+async function updateMediaAsset(assetId: number, meta: Record<string, unknown>) {
+  const asset = longformState.value.media_assets.find((item) => item.id === assetId);
+  if (!asset) return;
+  const payload: UpdateMediaAssetPayload = {
+    uri: asset.uri,
+    status: asset.status,
+    meta: {
+      ...asset.meta,
+      ...meta,
+    },
+  };
+  await store.updateMediaAsset(assetId, payload);
+}
+
 async function submitCreateProject() {
   const title = projectForm.title.trim();
   if (!title) {
@@ -292,6 +306,8 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
         @open-project="openWorkspaceProject"
         @delete-project="deleteProjectToTrash"
         @restore-trash="restoreTrash"
+        @update-media-asset="updateMediaAsset"
+        @delete-media-asset="store.deleteMediaAsset"
         @update:title="projectForm.title = $event"
         @update:genre="projectForm.genre = $event"
         @update:world-brief="projectForm.world_brief = $event"
