@@ -76,6 +76,31 @@ class ProjectCreateRequest(BaseModel):
     )
 
 
+class ProjectImportDraftRequest(BaseModel):
+    title: str = Field(default="", max_length=255)
+    genre: str = Field(default="短剧", max_length=100)
+    original_filename: str = Field(default="", max_length=255)
+    script_text: str = Field(..., min_length=8, max_length=200000)
+
+
+class ProjectAIBriefDraftRequest(BaseModel):
+    title: str = Field(default="", max_length=255)
+    genre: str = Field(default="短剧", max_length=100)
+    protagonist: str = Field(..., min_length=2, max_length=500)
+    core_conflict: str = Field(..., min_length=4, max_length=1000)
+    audience: str = Field(default="", max_length=500)
+    tone: str = Field(default="", max_length=500)
+    episode_count: int | None = Field(default=None, ge=1, le=200)
+    reference_work: str = Field(default="", max_length=255)
+
+
+class ProjectCreateDraftOut(BaseModel):
+    mode: str
+    source_summary: str
+    notes: list[str] = []
+    project: ProjectCreateRequest
+
+
 class ProjectUpdateRequest(ProjectCreateRequest):
     pass
 

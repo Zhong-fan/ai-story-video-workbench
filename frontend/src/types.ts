@@ -106,6 +106,31 @@ export interface ProjectCreateDraft extends ProjectPayload {
   reference_work_confirmed: boolean;
 }
 
+export interface ProjectImportDraftPayload {
+  title?: string;
+  genre?: string;
+  original_filename?: string;
+  script_text: string;
+}
+
+export interface ProjectAIBriefDraftPayload {
+  title?: string;
+  genre?: string;
+  protagonist: string;
+  core_conflict: string;
+  audience?: string;
+  tone?: string;
+  episode_count?: number | null;
+  reference_work?: string;
+}
+
+export interface ProjectCreateDraftResponse {
+  mode: "upload" | "ai" | string;
+  source_summary: string;
+  notes: string[];
+  project: ProjectPayload;
+}
+
 export interface ProjectSuggestionRequest {
   kind: "world_brief" | "writing_rules";
   title: string;
@@ -308,6 +333,36 @@ export interface GenerationProgress {
   message: string;
   trace?: Record<string, unknown>;
   logs?: GenerationProgressLog[];
+}
+
+export interface GenerationTraceStep {
+  step_key: string;
+  label: string;
+  status: "ready" | "blocked" | "completed" | "warning";
+  source_mode?: string;
+  summary_lines: string[];
+  prompt_text?: string;
+  model?: string;
+  parameters?: Record<string, unknown>;
+  inherited_inputs?: Array<{ kind: string; label: string; value: string }>;
+}
+
+export interface ReviewFinding {
+  finding_id: string;
+  severity: "blocking" | "advisory";
+  category: "continuity" | "pacing" | "local_defect" | "dependency";
+  title: string;
+  detail: string;
+  recommended_rework_level: "shot" | "storyboard" | "local_fix";
+}
+
+export interface StoryboardPreflightSummary {
+  readiness: "ready" | "blocked" | "warning";
+  blocked_reasons: string[];
+  risk_warnings: string[];
+  generated_character_turnarounds?: string[];
+  skipped_locked_character_turnarounds?: string[];
+  quality_gate_failures?: string[];
 }
 
 export interface CharacterStateUpdate {

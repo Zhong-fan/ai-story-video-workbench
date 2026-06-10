@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import ProjectCreateWizard from "./ProjectCreateWizard.vue";
-import type { ProjectCreateDraft, ReferenceWorkResolved } from "../../types";
+import type { ProjectAIBriefDraftPayload, ProjectCreateDraft, ReferenceWorkResolved } from "../../types";
 
 type StyleProfileOption = { value: string; label: string; description: string; bullets?: string[] };
 type GenreOptionCard = { value: string; label: string; description: string };
@@ -23,6 +23,11 @@ const emit = defineEmits<{
   (e: "update:style-profile", value: string): void;
   (e: "update:assistant-seed-world", value: string): void;
   (e: "update:assistant-seed-writing", value: string): void;
+  (e: "update:import-draft-text", value: string): void;
+  (e: "update:import-draft-filename", value: string): void;
+  (e: "update:ai-draft-brief", value: Partial<ProjectAIBriefDraftPayload>): void;
+  (e: "load-imported-draft"): void;
+  (e: "load-ai-draft"): void;
   (e: "generate-suggestion", kind: SuggestionKind): void;
   (e: "use-suggestion", payload: { kind: SuggestionKind; text: string; mode: "replace" | "append" }): void;
 }>();
@@ -39,6 +44,9 @@ const props = defineProps<{
   assistantLoadingKind?: SuggestionKind | "reference_work" | null;
   assistantSeedWorld: string;
   assistantSeedWriting: string;
+  importDraftText: string;
+  importDraftFilename: string;
+  aiDraftBrief: ProjectAIBriefDraftPayload;
   worldSuggestions: string[];
   writingSuggestions: string[];
 }>();
@@ -88,6 +96,9 @@ const createHeader = computed(() => {
         :assistant-loading-kind="assistantLoadingKind"
         :assistant-seed-world="assistantSeedWorld"
         :assistant-seed-writing="assistantSeedWriting"
+        :import-draft-text="importDraftText"
+        :import-draft-filename="importDraftFilename"
+        :ai-draft-brief="aiDraftBrief"
         :world-suggestions="worldSuggestions"
         :writing-suggestions="writingSuggestions"
         @update:step="emit('update:step', $event)"
@@ -104,6 +115,11 @@ const createHeader = computed(() => {
         @update:style-profile="emit('update:style-profile', $event)"
         @update:assistant-seed-world="emit('update:assistant-seed-world', $event)"
         @update:assistant-seed-writing="emit('update:assistant-seed-writing', $event)"
+        @update:import-draft-text="emit('update:import-draft-text', $event)"
+        @update:import-draft-filename="emit('update:import-draft-filename', $event)"
+        @update:ai-draft-brief="emit('update:ai-draft-brief', $event)"
+        @load-imported-draft="emit('load-imported-draft')"
+        @load-ai-draft="emit('load-ai-draft')"
         @generate-suggestion="emit('generate-suggestion', $event)"
         @use-suggestion="emit('use-suggestion', $event)"
       />

@@ -115,6 +115,57 @@ class StoryboardSourceTraceTests(unittest.TestCase):
                 self.assertEqual(meta["source_trace"]["source_mode"], "user_brief")
                 self.assertEqual(meta["source_trace"]["reference_video_brief"], brief)
 
+    def test_longform_state_exposes_non_empty_generation_trace(self) -> None:
+        brief = "Three shots: rain street, chasing a light beam, the sky turns bright."
+        response = self.client.post(
+            f"/api/projects/{self.project_id}/storyboards",
+            json={
+                "source_mode": "user_brief",
+                "novel_chapter_ids": [],
+                "title": "Light Chase 15s",
+                "reference_video_brief": brief,
+                "key_image_strategy": "generate_first_frames",
+                "reference_image_asset_ids": [],
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        storyboard_id = response.json()["id"]
+
+        fake_payload = {
+            "title": "Light Chase 15s",
+            "summary": "A brief-sourced short.",
+            "shots": [
+                {
+                    "shot_no": 1,
+                    "narration_text": "A light rises on a rainy street.",
+                    "visual_prompt": "Animated film frame, rainy city street, blue green light beam.",
+                    "character_refs": [],
+                    "scene_refs": [],
+                    "continuity": {"shot_type": "new", "first_frame_source": "generated", "requires_i2v": True},
+                    "audio_script": {},
+                    "duration_seconds": 5,
+                }
+            ],
+        }
+
+        with patch("app.storyboard_job_service.StoryboardService") as service_class:
+            service_class.return_value.generate_image_first_storyboard.return_value = fake_payload
+            with self.SessionLocal() as session:
+                storyboard = session.get(Storyboard, storyboard_id)
+                StoryboardJobService(load_settings()).run_storyboard(db=session, storyboard=storyboard)
+
+        state_response = self.client.get(f"/api/projects/{self.project_id}/longform")
+        self.assertEqual(state_response.status_code, 200, state_response.text)
+        trace = state_response.json()["storyboards"][0]["progress"]["generation_trace"]
+        self.assertTrue(trace)
+        self.assertEqual(trace[0]["step_key"], "source")
+        self.assertEqual(trace[0]["source_mode"], "user_brief")
+        self.assertEqual(trace[0]["prompt_text"], brief)
+        self.assertIn("source_trace", trace[0]["parameters"])
+        self.assertEqual(trace[1]["step_key"], "storyboard")
+        self.assertTrue(trace[1]["prompt_text"])
+        self.assertIn("shots", trace[1]["parameters"])
+
 
 if __name__ == "__main__":
     unittest.main()

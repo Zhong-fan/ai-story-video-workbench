@@ -13,8 +13,8 @@ from app.auth import get_current_user
 from app.config import load_settings
 from app.context_pack_service import ContextPackService
 from app.db import Base, get_db
-from app.json_utils import json_loads_object
-from app.models import Project, Storyboard, StoryboardShot, User, VideoTask
+from app.json_utils import json_dumps, json_loads_object
+from app.models import MediaAsset, Project, Storyboard, StoryboardShot, User, VideoTask
 
 
 class VideoQualityPlanResultTests(unittest.TestCase):
@@ -131,7 +131,6 @@ class VideoQualityPlanResultTests(unittest.TestCase):
             self.assertEqual(result["short_film_structure"], "passed")
 
     def test_video_render_service_records_quality_result(self) -> None:
-        from app.json_utils import json_dumps
         from app.video_quality_service import VideoQualityService
         from app.video_render_service import VideoRenderService
 
@@ -157,6 +156,104 @@ class VideoQualityPlanResultTests(unittest.TestCase):
             progress = json_loads_object(task.progress_json)
             self.assertEqual(progress["video_quality_result"]["status"], "passed")
             self.assertTrue(progress["video_quality_result"]["checked_against_plan"])
+
+    def test_longform_state_render_trace_exposes_render_prompt_sources(self) -> None:
+        from app.video_quality_service import VideoQualityService
+
+        with self.SessionLocal() as session:
+            storyboard = session.get(Storyboard, self.storyboard_id)
+            task = VideoTask(
+                project_id=self.project_id,
+                storyboard=storyboard,
+                task_status="running",
+                output_uri="",
+                progress_json=json_dumps(
+                    {
+                        "current_step": "jimeng_submit",
+                        "provider": "jimeng",
+                        "video_quality_plan": VideoQualityService().build_quality_plan(storyboard),
+                        "shots": [{"shot_id": storyboard.shots[0].id, "shot_no": 1, "used_first_frame": True, "image_status": "running"}],
+                    }
+                ),
+                error_message="",
+            )
+            session.add(task)
+            session.flush()
+            session.add(
+                MediaAsset(
+                    project_id=self.project_id,
+                    storyboard=storyboard,
+                    shot=storyboard.shots[0],
+                    asset_type="video",
+                    uri="output/video_tasks/1/segment-001.mp4",
+                    prompt="final render video prompt",
+                    status="running",
+                    meta_json=json_dumps({"provider": "jimeng"}),
+                )
+            )
+            session.commit()
+
+        state_response = self.client.get(f"/api/projects/{self.project_id}/longform")
+        self.assertEqual(state_response.status_code, 200, state_response.text)
+        trace = state_response.json()["storyboards"][0]["progress"]["generation_trace"]
+        render_step = next(item for item in trace if item["step_key"] == "render")
+        self.assertTrue(render_step["prompt_text"])
+        self.assertIn("render_prompt_sources", render_step["parameters"])
+        self.assertEqual(render_step["parameters"]["render_prompt_sources"][0]["prompt"], "final render video prompt")
+
+    def test_video_render_service_persists_render_prompt_context(self) -> None:
+        from app.video_render_service import VideoRenderService
+
+        with self.SessionLocal() as session:
+            storyboard = session.get(Storyboard, self.storyboard_id)
+            shot = storyboard.shots[0]
+            task = VideoTask(
+                project_id=self.project_id,
+                storyboard=storyboard,
+                task_status="running",
+                output_uri="",
+                progress_json=json_dumps({"shots": [{"shot_id": shot.id, "shot_no": shot.shot_no}]}),
+                error_message="",
+            )
+            session.add(task)
+            session.flush()
+
+            first_frame = MediaAsset(
+                project_id=self.project_id,
+                storyboard=storyboard,
+                shot=shot,
+                asset_type="shot_first_frame",
+                uri="output/projects/test/shot-001.png",
+                prompt="locked first frame prompt",
+                status="completed",
+                meta_json=json_dumps({"locked": True}),
+            )
+            session.add(first_frame)
+            session.flush()
+
+            service = VideoRenderService(load_settings())
+            prompt = service._build_jimeng_prompt(task, shot, first_frame_asset=first_frame)
+            service._persist_render_context(
+                task,
+                provider="jimeng",
+                shot=shot,
+                prompt=prompt,
+                first_frame_asset=first_frame,
+            )
+            service._set_progress(
+                task,
+                stage="jimeng_submit",
+                message="提交即梦镜头 1 视频任务。",
+                extra={"provider": "jimeng", "shot_no": shot.shot_no, "used_first_frame": True},
+            )
+            session.flush()
+
+            progress = json_loads_object(task.progress_json)
+            self.assertEqual(progress["provider"], "jimeng")
+            self.assertTrue(progress["used_first_frame"])
+            self.assertEqual(progress["shot_no"], shot.shot_no)
+            self.assertEqual(progress["render_prompt"], prompt)
+            self.assertEqual(progress["render_first_frame_asset_id"], first_frame.id)
 
 
 if __name__ == "__main__":

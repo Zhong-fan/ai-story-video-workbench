@@ -15,6 +15,9 @@ import type {
   NovelDetail,
   PublishNovelPayload,
   Project,
+  ProjectAIBriefDraftPayload,
+  ProjectCreateDraftResponse,
+  ProjectImportDraftPayload,
   ProjectPayload,
   ReferenceWorkResolved,
   ReferenceImageAsset,
@@ -49,6 +52,8 @@ import type {
   UpdateStoryboardShotPayload,
   CreateStoryboardShotPayload,
   ReorderStoryboardShotsPayload,
+  ReviewFinding,
+  StoryboardPreflightSummary,
   UpdateVideoTaskPayload,
 } from "../types";
 
@@ -107,6 +112,15 @@ export const useWorkbenchStore = defineStore("workbench", () => {
   let longformPollingProjectId: number | null = null;
 
   const isAuthenticated = computed(() => Boolean(token.value && currentUser.value));
+  const currentStoryboard = computed(() => longformState.value.storyboards[0] ?? null);
+  const currentStoryboardPreflight = computed<StoryboardPreflightSummary | null>(() => {
+    const raw = currentStoryboard.value?.progress?.preflight_summary;
+    return raw && typeof raw === "object" ? (raw as StoryboardPreflightSummary) : null;
+  });
+  const currentStoryboardReviewFindings = computed<ReviewFinding[]>(() => {
+    const raw = currentStoryboard.value?.progress?.review_findings;
+    return Array.isArray(raw) ? (raw as ReviewFinding[]) : [];
+  });
 
   function stopGenerationProgressPolling() {
     if (generationProgressTimer !== null) {
@@ -378,6 +392,46 @@ export const useWorkbenchStore = defineStore("workbench", () => {
       success.value = "项目已创建。";
     } catch (err) {
       error.value = err instanceof Error ? err.message : "创建项目失败。";
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function loadImportedProjectDraft(payload: ProjectImportDraftPayload): Promise<ProjectCreateDraftResponse | null> {
+    if (!token.value) {
+      error.value = "请先登录。";
+      return null;
+    }
+    loading.value = true;
+    error.value = "";
+    success.value = "";
+    try {
+      const draft = await api.importProjectDraft(token.value, payload);
+      success.value = "已整理出项目草稿，确认后再创建。";
+      return draft;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : "导入剧本草稿失败。";
+      return null;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function loadAiProjectDraft(payload: ProjectAIBriefDraftPayload): Promise<ProjectCreateDraftResponse | null> {
+    if (!token.value) {
+      error.value = "请先登录。";
+      return null;
+    }
+    loading.value = true;
+    error.value = "";
+    success.value = "";
+    try {
+      const draft = await api.createProjectBriefDraft(token.value, payload);
+      success.value = "已根据创作简报生成项目草稿。";
+      return draft;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : "生成项目草稿失败。";
+      return null;
     } finally {
       loading.value = false;
     }
@@ -1668,6 +1722,9 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     error,
     success,
     isAuthenticated,
+    currentStoryboard,
+    currentStoryboardPreflight,
+    currentStoryboardReviewFindings,
     initialize,
     refreshCaptcha,
     register,
@@ -1685,6 +1742,8 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     updateContextPackTodo,
     hasConfirmedContextPack,
     createProject,
+    loadImportedProjectDraft,
+    loadAiProjectDraft,
     deleteProject,
     deleteNovel,
     deleteCharacterCard,

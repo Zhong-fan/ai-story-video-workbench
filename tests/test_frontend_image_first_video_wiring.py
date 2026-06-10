@@ -32,6 +32,29 @@ class FrontendImageFirstVideoWiringTests(unittest.TestCase):
         self.assertIn("继承上一镜头尾帧", pipeline_source)
         self.assertIn("视频门禁", pipeline_source)
 
+    def test_generation_transparency_panel_prioritizes_render_prompt_display(self) -> None:
+        panel_source = (ROOT / "frontend" / "src" / "components" / "workspace" / "GenerationTransparencyPanel.vue").read_text(encoding="utf-8")
+
+        self.assertIn("最终执行 Prompt", panel_source)
+        self.assertIn("renderPromptSources", panel_source)
+        self.assertIn("渲染 Prompt 来源", panel_source)
+
+    def test_render_prompt_source_focus_is_wired(self) -> None:
+        panel_source = (ROOT / "frontend" / "src" / "components" / "workspace" / "GenerationTransparencyPanel.vue").read_text(encoding="utf-8")
+        pipeline_source = (ROOT / "frontend" / "src" / "components" / "workspace" / "LongformPipelinePanel.vue").read_text(encoding="utf-8")
+
+        self.assertIn("focus-render-source", panel_source)
+        self.assertIn("@focus-render-source", pipeline_source)
+        self.assertIn("focusRenderPromptSource", pipeline_source)
+
+    def test_preflight_issue_focus_is_wired(self) -> None:
+        panel_source = (ROOT / "frontend" / "src" / "components" / "workspace" / "VideoPreflightReviewPanel.vue").read_text(encoding="utf-8")
+        pipeline_source = (ROOT / "frontend" / "src" / "components" / "workspace" / "LongformPipelinePanel.vue").read_text(encoding="utf-8")
+
+        self.assertIn("focus-preflight-issue", panel_source)
+        self.assertIn("@focus-preflight-issue", pipeline_source)
+        self.assertIn("focusPreflightIssue", pipeline_source)
+
 
 if __name__ == "__main__":
     unittest.main()

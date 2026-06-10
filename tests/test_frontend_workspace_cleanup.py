@@ -63,6 +63,8 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         studio_source = STUDIO_WORKSPACE_PANEL.read_text(encoding="utf-8")
         project_create_source = WORKSPACE_PROJECT_CREATE_PANEL.read_text(encoding="utf-8")
         wizard_source = PROJECT_CREATE_WIZARD.read_text(encoding="utf-8")
+        api_source = (ROOT / "frontend" / "src" / "api.ts").read_text(encoding="utf-8")
+        store_source = (ROOT / "frontend" / "src" / "stores" / "workbench.ts").read_text(encoding="utf-8")
 
         self.assertIn('activeStudioAgent = ref<"shortDrama" | "novel" | "anime">', app_source)
         self.assertIn('projectCreateMode = ref<"upload" | "ai" | "manual">', app_source)
@@ -74,6 +76,14 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         self.assertIn("上传剧本建项目", wizard_source)
         self.assertIn("AI 生成剧本", wizard_source)
         self.assertIn("自主输入", wizard_source)
+        self.assertIn("importProjectDraft", api_source)
+        self.assertIn("createProjectBriefDraft", api_source)
+        self.assertIn("loadImportedProjectDraft", store_source)
+        self.assertIn("loadAiProjectDraft", store_source)
+        self.assertIn("剧本正文或梗概", wizard_source)
+        self.assertIn("生成项目草稿", wizard_source)
+        self.assertIn("主角", wizard_source)
+        self.assertIn("核心冲突", wizard_source)
 
     def test_asset_library_is_real_read_only_view_not_disabled_stub(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")

@@ -41,15 +41,18 @@ from .contracts import (
     MemoryOut,
     MoveProjectFolderRequest,
     MyWorkspaceOut,
+    ProjectAIBriefDraftRequest,
     ProjectChapterCreateRequest,
     ProjectChapterOut,
     ProjectChapterUpdateRequest,
     ProjectBriefingSuggestionRequest,
     ProjectBriefingSuggestionResponse,
     ProjectCreateRequest,
+    ProjectCreateDraftOut,
     ProjectDetailResponse,
     ProjectFolderCreateRequest,
     ProjectFolderOut,
+    ProjectImportDraftRequest,
     ProjectOut,
     ProjectUpdateRequest,
     ReferenceAssetWorkflowStateOut,
@@ -126,6 +129,49 @@ def _apply_visual_style_payload(project: Project, payload: ProjectCreateRequest 
     project.visual_style_positive = payload.visual_style_positive
     project.visual_style_negative = payload.visual_style_negative
     project.visual_style_notes = payload.visual_style_notes.strip()
+
+
+def _base_project_create_payload(*, title: str, genre: str) -> dict[str, object]:
+    safe_title = (title.strip() or "未命名短剧项目")[:255]
+    safe_genre = (genre.strip() or "短剧")[:100]
+    return {
+        "title": safe_title,
+        "genre": safe_genre,
+        "reference_work": "",
+        "reference_work_creator": "",
+        "reference_work_medium": "",
+        "reference_work_synopsis": "",
+        "reference_work_style_traits": [],
+        "reference_work_world_traits": [],
+        "reference_work_narrative_constraints": [],
+        "reference_work_confidence_note": "",
+        "reference_inheritance_mode": "style_only",
+        "reference_rewrite_start": "",
+        "reference_authorized_changes": "",
+        "story_boundary_text": "",
+        "visual_style_locked": True,
+        "visual_style_medium": "竖屏短剧",
+        "visual_style_artists": [],
+        "visual_style_positive": [],
+        "visual_style_negative": [],
+        "visual_style_notes": "",
+        "world_brief": "",
+        "writing_rules": "",
+        "style_profile": "cinematic_tense",
+    }
+
+
+def _first_script_title(script_text: str, fallback: str) -> str:
+    for raw_line in script_text.splitlines():
+        line = raw_line.strip(" \t　#《》")
+        if line:
+            return line[:80]
+    return fallback.strip() or "未命名短剧项目"
+
+
+def _compact_script_excerpt(script_text: str, limit: int = 600) -> str:
+    text = re.sub(r"\s+", " ", script_text.strip())
+    return text[:limit]
 
 
 def register_project_routes(router: APIRouter, *, settings: Settings | None = None) -> None:
@@ -226,6 +272,66 @@ def register_project_routes(router: APIRouter, *, settings: Settings | None = No
         service = ProjectBriefingService(settings=settings)
         result = service.resolve_reference_work(query=payload.query, genre=payload.genre)
         return ReferenceWorkResolvedOut(**result)
+
+    @router.post("/api/projects/import-draft", response_model=ProjectCreateDraftOut)
+    def create_project_import_draft(
+        payload: ProjectImportDraftRequest,
+        current_user: User = Depends(get_current_user),
+    ) -> ProjectCreateDraftOut:
+        _ = current_user
+        title = payload.title.strip() or _first_script_title(payload.script_text, payload.original_filename)
+        excerpt = _compact_script_excerpt(payload.script_text)
+        project_payload = _base_project_create_payload(title=title, genre=payload.genre)
+        project_payload.update(
+            {
+                "world_brief": (
+                    f"导入剧本来源：{payload.original_filename.strip() or '粘贴文本'}。\n"
+                    f"剧本摘要：{excerpt}"
+                ).strip(),
+                "writing_rules": "保留原剧本的人物关系、关键冲突和已写出的场景顺序；后续改写先做结构整理，再补分镜和首帧要求。",
+                "story_boundary_text": "不得改写已导入剧本中的核心人物关系、关键反转和结局方向，除非用户明确调整。",
+            }
+        )
+        return ProjectCreateDraftOut(
+            mode="upload",
+            source_summary=f"已读取 {len(payload.script_text)} 个字符" + (f"，来源 {payload.original_filename.strip()}" if payload.original_filename.strip() else ""),
+            notes=["这是可编辑草稿，确认后才会创建项目。", "第一版只做文本整理，不自动拆分场次或分集。"],
+            project=ProjectCreateRequest(**project_payload),
+        )
+
+    @router.post("/api/projects/brief-draft", response_model=ProjectCreateDraftOut)
+    def create_project_ai_brief_draft(
+        payload: ProjectAIBriefDraftRequest,
+        current_user: User = Depends(get_current_user),
+    ) -> ProjectCreateDraftOut:
+        _ = current_user
+        title = payload.title.strip() or f"{payload.protagonist.strip()}的短剧企划"
+        project_payload = _base_project_create_payload(title=title, genre=payload.genre)
+        episode_line = f"{payload.episode_count} 集" if payload.episode_count else "集数待定"
+        project_payload.update(
+            {
+                "reference_work": payload.reference_work.strip(),
+                "world_brief": "\n".join(
+                    [
+                        f"主角：{payload.protagonist.strip()}",
+                        f"核心冲突：{payload.core_conflict.strip()}",
+                        f"目标受众：{payload.audience.strip() or '短剧观众'}",
+                        f"篇幅方向：{episode_line}",
+                    ]
+                ),
+                "writing_rules": (
+                    f"按{episode_line}的短剧节奏推进；每集结尾保留明确悬念或反转。"
+                    f"整体语气：{payload.tone.strip() or '情绪明确、冲突集中、节奏紧凑'}。"
+                ),
+                "story_boundary_text": "主角动机、核心冲突和目标受众是本企划的硬边界；生成概要前需要先确认这些输入。",
+            }
+        )
+        return ProjectCreateDraftOut(
+            mode="ai",
+            source_summary="已根据创作简报整理项目草稿。",
+            notes=["这是根据简报生成的可编辑草稿。", "确认创建后，仍需进入生成前校对再开始正文或视频生产。"],
+            project=ProjectCreateRequest(**project_payload),
+        )
 
     @router.post("/api/projects/{project_id}/story-boundaries/parse", response_model=StoryBoundaryParseResponse)
     def parse_story_boundaries(

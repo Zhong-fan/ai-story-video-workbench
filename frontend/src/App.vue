@@ -20,7 +20,20 @@ import WorkspaceSidebar from "./components/workspace/WorkspaceSidebar.vue";
 import WorkspaceTrashPanel from "./components/workspace/WorkspaceTrashPanel.vue";
 import { useAuthFlow } from "./composables/useAuthFlow";
 import { useWorkbenchStore } from "./stores/workbench";
-import type { CharacterCard, CreateStoryboardPayload, ProjectChapter, ProjectCreateDraft, ProjectPayload, ReaderEntry, ReferenceWorkResolved, StoryBoundaryRule, TrashItem, ViewKey } from "./types";
+import type {
+  CharacterCard,
+  CreateStoryboardPayload,
+  ProjectAIBriefDraftPayload,
+  ProjectChapter,
+  ProjectCreateDraft,
+  ProjectImportDraftPayload,
+  ProjectPayload,
+  ReaderEntry,
+  ReferenceWorkResolved,
+  StoryBoundaryRule,
+  TrashItem,
+  ViewKey,
+} from "./types";
 
 const store = useWorkbenchStore();
 const {
@@ -261,6 +274,18 @@ const referenceWorkResolved = ref<ReferenceWorkResolved | null>(null);
 const assistantLoadingKind = ref<"world_brief" | "writing_rules" | "reference_work" | null>(null);
 const assistantSeedWorld = ref("");
 const assistantSeedWriting = ref("");
+const importDraftText = ref("");
+const importDraftFilename = ref("");
+const aiDraftBrief = reactive<ProjectAIBriefDraftPayload>({
+  title: "",
+  genre: "都市短剧",
+  protagonist: "",
+  core_conflict: "",
+  audience: "",
+  tone: "",
+  episode_count: 24,
+  reference_work: "",
+});
 const worldSuggestions = ref<string[]>([]);
 const writingSuggestions = ref<string[]>([]);
 const parsedStoryBoundaryRules = ref<StoryBoundaryRule[]>([]);
@@ -842,7 +867,47 @@ function openProjectCreate(mode: "upload" | "ai" | "manual" = "manual") {
     openAuthPanel("register", "projectCreate");
     return;
   }
+  if (mode === "ai") {
+    aiDraftBrief.title = projectForm.title;
+    aiDraftBrief.genre = projectForm.genre || "都市短剧";
+    aiDraftBrief.reference_work = referenceWorkInput.value || projectForm.reference_work;
+  }
+  if (mode === "upload") {
+    importDraftFilename.value = importDraftFilename.value || "粘贴剧本";
+  }
   currentView.value = "projectCreate";
+}
+
+function hydrateProjectCreateDraft(draft: ProjectPayload) {
+  Object.assign(projectForm, {
+    ...draft,
+    reference_work_confirmed: Boolean(draft.reference_work),
+  });
+  referenceWorkInput.value = draft.reference_work;
+  projectCreateStep.value = 1;
+}
+
+async function loadImportedProjectDraft() {
+  const payload: ProjectImportDraftPayload = {
+    title: projectForm.title,
+    genre: projectForm.genre,
+    original_filename: importDraftFilename.value,
+    script_text: importDraftText.value,
+  };
+  const draft = await store.loadImportedProjectDraft(payload);
+  if (!draft) return;
+  hydrateProjectCreateDraft(draft.project);
+}
+
+async function loadAiProjectDraft() {
+  const draft = await store.loadAiProjectDraft({
+    ...aiDraftBrief,
+    title: aiDraftBrief.title || projectForm.title,
+    genre: aiDraftBrief.genre || projectForm.genre,
+    reference_work: aiDraftBrief.reference_work || referenceWorkInput.value,
+  });
+  if (!draft) return;
+  hydrateProjectCreateDraft(draft.project);
 }
 
 function openProjectSettings() {
@@ -2066,6 +2131,9 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               :assistant-loading-kind="assistantLoadingKind"
               :assistant-seed-world="assistantSeedWorld"
               :assistant-seed-writing="assistantSeedWriting"
+              :import-draft-text="importDraftText"
+              :import-draft-filename="importDraftFilename"
+              :ai-draft-brief="aiDraftBrief"
               :world-suggestions="worldSuggestions"
               :writing-suggestions="writingSuggestions"
               @update:step="projectCreateStep = $event"
@@ -2081,6 +2149,11 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
               @update:style-profile="projectForm.style_profile = $event"
               @update:assistant-seed-world="assistantSeedWorld = $event"
               @update:assistant-seed-writing="assistantSeedWriting = $event"
+              @update:import-draft-text="importDraftText = $event"
+              @update:import-draft-filename="importDraftFilename = $event"
+              @update:ai-draft-brief="Object.assign(aiDraftBrief, $event)"
+              @load-imported-draft="loadImportedProjectDraft()"
+              @load-ai-draft="loadAiProjectDraft()"
               @generate-suggestion="generateProjectSuggestion($event, projectForm)"
               @use-suggestion="appendOrReplaceField(projectForm, $event.kind, $event.text, $event.mode)"
             />

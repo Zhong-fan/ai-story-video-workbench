@@ -78,6 +78,7 @@ class VideoRenderService:
             if requires_i2v and first_frame_asset is None:
                 raise RuntimeError("图片先行镜头必须使用首帧图生视频，不能回退到文生视频。")
             prompt = self._build_jimeng_prompt(task, shot, first_frame_asset=first_frame_asset)
+            self._persist_render_context(task, provider="jimeng", shot=shot, prompt=prompt, first_frame_asset=first_frame_asset)
             self._set_progress(
                 task,
                 stage="jimeng_submit",
@@ -254,6 +255,7 @@ class VideoRenderService:
             db.commit()
 
             image_prompt = self._build_image_prompt(task, shot)
+            self._persist_render_context(task, provider="local_pipeline", shot=shot, prompt=image_prompt, first_frame_asset=first_frame_asset)
             if first_frame_asset is not None and first_frame_asset.uri and Path(first_frame_asset.uri).exists():
                 image_path = Path(first_frame_asset.uri)
             else:
@@ -468,6 +470,29 @@ class VideoRenderService:
 
     def _build_image_prompt(self, task: VideoTask, shot: StoryboardShot) -> str:
         return build_visual_generation_prompt(project=task.project, shot=shot, include_narration=False, max_length=1800)
+
+    def _persist_render_context(
+        self,
+        task: VideoTask,
+        *,
+        provider: str,
+        shot: StoryboardShot,
+        prompt: str,
+        first_frame_asset: MediaAsset | None = None,
+    ) -> None:
+        payload = json_loads_object(task.progress_json)
+        payload["provider"] = provider
+        payload["shot_no"] = shot.shot_no
+        payload["render_prompt"] = prompt
+        payload["render_first_frame_asset_id"] = first_frame_asset.id if first_frame_asset is not None else None
+        payload["render_prompt_context"] = {
+            "provider": provider,
+            "shot_id": shot.id,
+            "shot_no": shot.shot_no,
+            "used_first_frame": first_frame_asset is not None,
+            "first_frame_asset_id": first_frame_asset.id if first_frame_asset is not None else None,
+        }
+        task.progress_json = json_dumps(payload)
 
     def _shot_requires_i2v(self, shot: StoryboardShot) -> bool:
         meta = json_loads_object(shot.meta_json)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { ProjectPayload, ReferenceWorkResolved } from "../../types";
+import type { ProjectAIBriefDraftPayload, ProjectPayload, ReferenceWorkResolved } from "../../types";
 
 type StyleProfileOption = { value: string; label: string; description: string; bullets?: string[] };
 type GenreOptionCard = { value: string; label: string; description: string };
@@ -21,6 +21,9 @@ const props = defineProps<{
   assistantLoadingKind?: SuggestionKind | "reference_work" | null;
   assistantSeedWorld: string;
   assistantSeedWriting: string;
+  importDraftText: string;
+  importDraftFilename: string;
+  aiDraftBrief: ProjectAIBriefDraftPayload;
   worldSuggestions: string[];
   writingSuggestions: string[];
 }>();
@@ -40,6 +43,11 @@ const emit = defineEmits<{
   (e: "update:styleProfile", value: string): void;
   (e: "update:assistantSeedWorld", value: string): void;
   (e: "update:assistantSeedWriting", value: string): void;
+  (e: "update:importDraftText", value: string): void;
+  (e: "update:importDraftFilename", value: string): void;
+  (e: "update:aiDraftBrief", value: Partial<ProjectAIBriefDraftPayload>): void;
+  (e: "loadImportedDraft"): void;
+  (e: "loadAiDraft"): void;
   (e: "generateSuggestion", kind: SuggestionKind): void;
   (e: "useSuggestion", payload: { kind: SuggestionKind; text: string; mode: "replace" | "append" }): void;
 }>();
@@ -57,12 +65,12 @@ const creationModeCopy = computed(() => {
     upload: {
       titleLabel: "上传剧本建项目",
       titlePlaceholder: "例如：已有剧本标题 / 第一季短剧项目",
-      worldHint: "粘贴剧本梗概、主要人物、已有分集说明，或记录原始剧本存放位置。",
+      worldHint: "导入草稿会先写入这里；你也可以继续补充人物、场次和分集说明。",
     },
     ai: {
       titleLabel: "AI 生成剧本",
       titlePlaceholder: "例如：雨夜重逢 / 逆袭短剧企划",
-      worldHint: "写清目标题材、主角处境、爽点、反转、受众和短剧节奏要求。",
+      worldHint: "AI 简报草稿会先写入这里；确认后再进入生成前校对。",
     },
     manual: {
       titleLabel: "自主输入",
@@ -93,6 +101,68 @@ const creationModeCopy = computed(() => {
 
     <section v-if="step === 1" class="panel panel--paper">
       <div class="form-stack">
+        <section v-if="creationMode === 'upload'" class="assistant-panel creation-mode-panel">
+          <div class="assistant-panel__header">
+            <div>
+              <strong>导入已有剧本</strong>
+              <p>先粘贴剧本正文或梗概，系统会整理成可编辑项目草稿；确认后才会创建项目。</p>
+            </div>
+            <button class="primary-button" type="button" :disabled="loading || importDraftText.trim().length < 8" @click="emit('loadImportedDraft')">
+              生成项目草稿
+            </button>
+          </div>
+          <label class="field">
+            <span>文件名或来源</span>
+            <input :value="importDraftFilename" maxlength="255" placeholder="例如：第一版剧本.txt / 粘贴自飞书文档" @input="emit('update:importDraftFilename', ($event.target as HTMLInputElement).value)" />
+          </label>
+          <label class="field">
+            <span>剧本正文或梗概</span>
+            <textarea :value="importDraftText" rows="7" maxlength="200000" placeholder="粘贴已有剧本、分集梗概、场次说明或主要人物关系。" @input="emit('update:importDraftText', ($event.target as HTMLTextAreaElement).value)" />
+          </label>
+        </section>
+
+        <section v-else-if="creationMode === 'ai'" class="assistant-panel creation-mode-panel">
+          <div class="assistant-panel__header">
+            <div>
+              <strong>创作简报</strong>
+              <p>回答几个关键问题，先生成一份可编辑项目草稿，再确认创建。</p>
+            </div>
+            <button class="primary-button" type="button" :disabled="loading || !aiDraftBrief.protagonist.trim() || !aiDraftBrief.core_conflict.trim()" @click="emit('loadAiDraft')">
+              生成项目草稿
+            </button>
+          </div>
+          <div class="assistant-trait-grid">
+            <label class="field">
+              <span>主角</span>
+              <input :value="aiDraftBrief.protagonist" maxlength="500" placeholder="例如：被家族放弃的女律师" @input="emit('update:aiDraftBrief', { protagonist: ($event.target as HTMLInputElement).value })" />
+            </label>
+            <label class="field">
+              <span>核心冲突</span>
+              <input :value="aiDraftBrief.core_conflict" maxlength="1000" placeholder="例如：七天内证明遗嘱被篡改" @input="emit('update:aiDraftBrief', { core_conflict: ($event.target as HTMLInputElement).value })" />
+            </label>
+          </div>
+          <div class="assistant-trait-grid">
+            <label class="field">
+              <span>目标观众</span>
+              <input :value="aiDraftBrief.audience" maxlength="500" placeholder="例如：喜欢强反转和女性成长的短剧观众" @input="emit('update:aiDraftBrief', { audience: ($event.target as HTMLInputElement).value })" />
+            </label>
+            <label class="field">
+              <span>节奏和语气</span>
+              <input :value="aiDraftBrief.tone" maxlength="500" placeholder="例如：高压、克制、每集结尾有反转" @input="emit('update:aiDraftBrief', { tone: ($event.target as HTMLInputElement).value })" />
+            </label>
+          </div>
+          <div class="assistant-trait-grid">
+            <label class="field">
+              <span>预计集数</span>
+              <input :value="aiDraftBrief.episode_count ?? ''" type="number" min="1" max="200" @input="emit('update:aiDraftBrief', { episode_count: Number(($event.target as HTMLInputElement).value) || null })" />
+            </label>
+            <label class="field">
+              <span>参考作品</span>
+              <input :value="aiDraftBrief.reference_work" maxlength="255" placeholder="可选，例如：黑暗荣耀" @input="emit('update:aiDraftBrief', { reference_work: ($event.target as HTMLInputElement).value })" />
+            </label>
+          </div>
+        </section>
+
         <label class="field">
           <span>{{ creationModeCopy.titleLabel }}</span>
           <input :value="form.title" maxlength="255" :placeholder="creationModeCopy.titlePlaceholder" @input="emit('update:title', ($event.target as HTMLInputElement).value)" />

@@ -6,6 +6,47 @@ from .json_utils import ensure_list, json_loads_object
 from .models import Storyboard, VideoTask
 
 
+def build_review_findings(shot_results: list[dict[str, Any]]) -> list[dict[str, str]]:
+    findings: list[dict[str, str]] = []
+    for item in shot_results:
+        shot_no = item.get("shot_no")
+        shot_label = f"镜头 {shot_no}" if shot_no is not None else "当前镜头"
+        if item.get("continuity_failed"):
+            findings.append(
+                {
+                    "finding_id": f"shot-{shot_no}-continuity" if shot_no is not None else "shot-continuity",
+                    "severity": "blocking",
+                    "category": "continuity",
+                    "title": f"{shot_label} 连续性失败",
+                    "detail": "角色或首尾帧连续性不稳定。",
+                    "recommended_rework_level": "shot",
+                }
+            )
+        if item.get("pacing_failed"):
+            findings.append(
+                {
+                    "finding_id": f"shot-{shot_no}-pacing" if shot_no is not None else "shot-pacing",
+                    "severity": "advisory",
+                    "category": "pacing",
+                    "title": f"{shot_label} 节奏偏弱",
+                    "detail": "镜头节奏或叙事结构需要回到分镜层调整。",
+                    "recommended_rework_level": "storyboard",
+                }
+            )
+        if item.get("local_defect"):
+            findings.append(
+                {
+                    "finding_id": f"shot-{shot_no}-local-defect" if shot_no is not None else "shot-local-defect",
+                    "severity": "advisory",
+                    "category": "local_defect",
+                    "title": f"{shot_label} 存在局部画面缺陷",
+                    "detail": "局部构图或细节异常，优先尝试局部修正。",
+                    "recommended_rework_level": "local_fix",
+                }
+            )
+    return findings
+
+
 class VideoQualityService:
     def build_quality_plan(self, storyboard: Storyboard) -> dict[str, Any]:
         shots = sorted(storyboard.shots, key=lambda item: item.shot_no)
@@ -48,6 +89,7 @@ class VideoQualityService:
     ) -> dict[str, Any]:
         progress = json_loads_object(task.progress_json)
         plan = progress.get("video_quality_plan") if isinstance(progress.get("video_quality_plan"), dict) else {}
+        shot_results = ensure_list(progress.get("shot_results"))
         passed = status == "completed" and bool(task.output_uri)
         return {
             "status": "passed" if passed else "failed",
@@ -56,4 +98,5 @@ class VideoQualityService:
             "short_film_structure": "passed" if passed else "requires_manual_review",
             "visual_stability": "requires_manual_review",
             "content_consistency": "requires_manual_review",
+            "review_findings": build_review_findings([item for item in shot_results if isinstance(item, dict)]),
         }

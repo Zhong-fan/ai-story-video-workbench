@@ -12,9 +12,12 @@ import type {
   UpdateNovelPayload,
   PublishNovelPayload,
   Project,
+  ProjectAIBriefDraftPayload,
   ProjectChapter,
   ProjectChapterPayload,
+  ProjectCreateDraftResponse,
   ProjectDetailResponse,
+  ProjectImportDraftPayload,
   ProjectPayload,
   ReferenceWorkResolveRequest,
   ReferenceWorkResolved,
@@ -216,6 +219,18 @@ export const api = {
   myWorkspace: (token: string) => request<MyWorkspaceResponse>("/api/me/workspace", { token }),
   createProject: (token: string, payload: ProjectPayload) =>
     request<Project>("/api/projects", { method: "POST", token, body: JSON.stringify(payload) }),
+  importProjectDraft: (token: string, payload: ProjectImportDraftPayload) =>
+    request<ProjectCreateDraftResponse>("/api/projects/import-draft", {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+  createProjectBriefDraft: (token: string, payload: ProjectAIBriefDraftPayload) =>
+    request<ProjectCreateDraftResponse>("/api/projects/brief-draft", {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
   resolveReferenceWork: (token: string, payload: ReferenceWorkResolveRequest) =>
     request<ReferenceWorkResolved>("/api/projects/reference-work/resolve", {
       method: "POST",

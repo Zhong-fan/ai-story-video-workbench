@@ -1,7 +1,30 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
+import GenerationTransparencyPanel from "./GenerationTransparencyPanel.vue";
 import PreviewModal from "./PreviewModal.vue";
-import type { BatchGenerationChapterTask, ChapterOutline, CharacterCard, CharacterReferenceProfile, ContextPack, CreateStoryboardPayload, DraftVersion, LongformState, MediaAsset, NovelCard, NovelDetail, Project, SeriesPlan, StoryboardShot, VideoTask } from "../../types";
+import ShotReworkActionsPanel from "./ShotReworkActionsPanel.vue";
+import VideoPreflightReviewPanel from "./VideoPreflightReviewPanel.vue";
+import VideoReviewFindingsPanel from "./VideoReviewFindingsPanel.vue";
+import type {
+  BatchGenerationChapterTask,
+  ChapterOutline,
+  CharacterCard,
+  CharacterReferenceProfile,
+  ContextPack,
+  CreateStoryboardPayload,
+  DraftVersion,
+  GenerationTraceStep,
+  LongformState,
+  MediaAsset,
+  NovelCard,
+  NovelDetail,
+  Project,
+  ReviewFinding,
+  SeriesPlan,
+  StoryboardPreflightSummary,
+  StoryboardShot,
+  VideoTask,
+} from "../../types";
 
 type PreviewTarget = { kind: "image" | "video" | "audio"; title: string; url: string };
 
@@ -138,6 +161,8 @@ const visualStyleForm = reactive({
 });
 const preview = ref<PreviewTarget | null>(null);
 const localError = ref("");
+const shotEditFormRef = ref<HTMLFormElement | null>(null);
+const focusedShotId = ref<number | null>(null);
 const isNovelMode = computed(() => props.mode === "novel");
 const isVideoMode = computed(() => props.mode === "video");
 
@@ -203,6 +228,18 @@ const selectedDraftVersion = computed(
 const latestStoryboard = computed(
   () => props.state.storyboards.find((item) => item.id === props.preferredStoryboardId) ?? props.state.storyboards[0] ?? null,
 );
+const latestStoryboardPreflight = computed<StoryboardPreflightSummary | null>(() => {
+  const raw = latestStoryboard.value?.progress?.preflight_summary;
+  return raw && typeof raw === "object" ? (raw as StoryboardPreflightSummary) : null;
+});
+const latestGenerationTraceSteps = computed<GenerationTraceStep[]>(() => {
+  const raw = latestStoryboard.value?.progress?.generation_trace;
+  return Array.isArray(raw) ? (raw as GenerationTraceStep[]) : [];
+});
+const latestReviewFindings = computed<ReviewFinding[]>(() => {
+  const raw = latestStoryboard.value?.progress?.review_findings;
+  return Array.isArray(raw) ? (raw as ReviewFinding[]) : [];
+});
 const latestVideoTask = computed(
   () =>
     props.state.video_tasks.find((item) => item.id === props.preferredVideoTaskId) ??
@@ -631,6 +668,7 @@ function saveOutlineEdit() {
 }
 
 function beginEditShot(storyboardId: number, shot: StoryboardShot) {
+  focusedShotId.value = shot.id;
   shotEdit.id = shot.id;
   shotEdit.storyboardId = storyboardId;
   shotEdit.narration_text = shot.narration_text;
@@ -657,6 +695,11 @@ function beginEditShot(storyboardId: number, shot: StoryboardShot) {
     })
     .filter(Boolean)
     .join("，");
+}
+
+async function focusShotEditor() {
+  await nextTick();
+  shotEditFormRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function saveShotEdit() {
@@ -687,6 +730,7 @@ function saveShotEdit() {
 
 function createShotAfterLast() {
   if (!latestStoryboard.value) return;
+  focusedShotId.value = null;
   emit("create-shot", {
     storyboardId: latestStoryboard.value.id,
     shot_no: null,
@@ -714,6 +758,29 @@ function moveShot(shot: StoryboardShot, direction: -1 | 1) {
   const [item] = ordered.splice(index, 1);
   ordered.splice(nextIndex, 0, item);
   emit("reorder-shots", { storyboardId: latestStoryboard.value.id, shot_ids: ordered.map((item) => item.id) });
+}
+
+function isFocusedShot(shot: StoryboardShot) {
+  return focusedShotId.value === shot.id;
+}
+
+function focusRenderPromptSource(value: { shotId: number; assetId: number; assetType: string }) {
+  if (!latestStoryboard.value) return;
+  const shot = latestStoryboard.value.shots.find((item) => item.id === value.shotId);
+  if (!shot) return;
+  beginEditShot(latestStoryboard.value.id, shot);
+  void focusShotEditor();
+}
+
+function focusPreflightIssue(value: { sectionKey: string; item: string }) {
+  if (!latestStoryboard.value) return;
+  const match = value.item.match(/镜头\s*(\d+)/);
+  if (!match) return;
+  const shotNo = Number(match[1]);
+  const shot = latestStoryboard.value.shots.find((item) => item.shot_no === shotNo);
+  if (!shot) return;
+  beginEditShot(latestStoryboard.value.id, shot);
+  void focusShotEditor();
 }
 
 function publicUrl(item: MediaAsset | VideoTask) {
@@ -1159,6 +1226,41 @@ function toggleAssetLock(asset: MediaAsset) {
       locked: !isAssetLocked(asset),
     },
   });
+}
+
+function startShotRework(finding: ReviewFinding) {
+  if (!latestStoryboard.value) return;
+  const shotNoMatch = finding.finding_id.match(/shot-(\d+)-/);
+  const shotNo = shotNoMatch ? Number(shotNoMatch[1]) : Number.NaN;
+  const shot = latestStoryboard.value.shots.find((item) => item.shot_no === shotNo);
+  if (shot) {
+    beginEditShot(latestStoryboard.value.id, shot);
+    void focusShotEditor();
+  }
+}
+
+function startStoryboardRework() {
+  const target = latestStoryboard.value?.shots[0];
+  if (latestStoryboard.value && target) {
+    beginEditShot(latestStoryboard.value.id, target);
+    void focusShotEditor();
+  }
+}
+
+function startLocalFix(finding: ReviewFinding) {
+  startShotRework(finding);
+}
+
+function focusFinding(finding: ReviewFinding) {
+  if (finding.recommended_rework_level === "storyboard") {
+    startStoryboardRework();
+    return;
+  }
+  if (finding.recommended_rework_level === "local_fix") {
+    startLocalFix(finding);
+    return;
+  }
+  startShotRework(finding);
 }
 
 function isImageAsset(asset: MediaAsset) {
@@ -1640,6 +1742,18 @@ function generateTurnaround() {
       <p v-if="latestStoryboardVideoGateReason" class="empty-text">{{ latestStoryboardVideoGateReason }}</p>
       <p v-if="storyboardPreflightSummaryText()" class="empty-text">{{ storyboardPreflightSummaryText() }}</p>
       <p v-if="latestStoryboard.error_message" class="empty-text">{{ latestStoryboard.error_message }}</p>
+
+      <GenerationTransparencyPanel :steps="latestGenerationTraceSteps" @focus-render-source="focusRenderPromptSource" />
+      <VideoPreflightReviewPanel :summary="latestStoryboardPreflight" @focus-preflight-issue="focusPreflightIssue" />
+      <VideoReviewFindingsPanel :findings="latestReviewFindings" @focus-finding="focusFinding" />
+      <ShotReworkActionsPanel
+        :findings="latestReviewFindings"
+        :disabled="loading"
+        @start-shot-rework="startShotRework"
+        @start-storyboard-rework="startStoryboardRework"
+        @start-local-fix="startLocalFix"
+      />
+
       <div v-if="latestStoryboard.events.length" class="card-list">
         <div v-for="event in latestStoryboard.events.slice(-4)" :key="event.id" class="memory-card">
           <strong>{{ eventLabel(event.event_type) }}<span>{{ eventTimeLabel(event.created_at) }}</span></strong>
@@ -1647,7 +1761,7 @@ function generateTurnaround() {
         </div>
       </div>
       <div class="longform-outline">
-        <article v-for="shot in latestStoryboard.shots" :key="shot.id" class="memory-card">
+        <article v-for="shot in latestStoryboard.shots" :key="shot.id" class="memory-card shot-card" :class="{ 'shot-card--focused': isFocusedShot(shot) }">
           <strong>镜头 {{ shot.shot_no }} / {{ shot.duration_seconds }}s</strong>
           <span>{{ shot.narration_text }}</span>
           <em>{{ shot.visual_prompt }}</em>
@@ -1718,7 +1832,7 @@ function generateTurnaround() {
           </div>
         </article>
       </div>
-      <form class="form-stack longform-edit-box" v-if="shotEdit.id" @submit.prevent="saveShotEdit()">
+      <form ref="shotEditFormRef" class="form-stack longform-edit-box shot-edit-box" :class="{ 'shot-edit-box--focused': Boolean(shotEdit.id) }" v-if="shotEdit.id" @submit.prevent="saveShotEdit()">
         <label class="field"><span>旁白 / 字幕</span><textarea v-model="shotEdit.narration_text" rows="3" maxlength="8000" /></label>
         <label class="field"><span>画面提示词</span><textarea v-model="shotEdit.visual_prompt" rows="4" maxlength="8000" /></label>
         <label class="field">

@@ -95,8 +95,12 @@ class VideoPreflightQualityGateTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        events = payload["storyboards"][0]["events"]
+        storyboard = payload["storyboards"][0]
+        events = storyboard["events"]
         self.assertTrue(any(event["event_type"] == "storyboard_preflight_blocked" for event in events))
+        preflight_summary = storyboard["progress"]["preflight_summary"]
+        self.assertIn("quality_gate_failures", preflight_summary)
+        self.assertTrue(preflight_summary["quality_gate_failures"])
 
 
 if __name__ == "__main__":
