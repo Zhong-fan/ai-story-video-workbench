@@ -308,6 +308,8 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
         @restore-trash="restoreTrash"
         @update-media-asset="updateMediaAsset"
         @delete-media-asset="store.deleteMediaAsset"
+        @create-video-task="store.createVideoTask"
+        @delete-video-task="store.deleteVideoTask"
         @update:title="projectForm.title = $event"
         @update:genre="projectForm.genre = $event"
         @update:world-brief="projectForm.world_brief = $event"

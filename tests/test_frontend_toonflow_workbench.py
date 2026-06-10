@@ -60,6 +60,21 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         self.assertIn('@update-media-asset="updateMediaAsset"', app_source)
         self.assertIn('@delete-media-asset="store.deleteMediaAsset"', app_source)
 
+    def test_production_canvas_wires_video_task_actions(self) -> None:
+        app_source = APP_VUE.read_text(encoding="utf-8")
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        self.assertIn('(e: "create-video-task"', source)
+        self.assertIn('(e: "delete-video-task"', source)
+        self.assertIn("videoTasksByStoryboard", source)
+        self.assertIn('@click="emit(\'create-video-task\', track.storyboard.id)"', source)
+        self.assertIn('@click="emit(\'delete-video-task\', task.id)"', source)
+        self.assertIn("生产任务 {{ task.id }}", source)
+        self.assertNotIn("Track 3 · 视频出片", source)
+
+        self.assertIn('@create-video-task="store.createVideoTask"', app_source)
+        self.assertIn('@delete-video-task="store.deleteVideoTask"', app_source)
+
     def test_project_create_is_not_restored_as_startup_view(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")
         restorable_block = app_source.split("const restorableViews: ViewKey[] = [", 1)[1].split("];", 1)[0]

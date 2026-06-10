@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import type { LongformState, MediaAsset, Project, ProjectCreateDraft, ProjectDetailResponse, TrashItem } from "../../types";
+import type { LongformState, MediaAsset, Project, ProjectCreateDraft, ProjectDetailResponse, TrashItem, VideoTask } from "../../types";
 
 type CreationMode = "upload" | "ai" | "manual";
 type WorkbenchModule = "projects" | "script" | "assets" | "production" | "settings" | "trash";
@@ -35,6 +35,8 @@ const emit = defineEmits<{
   (e: "restore-trash", item: TrashItem): void;
   (e: "update-media-asset", assetId: number, meta: Record<string, unknown>): void;
   (e: "delete-media-asset", assetId: number): void;
+  (e: "create-video-task", storyboardId: number): void;
+  (e: "delete-video-task", taskId: number): void;
   (e: "update:workspace-search", value: string): void;
   (e: "update:title", value: string): void;
   (e: "update:genre", value: string): void;
@@ -130,20 +132,43 @@ const mediaAssets = computed(() => props.longformState.media_assets);
 const videoTaskCount = computed(() => props.longformState.video_tasks.length);
 
 const productionTracks = computed(() => {
-  const storyboards = props.longformState.storyboards.slice(0, 3);
-  if (storyboards.length) {
-    return storyboards.map((storyboard, index) => ({
-      title: storyboard.title || `Storyboard ${index + 1}`,
-      meta: `${storyboard.shots.length} 镜头 · ${storyboard.status || "待生产"}`,
-      detail: storyboard.summary || "分镜已进入生产画布，可继续补首帧、配音和视频任务。",
-    }));
-  }
-  return [
-    { title: "Track 1 · 文本拆镜", meta: "等待剧本", detail: "生成或导入剧本后，这里会形成可拖拽的镜头轨道。" },
-    { title: "Track 2 · 角色资产", meta: `${characterCards.value.length} 人物`, detail: "人物三视图、服装、表情和声音会挂到镜头节点上。" },
-    { title: "Track 3 · 视频出片", meta: `${videoTaskCount.value} 任务`, detail: "首帧、旁白和视频任务会在同一张生产画布里串起来。" },
-  ];
+  return props.longformState.storyboards.slice(0, 6).map((storyboard, index) => ({
+    storyboard,
+    tasks: videoTasksByStoryboard(storyboard.id),
+    title: storyboard.title || `Storyboard ${index + 1}`,
+    meta: `${storyboard.shots.length} 镜头 · ${storyboard.status || "待生产"}`,
+    detail: storyboard.summary || "分镜已进入生产画布，可继续补首帧、配音和视频任务。",
+  }));
 });
+
+function videoTasksByStoryboard(storyboardId: number) {
+  return props.longformState.video_tasks.filter((task) => task.storyboard_id === storyboardId);
+}
+
+function hasActiveVideoTask(tasks: VideoTask[]) {
+  return tasks.some((task) => ["queued", "running"].includes(task.task_status));
+}
+
+function productionTaskLabel(task: VideoTask) {
+  const status = task.task_status || "pending";
+  const output = task.output_uri ? " · 有输出" : "";
+  return `${status}${output}`;
+}
+
+function fallbackProductionTracks() {
+  return [
+    {
+      title: "Track 1 · 文本拆镜",
+      meta: "等待剧本",
+      detail: "生成或导入剧本后，这里会形成可拖拽的镜头轨道。",
+    },
+    {
+      title: "Track 2 · 角色资产",
+      meta: `${characterCards.value.length} 人物`,
+      detail: "人物三视图、服装、表情和声音会挂到镜头节点上。",
+    },
+  ];
+}
 
 function selectModule(module: WorkbenchModule) {
   activeModule.value = module;
@@ -453,6 +478,24 @@ function itemCode(item: TrashItem) {
               <p>{{ track.meta }}</p>
               <h3>{{ track.title }}</h3>
               <span>{{ track.detail }}</span>
+              <footer>
+                <button type="button" :disabled="loading || hasActiveVideoTask(track.tasks)" @click="emit('create-video-task', track.storyboard.id)">
+                  {{ hasActiveVideoTask(track.tasks) ? "生产中" : "创建视频任务" }}
+                </button>
+              </footer>
+              <div v-if="track.tasks.length" class="toon-track__tasks" aria-label="视频任务">
+                <article v-for="task in track.tasks" :key="task.id">
+                  <strong>生产任务 {{ task.id }}</strong>
+                  <span>{{ productionTaskLabel(task) }}</span>
+                  <a v-if="task.output_uri" :href="task.output_uri" target="_blank" rel="noreferrer">查看输出</a>
+                  <button type="button" :disabled="loading || task.task_status === 'running'" @click="emit('delete-video-task', task.id)">删除任务</button>
+                </article>
+              </div>
+            </article>
+            <article v-for="track in fallbackProductionTracks()" v-if="!productionTracks.length" :key="track.title" class="toon-track">
+              <p>{{ track.meta }}</p>
+              <h3>{{ track.title }}</h3>
+              <span>{{ track.detail }}</span>
             </article>
           </template>
 
@@ -556,7 +599,8 @@ function itemCode(item: TrashItem) {
 .toon-user button:hover,
 .toon-button:hover,
 .toon-project-card footer button:hover,
-.toon-asset-card__actions button:hover {
+.toon-asset-card__actions button:hover,
+.toon-track button:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.86);
 }
@@ -573,6 +617,7 @@ function itemCode(item: TrashItem) {
 .toon-project-card:focus-visible,
 .toon-project-card footer button:focus-visible,
 .toon-asset-card__actions button:focus-visible,
+.toon-track button:focus-visible,
 .toon-create input:focus-visible,
 .toon-create textarea:focus-visible,
 .toon-select select:focus-visible,
@@ -635,6 +680,7 @@ function itemCode(item: TrashItem) {
 .toon-user button,
 .toon-project-card footer button,
 .toon-asset-card__actions button,
+.toon-track button,
 .toon-batch button {
   min-height: 42px;
   border: 1px solid rgba(20, 16, 20, 0.1);
@@ -983,7 +1029,43 @@ function itemCode(item: TrashItem) {
 
 .toon-track {
   min-height: 130px;
+  display: grid;
+  gap: 12px;
   padding: 18px;
+}
+
+.toon-track footer {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.toon-track button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+  transform: none;
+}
+
+.toon-track__tasks {
+  display: grid;
+  gap: 8px;
+}
+
+.toon-track__tasks article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid rgba(20, 16, 20, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.54);
+  padding: 10px;
+}
+
+.toon-track__tasks a {
+  color: color-mix(in oklab, var(--rose-strong) 58%, var(--ink));
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .toon-agent strong {
@@ -1069,8 +1151,13 @@ function itemCode(item: TrashItem) {
   }
 
   .toon-project-card footer button,
-  .toon-asset-card__actions button {
+  .toon-asset-card__actions button,
+  .toon-track button {
     width: 100%;
+  }
+
+  .toon-track__tasks article {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
