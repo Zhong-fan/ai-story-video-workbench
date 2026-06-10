@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 
 import AuthModal from "./components/auth/AuthModal.vue";
@@ -56,7 +56,7 @@ const {
 } = storeToRefs(store);
 
 const currentView = ref<ViewKey>("studio");
-const activeStudioAgent = ref<"shortDrama" | "novel" | "anime">(readPersistedStudioAgent());
+const activeStudioAgent = ref<"shortDrama" | "novel" | "anime">("shortDrama");
 const projectCreateMode = ref<"upload" | "ai" | "manual">("manual");
 const authError = ref("");
 const workspaceSearch = ref("");
@@ -485,31 +485,13 @@ function goToView(view: ViewKey) {
   mobileSidebarOpen.value = false;
 }
 
-function selectStudioAgent(agent: "shortDrama" | "novel" | "anime") {
-  if (!isAuthenticated.value) {
-    openAuthPanel("login", "studio");
-    return;
-  }
-  activeStudioAgent.value = agent;
-  localStorage.setItem("chenflow_active_studio_agent", agent);
-  currentView.value = "studio";
-  mobileSidebarOpen.value = false;
-}
-
-function readPersistedStudioAgent() {
-  const value = localStorage.getItem("chenflow_active_studio_agent");
-  return value === "novel" || value === "anime" || value === "shortDrama" ? value : "shortDrama";
-}
-
-function startCreateFromStudio(value: { agent: "shortDrama" | "novel" | "anime"; mode: "upload" | "ai" | "manual" }) {
-  activeStudioAgent.value = value.agent;
-  localStorage.setItem("chenflow_active_studio_agent", value.agent);
-  openProjectCreate(value.mode);
+function startCreateFromStudio(mode: "upload" | "ai" | "manual") {
+  activeStudioAgent.value = "shortDrama";
+  openProjectCreate(mode);
 }
 
 function openSidebarProjectCreate(mode: "upload" | "ai" | "manual") {
   activeStudioAgent.value = "shortDrama";
-  localStorage.setItem("chenflow_active_studio_agent", "shortDrama");
   openProjectCreate(mode);
 }
 
@@ -1571,6 +1553,9 @@ watch(nextNovelChapterNo, (next) => {
 
 watch(currentView, (next) => {
   persistView(next);
+  void nextTick(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  });
 }, { immediate: true });
 
 watch(filteredWorkspaceProjects, () => {
@@ -1702,9 +1687,9 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
             <button class="ghost-button ghost-button--small editor-sidebar__back" type="button" @click="goToView('studio')">返回工作区</button>
           </div>
           <nav class="sidebar-nav" aria-label="Editor">
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': ['setupStage', 'projectSettings', 'contextReview', 'characters'].includes(currentView) }" @click="openSetupStage()">设定</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': ['novelStage', 'novelCreate', 'novelEditor'].includes(currentView) }" @click="openNovelStage()">小说</button>
-            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': ['videoStage', 'videoCreate'].includes(currentView) }" @click="openVideoStage()">视频</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': ['setupStage', 'projectSettings', 'contextReview', 'characters'].includes(currentView) }" @click="openSetupStage()">项目设定</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': ['novelStage', 'novelCreate', 'novelEditor'].includes(currentView) }" @click="openNovelStage()">文本创作</button>
+            <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': ['videoStage', 'videoCreate'].includes(currentView) }" @click="openVideoStage()">分镜视频</button>
           </nav>
           <nav class="sidebar-nav sidebar-nav--secondary" aria-label="Secondary">
             <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'generationTrace' }" @click="openGenerationTrace()">生成过程</button>

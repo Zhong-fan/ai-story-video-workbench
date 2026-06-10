@@ -58,7 +58,7 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         self.assertIn("ProjectCreateWizard", project_create_source)
         self.assertIn("先把项目核心设定立住", project_create_source)
 
-    def test_agent_workspace_create_modes_are_wired_to_project_create(self) -> None:
+    def test_project_workspace_create_modes_are_wired_to_project_create(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")
         studio_source = STUDIO_WORKSPACE_PANEL.read_text(encoding="utf-8")
         project_create_source = WORKSPACE_PROJECT_CREATE_PANEL.read_text(encoding="utf-8")
@@ -66,13 +66,14 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         api_source = (ROOT / "frontend" / "src" / "api.ts").read_text(encoding="utf-8")
         store_source = (ROOT / "frontend" / "src" / "stores" / "workbench.ts").read_text(encoding="utf-8")
 
-        self.assertIn('activeStudioAgent = ref<"shortDrama" | "novel" | "anime">', app_source)
+        self.assertIn('activeStudioAgent = ref<"shortDrama" | "novel" | "anime">("shortDrama")', app_source)
         self.assertIn('projectCreateMode = ref<"upload" | "ai" | "manual">', app_source)
         self.assertIn(":creation-mode=\"projectCreateMode\"", app_source)
-        self.assertIn("workflowCards", studio_source)
-        self.assertIn('mode: "upload"', studio_source)
-        self.assertIn('mode: "manual"', studio_source)
-        self.assertIn("emit('start-create', { agent: entry.agent, mode: entry.mode })", studio_source)
+        self.assertIn("pipelineSteps", studio_source)
+        self.assertIn("项目制创作台", studio_source)
+        self.assertIn("emit('start-create', 'manual')", studio_source)
+        self.assertIn("emit('start-create', 'upload')", studio_source)
+        self.assertIn("emit('start-create', 'ai')", studio_source)
         self.assertIn("creationMode", project_create_source)
         self.assertIn(':active-agent="activeAgent"', project_create_source)
         self.assertIn("activeAgent", wizard_source)
@@ -88,19 +89,28 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         self.assertIn("主角", wizard_source)
         self.assertIn("核心冲突", wizard_source)
 
-    def test_agent_workspace_entry_copy_matches_active_agent(self) -> None:
+    def test_project_workspace_entry_copy_is_single_pipeline(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")
         sidebar_source = WORKSPACE_SIDEBAR.read_text(encoding="utf-8")
         studio_source = STUDIO_WORKSPACE_PANEL.read_text(encoding="utf-8")
         project_create_source = WORKSPACE_PROJECT_CREATE_PANEL.read_text(encoding="utf-8")
 
-        self.assertIn("workflowCards", studio_source)
-        self.assertIn("视频创作", studio_source)
-        self.assertIn("小说创作", studio_source)
-        self.assertIn("动画资产", studio_source)
+        self.assertIn("pipelineSteps", studio_source)
+        self.assertIn("项目制创作台", studio_source)
+        self.assertIn("新建项目", studio_source)
+        self.assertIn("导入已有文本", studio_source)
+        self.assertIn("用 AI 生成底稿", studio_source)
+        self.assertIn("小说 / 剧本", studio_source)
+        self.assertIn("分镜 / 视频", studio_source)
+        self.assertNotIn("workflowCards", studio_source)
+        self.assertNotIn("视频创作", studio_source)
+        self.assertNotIn("小说创作", studio_source)
         self.assertNotIn("短剧Agent</button>", sidebar_source)
         self.assertNotIn("小说Agent</button>", sidebar_source)
         self.assertNotIn("动漫Agent</button>", sidebar_source)
+        self.assertIn(">项目</button>", sidebar_source)
+        self.assertIn(">新建项目</button>", sidebar_source)
+        self.assertIn(">资产库</button>", sidebar_source)
         self.assertIn("emptyText", studio_source)
         self.assertIn("@open-project-create=\"openSidebarProjectCreate($event)\"", app_source)
         self.assertIn("(e: \"open-project-create\", mode: CreationMode): void", sidebar_source)
@@ -116,6 +126,7 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         restorable_block = app_source.split("const restorableViews: ViewKey[] = [", 1)[1].split("];", 1)[0]
 
         self.assertNotIn('"projectCreate"', restorable_block)
+        self.assertIn("window.scrollTo({ top: 0, left: 0, behavior: \"auto\" })", app_source)
 
     def test_asset_library_is_real_read_only_view_not_disabled_stub(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")
@@ -143,12 +154,13 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
     def test_playwright_regression_targets_current_agent_workspace(self) -> None:
         regression_source = PLAYWRIGHT_REGRESSION.read_text(encoding="utf-8")
 
-        self.assertIn("短剧Agent", regression_source)
-        self.assertIn("上传剧本", regression_source)
-        self.assertIn("AI生成剧本", regression_source)
-        self.assertIn("自主输入", regression_source)
+        self.assertIn("从一个项目开始，往下推进到小说、资产和视频。", regression_source)
+        self.assertIn("新建项目", regression_source)
+        self.assertIn("导入已有文本", regression_source)
+        self.assertIn("用 AI 生成底稿", regression_source)
         self.assertIn("先把项目核心设定立住", regression_source)
         self.assertIn(".project-home-card", regression_source)
+        self.assertNotIn("短剧Agent", regression_source)
         self.assertNotIn("先把小说的核心设定立住", regression_source)
         self.assertNotIn("小说标题", regression_source)
         self.assertNotIn('"我的项目"', regression_source)

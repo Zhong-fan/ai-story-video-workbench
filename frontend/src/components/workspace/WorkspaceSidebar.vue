@@ -30,9 +30,9 @@ const emit = defineEmits<{
     </div>
 
     <nav class="sidebar-nav" aria-label="Primary">
-      <button class="sidebar-nav__item sidebar-nav__item--main" :class="{ 'sidebar-nav__item--active': currentView === 'studio' }" @click="emit('go', 'studio')">工作台</button>
-      <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'assetLibrary' }" @click="emit('go', 'assetLibrary')">资产</button>
-      <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'projectCreate' }" @click="emit('open-project-create', 'upload')">新建视频项目</button>
+      <button class="sidebar-nav__item sidebar-nav__item--main" :class="{ 'sidebar-nav__item--active': currentView === 'studio' }" @click="emit('go', 'studio')">项目</button>
+      <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'projectCreate' }" @click="emit('open-project-create', 'manual')">新建项目</button>
+      <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'assetLibrary' }" @click="emit('go', 'assetLibrary')">资产库</button>
       <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'trash' }" @click="emit('go', 'trash')">回收站</button>
     </nav>
 

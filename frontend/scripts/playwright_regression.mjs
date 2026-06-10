@@ -76,10 +76,10 @@ async function testMobileLayout(page) {
 }
 
 async function createProject(page, title) {
-  await page.getByRole("heading", { name: "短剧Agent" }).waitFor();
-  await buttonByText(page, "上传剧本").waitFor();
-  await buttonByText(page, "AI生成剧本").waitFor();
-  await buttonByText(page, "自主输入").click();
+  await page.getByRole("heading", { name: "从一个项目开始，往下推进到小说、资产和视频。" }).waitFor();
+  await buttonByText(page, "导入已有文本").waitFor();
+  await buttonByText(page, "用 AI 生成底稿").waitFor();
+  await buttonByText(page, "新建项目").click();
   await page.getByRole("heading", { name: "先把项目核心设定立住" }).waitFor();
   await page.getByRole("textbox", { name: "自主输入" }).fill(title);
   await buttonByText(page, "下一步").click();
@@ -109,7 +109,7 @@ async function testProjectCreateDeleteRestore(page) {
   await page.locator(".memory-card").filter({ hasText: projectTitle }).first().getByRole("button", { name: "恢复" }).click();
   await page.locator(".empty-text").filter({ hasText: "回收站目前是空的" }).waitFor();
 
-  await buttonByText(page, "短剧Agent").click();
+  await buttonByText(page, "项目").click();
   await buttonByText(page, projectTitle).waitFor();
 }
 

@@ -2,15 +2,12 @@
 import { computed } from "vue";
 import type { Project } from "../../types";
 
-type AgentKey = "shortDrama" | "novel" | "anime";
 type CreationMode = "upload" | "ai" | "manual";
-type WorkflowCard = {
-  agent: AgentKey;
-  mode: CreationMode;
+
+type PipelineStep = {
   title: string;
   description: string;
-  chips: string[];
-  variant: "upload" | "ai" | "manual";
+  meta: string;
 };
 
 const props = defineProps<{
@@ -24,41 +21,38 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "update:workspace-search", value: string): void;
-  (e: "start-create", value: { agent: AgentKey; mode: CreationMode }): void;
+  (e: "start-create", mode: CreationMode): void;
   (e: "open-project", projectId: number): void;
   (e: "delete-project", projectId: number): void;
   (e: "previous-page"): void;
   (e: "next-page"): void;
 }>();
 
-const workflowCards: WorkflowCard[] = [
+const pipelineSteps: PipelineStep[] = [
   {
-    agent: "shortDrama",
-    mode: "upload",
-    variant: "upload",
-    title: "视频创作",
-    description: "从剧本或梗概开始，整理为分镜、角色图、首帧和视频任务。",
-    chips: ["剧本导入", "分镜", "视频任务"],
+    title: "项目",
+    description: "导入小说、剧本或从一句话简报开始，先建立统一项目。",
+    meta: "入口",
   },
   {
-    agent: "novel",
-    mode: "manual",
-    variant: "manual",
-    title: "小说创作",
-    description: "先建立世界观、人物关系和写作规则，再进入大纲与正文生成。",
-    chips: ["世界观", "章节大纲", "正文草稿"],
+    title: "设定",
+    description: "整理世界观、人物、参考边界和视觉规则，形成可复用资产底座。",
+    meta: "资产前置",
   },
   {
-    agent: "anime",
-    mode: "manual",
-    variant: "ai",
-    title: "动画资产",
-    description: "先锁定角色、场景、视觉风格和资产约束，再服务分镜与视频。",
-    chips: ["角色立绘", "场景资产", "视觉约束"],
+    title: "小说 / 剧本",
+    description: "生成大纲、章节正文或短剧文本，所有内容都回到同一个项目里。",
+    meta: "文本生产",
+  },
+  {
+    title: "分镜 / 视频",
+    description: "把文本拆成镜头，补角色图、首帧、配音和视频任务。",
+    meta: "制作",
   },
 ];
 
-const emptyText = computed(() => "还没有项目。先选择上方一个创作入口，建立视频、小说或动画资产项目。");
+const projectCountText = computed(() => `${props.projects.length} 个当前页项目`);
+const emptyText = computed(() => "还没有项目。先从一个项目开始，后续小说、资产和视频都会挂在这个项目下面。");
 
 function formatUpdatedAt(value: string) {
   if (!value) return "未记录";
@@ -79,38 +73,40 @@ function formatProjectCode(value: number) {
 </script>
 
 <template>
-  <div class="workspace-home">
-    <section class="agent-home-hero panel panel--paper">
-      <div class="agent-home-hero__title">
-        <p class="panel-heading__kicker">创作入口</p>
-        <h2>先选你现在要完成的事</h2>
-        <p>不要先理解 Agent。直接选择视频、小说或动画资产入口，项目创建后再进入对应生产流程。</p>
+  <div class="workspace-home workspace-home--pipeline">
+    <section class="studio-hero panel panel--paper">
+      <div class="studio-hero__copy">
+        <p class="panel-heading__kicker">项目制创作台</p>
+        <h2>从一个项目开始，往下推进到小说、资产和视频。</h2>
+        <p>
+          不再让你先选“视频 / 小说 / 动画资产”。这些不是三个互相独立的产品，
+          而是同一条创作流水线里的不同阶段。
+        </p>
       </div>
+      <div class="studio-hero__actions">
+        <button class="primary-button" type="button" :disabled="loading" @click="emit('start-create', 'manual')">新建项目</button>
+        <button class="ghost-button" type="button" :disabled="loading" @click="emit('start-create', 'upload')">导入已有文本</button>
+        <button class="ghost-button" type="button" :disabled="loading" @click="emit('start-create', 'ai')">用 AI 生成底稿</button>
+      </div>
+    </section>
 
-      <div class="script-entry-grid" aria-label="创作入口">
-        <button
-          v-for="entry in workflowCards"
-          :key="entry.title"
-          class="script-entry-card"
-          :class="`script-entry-card--${entry.variant}`"
-          type="button"
-          :disabled="loading"
-          @click="emit('start-create', { agent: entry.agent, mode: entry.mode })"
-        >
-          <strong>{{ entry.title }}</strong>
-          <span>{{ entry.description }}</span>
-          <span class="script-entry-card__chips">
-            <em v-for="chip in entry.chips" :key="chip">{{ chip }}</em>
-          </span>
-        </button>
-      </div>
+    <section class="pipeline-strip panel" aria-label="制作流水线">
+      <article v-for="(step, index) in pipelineSteps" :key="step.title" class="pipeline-card">
+        <span class="pipeline-card__index">{{ index + 1 }}</span>
+        <div>
+          <p>{{ step.meta }}</p>
+          <h3>{{ step.title }}</h3>
+          <span>{{ step.description }}</span>
+        </div>
+      </article>
     </section>
 
     <section class="project-shelf panel">
       <div class="project-shelf__head">
         <div>
           <p class="panel-heading__kicker">我的项目</p>
-          <h2>最近创作</h2>
+          <h2>继续制作</h2>
+          <p class="project-shelf__summary">{{ projectCountText }}</p>
         </div>
         <div class="project-shelf__tools">
           <label class="field project-shelf__search">
@@ -122,7 +118,6 @@ function formatProjectCode(value: number) {
               @input="emit('update:workspace-search', ($event.target as HTMLInputElement).value)"
             />
           </label>
-          <button class="primary-button primary-button--compact" type="button" :disabled="loading" @click="emit('start-create', { agent: 'shortDrama', mode: 'upload' })">新建视频项目</button>
         </div>
       </div>
 
