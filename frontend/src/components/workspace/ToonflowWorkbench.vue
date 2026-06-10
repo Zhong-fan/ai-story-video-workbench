@@ -4,6 +4,11 @@ import type { LongformState, Project, ProjectCreateDraft, ProjectDetailResponse,
 
 type CreationMode = "upload" | "ai" | "manual";
 type WorkbenchModule = "projects" | "script" | "assets" | "production" | "settings" | "trash";
+type RailItem = {
+  module: WorkbenchModule;
+  label: string;
+  paths: string[];
+};
 
 const props = defineProps<{
   currentView: string;
@@ -45,6 +50,60 @@ const moduleLabels: Record<WorkbenchModule, string> = {
   settings: "设置",
   trash: "回收站",
 };
+const railItems: RailItem[] = [
+  {
+    module: "projects",
+    label: "项目",
+    paths: [
+      "M6 12.5A2.5 2.5 0 0 1 8.5 10H15l2 3h8.5A2.5 2.5 0 0 1 28 15.5v8A2.5 2.5 0 0 1 25.5 26h-17A2.5 2.5 0 0 1 6 23.5v-11Z",
+      "M10 18h14",
+    ],
+  },
+  {
+    module: "script",
+    label: "编剧",
+    paths: [
+      "M9 7h10l4 4v14H9V7Z",
+      "M19 7v5h5",
+      "M12 16h9M12 20h7",
+    ],
+  },
+  {
+    module: "assets",
+    label: "资产",
+    paths: [
+      "M7 9h18v17H7V9Z",
+      "m9 23 5.2-6 3.8 4.2 2.4-2.7L25 23",
+      "M20.5 13.5h.01",
+    ],
+  },
+  {
+    module: "production",
+    label: "出片",
+    paths: [
+      "M8 8h18v18H8V8Z",
+      "m14 13 7 4-7 4v-8Z",
+    ],
+  },
+  {
+    module: "settings",
+    label: "设置",
+    paths: [
+      "M9 11h14M9 17h14M9 23h14",
+      "M13 9v4M20 15v4M16 21v4",
+    ],
+  },
+  {
+    module: "trash",
+    label: "回收站",
+    paths: [
+      "M10 12h14",
+      "M13 12V9h8v3",
+      "M12 15l1 11h8l1-11",
+      "M16 17v6M19 17v6",
+    ],
+  },
+];
 
 const visibleProjects = computed(() => {
   const keyword = props.workspaceSearch.trim().toLowerCase();
@@ -152,13 +211,35 @@ function itemCode(item: TrashItem) {
   <div class="toon-shell">
     <aside class="toon-rail" aria-label="ToonFlow style navigation">
       <div class="toon-rail__brand" aria-label="ChenFlow">CF</div>
-      <button type="button" :class="{ active: activeModule === 'projects' }" :aria-current="activeModule === 'projects' ? 'page' : undefined" aria-label="项目" title="项目" @click="selectModule('projects')">□</button>
-      <button type="button" :class="{ active: activeModule === 'script' }" :aria-current="activeModule === 'script' ? 'page' : undefined" aria-label="编剧" title="编剧" @click="selectModule('script')">文</button>
-      <button type="button" :class="{ active: activeModule === 'assets' }" :aria-current="activeModule === 'assets' ? 'page' : undefined" aria-label="资产" title="资产" @click="selectModule('assets')">图</button>
-      <button type="button" :class="{ active: activeModule === 'production' }" :aria-current="activeModule === 'production' ? 'page' : undefined" aria-label="出片" title="出片" @click="selectModule('production')">▶</button>
+      <button
+        v-for="item in railItems.slice(0, 4)"
+        :key="item.module"
+        type="button"
+        :class="{ active: activeModule === item.module }"
+        :aria-current="activeModule === item.module ? 'page' : undefined"
+        :aria-label="item.label"
+        :title="item.label"
+        @click="selectModule(item.module)"
+      >
+        <svg aria-hidden="true" viewBox="0 0 32 32">
+          <path v-for="path in item.paths" :key="path" :d="path" />
+        </svg>
+      </button>
       <span></span>
-      <button type="button" :class="{ active: activeModule === 'settings' }" :aria-current="activeModule === 'settings' ? 'page' : undefined" aria-label="设置" title="设置" @click="selectModule('settings')">⚙</button>
-      <button type="button" :class="{ active: activeModule === 'trash' }" :aria-current="activeModule === 'trash' ? 'page' : undefined" aria-label="回收站" title="回收站" @click="selectModule('trash')">⌫</button>
+      <button
+        v-for="item in railItems.slice(4)"
+        :key="item.module"
+        type="button"
+        :class="{ active: activeModule === item.module }"
+        :aria-current="activeModule === item.module ? 'page' : undefined"
+        :aria-label="item.label"
+        :title="item.label"
+        @click="selectModule(item.module)"
+      >
+        <svg aria-hidden="true" viewBox="0 0 32 32">
+          <path v-for="path in item.paths" :key="path" :d="path" />
+        </svg>
+      </button>
     </aside>
 
     <main class="toon-stage">
@@ -440,6 +521,17 @@ function itemCode(item: TrashItem) {
   transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
+.toon-rail svg {
+  width: 23px;
+  height: 23px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .toon-rail button.active,
 .toon-topbar nav button.active {
   color: white;
@@ -453,6 +545,11 @@ function itemCode(item: TrashItem) {
 .toon-project-card footer button:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.86);
+}
+
+.toon-rail button.active:hover,
+.toon-topbar nav button.active:hover {
+  background: color-mix(in oklab, var(--toon-ink) 92%, var(--rose-strong));
 }
 
 .toon-rail button:focus-visible,
