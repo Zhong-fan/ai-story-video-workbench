@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import type { LongformState, MediaAsset, Project, ProjectCreateDraft, ProjectDetailResponse, TrashItem, VideoTask } from "../../types";
+import { computed, reactive, ref, watch } from "vue";
+import type { LongformState, MediaAsset, Project, ProjectCreateDraft, ProjectDetailResponse, ProjectPayload, TrashItem, VideoTask } from "../../types";
 
 type CreationMode = "upload" | "ai" | "manual";
 type WorkbenchModule = "projects" | "script" | "assets" | "production" | "settings" | "trash";
@@ -37,6 +37,7 @@ const emit = defineEmits<{
   (e: "delete-media-asset", assetId: number): void;
   (e: "create-video-task", storyboardId: number): void;
   (e: "delete-video-task", taskId: number): void;
+  (e: "save-project-settings", payload: ProjectPayload): void;
   (e: "update:workspace-search", value: string): void;
   (e: "update:title", value: string): void;
   (e: "update:genre", value: string): void;
@@ -46,6 +47,12 @@ const emit = defineEmits<{
 }>();
 
 const activeModule = ref<WorkbenchModule>("projects");
+const settingsDraft = reactive({
+  title: "",
+  genre: "",
+  world_brief: "",
+  writing_rules: "",
+});
 const moduleLabels: Record<WorkbenchModule, string> = {
   projects: "项目",
   script: "编剧",
@@ -192,6 +199,53 @@ watch(
   },
   { immediate: true },
 );
+
+watch(
+  selectedProject,
+  (project) => {
+    settingsDraft.title = project?.title ?? "";
+    settingsDraft.genre = project?.genre ?? "";
+    settingsDraft.world_brief = project?.world_brief ?? "";
+    settingsDraft.writing_rules = project?.writing_rules ?? "";
+  },
+  { immediate: true },
+);
+
+function projectSettingsPayload() {
+  const project = selectedProject.value;
+  if (!project) return null;
+  return {
+    title: settingsDraft.title.trim() || project.title,
+    genre: settingsDraft.genre.trim() || project.genre,
+    reference_work: project.reference_work,
+    reference_work_creator: project.reference_work_creator,
+    reference_work_medium: project.reference_work_medium,
+    reference_work_synopsis: project.reference_work_synopsis,
+    reference_work_style_traits: [...project.reference_work_style_traits],
+    reference_work_world_traits: [...project.reference_work_world_traits],
+    reference_work_narrative_constraints: [...project.reference_work_narrative_constraints],
+    reference_work_confidence_note: project.reference_work_confidence_note,
+    reference_inheritance_mode: project.reference_inheritance_mode,
+    reference_rewrite_start: project.reference_rewrite_start,
+    reference_authorized_changes: project.reference_authorized_changes,
+    story_boundary_text: project.story_boundary_text,
+    visual_style_locked: project.visual_style_locked,
+    visual_style_medium: project.visual_style_medium,
+    visual_style_artists: [...project.visual_style_artists],
+    visual_style_positive: [...project.visual_style_positive],
+    visual_style_negative: [...project.visual_style_negative],
+    visual_style_notes: project.visual_style_notes,
+    world_brief: settingsDraft.world_brief.trim(),
+    writing_rules: settingsDraft.writing_rules.trim(),
+    style_profile: project.style_profile,
+  };
+}
+
+function saveProjectSettings() {
+  const payload = projectSettingsPayload();
+  if (!payload) return;
+  emit("save-project-settings", payload);
+}
 
 function formatDateTime(value: string | undefined) {
   if (!value) return "未记录";
@@ -499,12 +553,34 @@ function itemCode(item: TrashItem) {
             </article>
           </template>
 
-          <template v-else>
-            <article class="toon-node toon-node--document">
-              <p>项目设置</p>
-              <h3>{{ selectedProject?.title || "未选择项目" }}</h3>
-              <span>这里保留项目级信息。更细的旧表单不会再作为主界面出现。</span>
+          <template v-else-if="activeModule === 'settings'">
+            <article v-if="!selectedProject" class="toon-node toon-node--empty">
+              <h3>先打开一个项目</h3>
+              <span>选择项目后才能保存项目级设定。</span>
             </article>
+            <form v-else class="toon-settings toon-node toon-node--document" @submit.prevent="saveProjectSettings()">
+              <p>项目设置</p>
+              <h3>{{ selectedProject.title }}</h3>
+              <label>
+                <span>项目标题</span>
+                <input v-model="settingsDraft.title" maxlength="120" autocomplete="off" />
+              </label>
+              <label>
+                <span>题材 / 风格</span>
+                <input v-model="settingsDraft.genre" maxlength="80" autocomplete="off" />
+              </label>
+              <label>
+                <span>故事资料</span>
+                <textarea v-model="settingsDraft.world_brief" rows="6" />
+              </label>
+              <label>
+                <span>改编要求</span>
+                <textarea v-model="settingsDraft.writing_rules" rows="5" />
+              </label>
+              <footer>
+                <button type="submit" :disabled="loading">{{ loading ? "保存中..." : "保存设置" }}</button>
+              </footer>
+            </form>
           </template>
         </div>
 
@@ -600,7 +676,8 @@ function itemCode(item: TrashItem) {
 .toon-button:hover,
 .toon-project-card footer button:hover,
 .toon-asset-card__actions button:hover,
-.toon-track button:hover {
+.toon-track button:hover,
+.toon-settings button:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.86);
 }
@@ -618,8 +695,11 @@ function itemCode(item: TrashItem) {
 .toon-project-card footer button:focus-visible,
 .toon-asset-card__actions button:focus-visible,
 .toon-track button:focus-visible,
+.toon-settings button:focus-visible,
 .toon-create input:focus-visible,
 .toon-create textarea:focus-visible,
+.toon-settings input:focus-visible,
+.toon-settings textarea:focus-visible,
 .toon-select select:focus-visible,
 .toon-toolbar input:focus-visible {
   outline: 3px solid color-mix(in oklab, var(--rose-strong) 28%, white);
@@ -681,6 +761,7 @@ function itemCode(item: TrashItem) {
 .toon-project-card footer button,
 .toon-asset-card__actions button,
 .toon-track button,
+.toon-settings button,
 .toon-batch button {
   min-height: 42px;
   border: 1px solid rgba(20, 16, 20, 0.1);
@@ -825,6 +906,8 @@ function itemCode(item: TrashItem) {
 
 .toon-create input,
 .toon-create textarea,
+.toon-settings input,
+.toon-settings textarea,
 .toon-select select {
   width: 100%;
   border: 1px solid rgba(20, 16, 20, 0.1);
@@ -837,6 +920,31 @@ function itemCode(item: TrashItem) {
 .toon-create textarea {
   resize: vertical;
   line-height: 1.65;
+}
+
+.toon-settings {
+  width: min(720px, 100%);
+}
+
+.toon-settings label {
+  display: grid;
+  gap: 8px;
+}
+
+.toon-settings textarea {
+  resize: vertical;
+  line-height: 1.65;
+}
+
+.toon-settings footer {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.toon-settings button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+  transform: none;
 }
 
 .toon-workbench {
@@ -1152,7 +1260,8 @@ function itemCode(item: TrashItem) {
 
   .toon-project-card footer button,
   .toon-asset-card__actions button,
-  .toon-track button {
+  .toon-track button,
+  .toon-settings button {
     width: 100%;
   }
 

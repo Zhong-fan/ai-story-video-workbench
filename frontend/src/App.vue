@@ -310,6 +310,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
         @delete-media-asset="store.deleteMediaAsset"
         @create-video-task="store.createVideoTask"
         @delete-video-task="store.deleteVideoTask"
+        @save-project-settings="store.updateProject"
         @update:title="projectForm.title = $event"
         @update:genre="projectForm.genre = $event"
         @update:world-brief="projectForm.world_brief = $event"
