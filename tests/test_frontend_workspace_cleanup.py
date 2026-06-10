@@ -111,6 +111,12 @@ class FrontendWorkspaceCleanupTests(unittest.TestCase):
         self.assertIn("AI 生成小说", PROJECT_CREATE_WIZARD.read_text(encoding="utf-8"))
         self.assertIn("角色与场景设定", PROJECT_CREATE_WIZARD.read_text(encoding="utf-8"))
 
+    def test_project_create_is_not_restored_as_startup_view(self) -> None:
+        app_source = APP_VUE.read_text(encoding="utf-8")
+        restorable_block = app_source.split("const restorableViews: ViewKey[] = [", 1)[1].split("];", 1)[0]
+
+        self.assertNotIn('"projectCreate"', restorable_block)
+
     def test_asset_library_is_real_read_only_view_not_disabled_stub(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")
         asset_source = ASSET_LIBRARY_PANEL.read_text(encoding="utf-8")

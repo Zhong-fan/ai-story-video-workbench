@@ -81,7 +81,6 @@ const restorableViews: ViewKey[] = [
   "studio",
   "assetLibrary",
   "trash",
-  "projectCreate",
   "setupStage",
   "novelStage",
   "videoStage",
@@ -545,6 +544,7 @@ function readPersistedView() {
 
 function persistView(view: ViewKey) {
   if (view === "auth" || !hasRestoredViewState.value) return;
+  if (!restorableViews.includes(view)) return;
   localStorage.setItem(persistedViewKey, view);
 }
 
