@@ -431,6 +431,23 @@
   font-size: 0.9rem;
 }
 
+.script-entry-card__chips {
+  display: flex !important;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.script-entry-card__chips em {
+  padding: 0.22rem 0.48rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: color-mix(in oklab, var(--rose-strong) 46%, var(--ink-soft));
+  font-size: 0.75rem;
+  font-style: normal;
+  line-height: 1.2;
+}
+
 .script-entry-card--upload {
   border-left: 4px solid #f06f9b;
 }

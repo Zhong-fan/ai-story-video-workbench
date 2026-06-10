@@ -502,7 +502,15 @@ function readPersistedStudioAgent() {
   return value === "novel" || value === "anime" || value === "shortDrama" ? value : "shortDrama";
 }
 
-function startCreateFromStudio(mode: "upload" | "ai" | "manual") {
+function startCreateFromStudio(value: { agent: "shortDrama" | "novel" | "anime"; mode: "upload" | "ai" | "manual" }) {
+  activeStudioAgent.value = value.agent;
+  localStorage.setItem("chenflow_active_studio_agent", value.agent);
+  openProjectCreate(value.mode);
+}
+
+function openSidebarProjectCreate(mode: "upload" | "ai" | "manual") {
+  activeStudioAgent.value = "shortDrama";
+  localStorage.setItem("chenflow_active_studio_agent", "shortDrama");
   openProjectCreate(mode);
 }
 
@@ -2070,13 +2078,11 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
         </button>
         <WorkspaceSidebar
           :current-view="currentView"
-          :active-agent="activeStudioAgent"
           :is-authenticated="isAuthenticated"
           :username="currentUser?.username"
           :mobile-open="mobileSidebarOpen"
           @go="goToView"
-          @select-agent="selectStudioAgent"
-          @open-project-create="openProjectCreate()"
+          @open-project-create="openSidebarProjectCreate($event)"
           @login="openAuthPanel('login', 'studio')"
           @register="openAuthPanel('register', 'studio')"
           @logout="store.logout()"
@@ -2085,7 +2091,6 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
         <main class="main-shell">
           <template v-if="currentView === 'studio'">
             <StudioWorkspacePanel
-              :active-agent="activeStudioAgent"
               :workspace-search="workspaceSearch"
               :projects="pagedWorkspaceProjects"
               :workspace-page="workspacePage"
@@ -2121,6 +2126,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
             <WorkspaceProjectCreatePanel
               v-if="isAuthenticated"
               :loading="loading"
+              :active-agent="activeStudioAgent"
               :creation-mode="projectCreateMode"
               :step="projectCreateStep"
               :form="projectForm"

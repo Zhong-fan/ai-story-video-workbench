@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import type { ViewKey } from "../../types";
 
-type AgentKey = "shortDrama" | "novel" | "anime";
+type CreationMode = "upload" | "ai" | "manual";
 
 defineProps<{
   currentView: ViewKey;
-  activeAgent: AgentKey;
   isAuthenticated: boolean;
   username?: string | null;
   mobileOpen: boolean;
@@ -13,8 +12,7 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: "go", view: ViewKey): void;
-  (e: "select-agent", agent: AgentKey): void;
-  (e: "open-project-create"): void;
+  (e: "open-project-create", mode: CreationMode): void;
   (e: "login"): void;
   (e: "register"): void;
   (e: "logout"): void;
@@ -32,11 +30,9 @@ const emit = defineEmits<{
     </div>
 
     <nav class="sidebar-nav" aria-label="Primary">
-      <button class="sidebar-nav__item sidebar-nav__item--main" :class="{ 'sidebar-nav__item--active': currentView === 'studio' && activeAgent === 'shortDrama' }" @click="emit('select-agent', 'shortDrama')">短剧Agent</button>
-      <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'studio' && activeAgent === 'novel' }" @click="emit('select-agent', 'novel')">小说Agent</button>
-      <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'studio' && activeAgent === 'anime' }" @click="emit('select-agent', 'anime')">动漫Agent</button>
+      <button class="sidebar-nav__item sidebar-nav__item--main" :class="{ 'sidebar-nav__item--active': currentView === 'studio' }" @click="emit('go', 'studio')">工作台</button>
       <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'assetLibrary' }" @click="emit('go', 'assetLibrary')">资产</button>
-      <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'projectCreate' }" @click="emit('open-project-create')">新建项目</button>
+      <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'projectCreate' }" @click="emit('open-project-create', 'upload')">新建视频项目</button>
       <button class="sidebar-nav__item" :class="{ 'sidebar-nav__item--active': currentView === 'trash' }" @click="emit('go', 'trash')">回收站</button>
     </nav>
 

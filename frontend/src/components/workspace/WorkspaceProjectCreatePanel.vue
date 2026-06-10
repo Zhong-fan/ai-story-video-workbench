@@ -8,6 +8,7 @@ type GenreOptionCard = { value: string; label: string; description: string };
 type SuggestionKind = "world_brief" | "writing_rules";
 type WizardStep = 1 | 2 | 3;
 type CreationMode = "upload" | "ai" | "manual";
+type AgentKey = "shortDrama" | "novel" | "anime";
 
 const emit = defineEmits<{
   (e: "update:step", value: WizardStep): void;
@@ -34,6 +35,7 @@ const emit = defineEmits<{
 
 const props = defineProps<{
   loading: boolean;
+  activeAgent: AgentKey;
   creationMode: CreationMode;
   step: WizardStep;
   form: ProjectCreateDraft;
@@ -51,8 +53,8 @@ const props = defineProps<{
   writingSuggestions: string[];
 }>();
 
-const createHeader = computed(() => {
-  const copies: Record<CreationMode, { kicker: string; title: string; description: string }> = {
+const createHeaderCopies: Record<AgentKey, Record<CreationMode, { kicker: string; title: string; description: string }>> = {
+  shortDrama: {
     upload: {
       kicker: "上传剧本建项目",
       title: "把已有剧本整理成可生产项目",
@@ -68,9 +70,44 @@ const createHeader = computed(() => {
       title: "先把项目核心设定立住",
       description: "项目层只放长期有效的信息：题材、世界设定、写作偏好和文风。具体剧情前提留到章节里写。",
     },
-  };
-  return copies[props.creationMode];
-});
+  },
+  novel: {
+    upload: {
+      kicker: "小说导入",
+      title: "把已有正文整理成可续写项目",
+      description: "先导入正文、章节梗概或人物关系；创建后继续生成大纲、正文草稿和定稿章节。",
+    },
+    ai: {
+      kicker: "AI 生成小说",
+      title: "先定义长篇方向，再生成项目底稿",
+      description: "用主角、核心冲突、读者定位和文风搭好小说项目底座。",
+    },
+    manual: {
+      kicker: "手动建书",
+      title: "先把小说核心设定立住",
+      description: "项目层只放长期有效的信息：题材、世界观、人物关系和写作规则。",
+    },
+  },
+  anime: {
+    upload: {
+      kicker: "上传参考素材",
+      title: "把已有设定整理成动画项目",
+      description: "导入角色设定、场景说明、分镜草稿或素材清单，再进入资产生产。",
+    },
+    ai: {
+      kicker: "分镜资产企划",
+      title: "先生成动画项目底稿",
+      description: "用简报生成角色、场景、视觉风格和分镜生产方向。",
+    },
+    manual: {
+      kicker: "动画项目设定",
+      title: "先建立角色、场景和视觉约束",
+      description: "从视觉风格、角色资产和场景规则开始，后续再进入分镜和视频生成。",
+    },
+  },
+};
+
+const createHeader = computed(() => createHeaderCopies[props.activeAgent][props.creationMode]);
 </script>
 
 <template>
@@ -85,6 +122,7 @@ const createHeader = computed(() => {
       </div>
       <ProjectCreateWizard
         :loading="loading"
+        :active-agent="activeAgent"
         :creation-mode="creationMode"
         :step="step"
         :form="form"

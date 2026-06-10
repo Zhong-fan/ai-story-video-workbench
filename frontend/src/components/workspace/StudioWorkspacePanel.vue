@@ -4,9 +4,16 @@ import type { Project } from "../../types";
 
 type AgentKey = "shortDrama" | "novel" | "anime";
 type CreationMode = "upload" | "ai" | "manual";
+type WorkflowCard = {
+  agent: AgentKey;
+  mode: CreationMode;
+  title: string;
+  description: string;
+  chips: string[];
+  variant: "upload" | "ai" | "manual";
+};
 
 const props = defineProps<{
-  activeAgent: AgentKey;
   workspaceSearch: string;
   projects: Project[];
   workspacePage: number;
@@ -17,32 +24,41 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "update:workspace-search", value: string): void;
-  (e: "start-create", mode: CreationMode): void;
+  (e: "start-create", value: { agent: AgentKey; mode: CreationMode }): void;
   (e: "open-project", projectId: number): void;
   (e: "delete-project", projectId: number): void;
   (e: "previous-page"): void;
   (e: "next-page"): void;
 }>();
 
-const agentProfiles: Record<AgentKey, { title: string; subtitle: string; continuity: string[] }> = {
-  shortDrama: {
-    title: "短剧Agent",
-    subtitle: "围绕即梦 jimeng_v30 做连续短剧生产：剧本、分镜、角色图、背景图、首尾帧按镜头绑定。",
-    continuity: ["jimeng_v30", "首尾帧图生视频", "上一段尾帧继承"],
+const workflowCards: WorkflowCard[] = [
+  {
+    agent: "shortDrama",
+    mode: "upload",
+    variant: "upload",
+    title: "视频创作",
+    description: "从剧本或梗概开始，整理为分镜、角色图、首帧和视频任务。",
+    chips: ["剧本导入", "分镜", "视频任务"],
   },
-  novel: {
-    title: "小说Agent",
-    subtitle: "从设定、人物、章节大纲到正文草稿，保持人物关系和剧情因果连续。",
-    continuity: ["章节大纲", "人物状态", "长文草稿"],
+  {
+    agent: "novel",
+    mode: "manual",
+    variant: "manual",
+    title: "小说创作",
+    description: "先建立世界观、人物关系和写作规则，再进入大纲与正文生成。",
+    chips: ["世界观", "章节大纲", "正文草稿"],
   },
-  anime: {
-    title: "动漫Agent",
-    subtitle: "面向角色立绘、场景图和分镜画面组织，先稳定视觉资产，再进入动画化生产。",
-    continuity: ["角色立绘", "场景资产", "分镜画面"],
+  {
+    agent: "anime",
+    mode: "manual",
+    variant: "ai",
+    title: "动画资产",
+    description: "先锁定角色、场景、视觉风格和资产约束，再服务分镜与视频。",
+    chips: ["角色立绘", "场景资产", "视觉约束"],
   },
-};
+];
 
-const activeProfile = computed(() => agentProfiles[props.activeAgent]);
+const emptyText = computed(() => "还没有项目。先选择上方一个创作入口，建立视频、小说或动画资产项目。");
 
 function formatUpdatedAt(value: string) {
   if (!value) return "未记录";
@@ -66,26 +82,26 @@ function formatProjectCode(value: number) {
   <div class="workspace-home">
     <section class="agent-home-hero panel panel--paper">
       <div class="agent-home-hero__title">
-        <p class="panel-heading__kicker">当前创作类型</p>
-        <h2>{{ activeProfile.title }}</h2>
-        <p>{{ activeProfile.subtitle }}</p>
-        <div class="agent-home-hero__chips">
-          <span v-for="item in activeProfile.continuity" :key="item">{{ item }}</span>
-        </div>
+        <p class="panel-heading__kicker">创作入口</p>
+        <h2>先选你现在要完成的事</h2>
+        <p>不要先理解 Agent。直接选择视频、小说或动画资产入口，项目创建后再进入对应生产流程。</p>
       </div>
 
       <div class="script-entry-grid" aria-label="创作入口">
-        <button class="script-entry-card script-entry-card--upload" type="button" :disabled="loading" @click="emit('start-create', 'upload')">
-          <strong>上传剧本</strong>
-          <span>导入已有剧本，拆成章节、分镜和镜头任务。</span>
-        </button>
-        <button class="script-entry-card script-entry-card--ai" type="button" :disabled="loading" @click="emit('start-create', 'ai')">
-          <strong>AI生成剧本</strong>
-          <span>从题材、人设和目标风格生成短剧初稿。</span>
-        </button>
-        <button class="script-entry-card script-entry-card--manual" type="button" :disabled="loading" @click="emit('start-create', 'manual')">
-          <strong>自主输入</strong>
-          <span>直接输入故事梗概、分集大纲或镜头说明。</span>
+        <button
+          v-for="entry in workflowCards"
+          :key="entry.title"
+          class="script-entry-card"
+          :class="`script-entry-card--${entry.variant}`"
+          type="button"
+          :disabled="loading"
+          @click="emit('start-create', { agent: entry.agent, mode: entry.mode })"
+        >
+          <strong>{{ entry.title }}</strong>
+          <span>{{ entry.description }}</span>
+          <span class="script-entry-card__chips">
+            <em v-for="chip in entry.chips" :key="chip">{{ chip }}</em>
+          </span>
         </button>
       </div>
     </section>
@@ -106,7 +122,7 @@ function formatProjectCode(value: number) {
               @input="emit('update:workspace-search', ($event.target as HTMLInputElement).value)"
             />
           </label>
-          <button class="primary-button primary-button--compact" type="button" :disabled="loading" @click="emit('start-create', 'manual')">新建项目</button>
+          <button class="primary-button primary-button--compact" type="button" :disabled="loading" @click="emit('start-create', { agent: 'shortDrama', mode: 'upload' })">新建视频项目</button>
         </div>
       </div>
 
@@ -125,7 +141,7 @@ function formatProjectCode(value: number) {
           <button class="ghost-button ghost-button--small project-home-card__delete" type="button" :disabled="loading" @click="emit('delete-project', project.id)">删除</button>
         </article>
       </div>
-      <p v-else class="empty-text">还没有项目。可以先上传剧本、让 AI 生成剧本，或者进入自主输入模式创建第一个项目。</p>
+      <p v-else class="empty-text">{{ emptyText }}</p>
 
       <div class="pagination">
         <button class="ghost-button ghost-button--small" type="button" :disabled="loading || workspacePage <= 1" @click="emit('previous-page')">
