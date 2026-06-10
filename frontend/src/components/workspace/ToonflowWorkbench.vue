@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import type { LongformState, Project, ProjectCreateDraft, ProjectDetailResponse, TrashItem } from "../../types";
 
 type CreationMode = "upload" | "ai" | "manual";
@@ -37,6 +37,14 @@ const emit = defineEmits<{
 }>();
 
 const activeModule = ref<WorkbenchModule>("projects");
+const moduleLabels: Record<WorkbenchModule, string> = {
+  projects: "项目",
+  script: "编剧",
+  assets: "资产",
+  production: "出片",
+  settings: "设置",
+  trash: "回收站",
+};
 
 const visibleProjects = computed(() => {
   const keyword = props.workspaceSearch.trim().toLowerCase();
@@ -46,7 +54,13 @@ const visibleProjects = computed(() => {
   );
 });
 
-const selectedProject = computed(() => props.activeProject?.project ?? props.projects[0] ?? null);
+const selectedProject = computed(() => props.activeProject?.project ?? null);
+const workspaceTitle = computed(() => {
+  if (props.currentView === "projectCreate") return "新建项目";
+  if (activeModule.value === "projects") return "我的项目";
+  if (activeModule.value === "trash") return "回收站";
+  return selectedProject.value?.title || "选择一个项目";
+});
 const characterCards = computed(() => props.activeProject?.character_cards ?? []);
 const chapterCount = computed(() => props.activeProject?.project_chapters.length ?? 0);
 const scriptCount = computed(() => props.longformState.draft_versions.length);
@@ -78,9 +92,20 @@ function selectModule(module: WorkbenchModule) {
 }
 
 function openProject(projectId: number) {
+  if (!projectId) return;
   activeModule.value = "script";
   emit("open-project", projectId);
 }
+
+watch(
+  () => props.currentView,
+  (view) => {
+    if (view === "trash") activeModule.value = "trash";
+    else if (view === "assetLibrary") activeModule.value = "assets";
+    else if (view === "projectCreate") activeModule.value = "projects";
+  },
+  { immediate: true },
+);
 
 function formatDateTime(value: string | undefined) {
   if (!value) return "未记录";
@@ -126,36 +151,36 @@ function itemCode(item: TrashItem) {
 <template>
   <div class="toon-shell">
     <aside class="toon-rail" aria-label="ToonFlow style navigation">
-      <div class="toon-rail__brand">CF</div>
-      <button :class="{ active: activeModule === 'projects' }" title="项目" @click="selectModule('projects')">□</button>
-      <button :class="{ active: activeModule === 'script' }" title="编剧" @click="selectModule('script')">文</button>
-      <button :class="{ active: activeModule === 'assets' }" title="资产" @click="selectModule('assets')">图</button>
-      <button :class="{ active: activeModule === 'production' }" title="出片" @click="selectModule('production')">▶</button>
+      <div class="toon-rail__brand" aria-label="ChenFlow">CF</div>
+      <button type="button" :class="{ active: activeModule === 'projects' }" :aria-current="activeModule === 'projects' ? 'page' : undefined" aria-label="项目" title="项目" @click="selectModule('projects')">□</button>
+      <button type="button" :class="{ active: activeModule === 'script' }" :aria-current="activeModule === 'script' ? 'page' : undefined" aria-label="编剧" title="编剧" @click="selectModule('script')">文</button>
+      <button type="button" :class="{ active: activeModule === 'assets' }" :aria-current="activeModule === 'assets' ? 'page' : undefined" aria-label="资产" title="资产" @click="selectModule('assets')">图</button>
+      <button type="button" :class="{ active: activeModule === 'production' }" :aria-current="activeModule === 'production' ? 'page' : undefined" aria-label="出片" title="出片" @click="selectModule('production')">▶</button>
       <span></span>
-      <button :class="{ active: activeModule === 'settings' }" title="设置" @click="selectModule('settings')">⚙</button>
-      <button :class="{ active: activeModule === 'trash' }" title="回收站" @click="selectModule('trash')">⌫</button>
+      <button type="button" :class="{ active: activeModule === 'settings' }" :aria-current="activeModule === 'settings' ? 'page' : undefined" aria-label="设置" title="设置" @click="selectModule('settings')">⚙</button>
+      <button type="button" :class="{ active: activeModule === 'trash' }" :aria-current="activeModule === 'trash' ? 'page' : undefined" aria-label="回收站" title="回收站" @click="selectModule('trash')">⌫</button>
     </aside>
 
     <main class="toon-stage">
       <header class="toon-topbar">
         <div>
           <p>ChenFlow</p>
-          <h1>{{ selectedProject?.title || "我的项目" }}</h1>
+          <h1>{{ workspaceTitle }}</h1>
         </div>
         <nav aria-label="Project modules">
-          <button :class="{ active: activeModule === 'script' }" @click="selectModule('script')">编剧</button>
-          <button :class="{ active: activeModule === 'assets' }" @click="selectModule('assets')">资产</button>
-          <button :class="{ active: activeModule === 'production' }" @click="selectModule('production')">出片</button>
-          <button :class="{ active: activeModule === 'projects' }" @click="selectModule('projects')">项目</button>
+          <button type="button" :class="{ active: activeModule === 'script' }" :aria-current="activeModule === 'script' ? 'page' : undefined" @click="selectModule('script')">编剧</button>
+          <button type="button" :class="{ active: activeModule === 'assets' }" :aria-current="activeModule === 'assets' ? 'page' : undefined" @click="selectModule('assets')">资产</button>
+          <button type="button" :class="{ active: activeModule === 'production' }" :aria-current="activeModule === 'production' ? 'page' : undefined" @click="selectModule('production')">出片</button>
+          <button type="button" :class="{ active: activeModule === 'projects' }" :aria-current="activeModule === 'projects' ? 'page' : undefined" @click="selectModule('projects')">项目</button>
         </nav>
         <div class="toon-user">
           <template v-if="isAuthenticated">
             <span>{{ username || "已登录" }}</span>
-            <button @click="emit('logout')">退出</button>
+            <button type="button" @click="emit('logout')">退出</button>
           </template>
           <template v-else>
-            <button @click="emit('login')">登录</button>
-            <button class="toon-button toon-button--dark" @click="emit('register')">创建账号</button>
+            <button type="button" @click="emit('login')">登录</button>
+            <button type="button" class="toon-button toon-button--dark" @click="emit('register')">创建账号</button>
           </template>
         </div>
       </header>
@@ -164,8 +189,8 @@ function itemCode(item: TrashItem) {
         <h2>登录后开始项目制创作</h2>
         <p>界面按 Toonflow 的项目工作台组织：先建项目，再在编剧、资产和出片之间切换。</p>
         <div class="toon-actions">
-          <button class="toon-button toon-button--dark" @click="emit('register')">创建账号</button>
-          <button class="toon-button" @click="emit('login')">登录</button>
+          <button type="button" class="toon-button toon-button--dark" @click="emit('register')">创建账号</button>
+          <button type="button" class="toon-button" @click="emit('login')">登录</button>
         </div>
       </section>
 
@@ -178,11 +203,11 @@ function itemCode(item: TrashItem) {
         <form class="toon-create__form" @submit.prevent="emit('submit-create')">
           <label>
             <span>项目标题</span>
-            <input :value="form.title" maxlength="120" placeholder="例如：贪官之女，败家千金" @input="emit('update:title', ($event.target as HTMLInputElement).value)" />
+            <input :value="form.title" maxlength="120" autocomplete="off" placeholder="例如：贪官之女，败家千金" @input="emit('update:title', ($event.target as HTMLInputElement).value)" />
           </label>
           <label>
             <span>题材 / 风格</span>
-            <input :value="form.genre" maxlength="80" placeholder="短剧 / 漫剧 / 青春奇幻 / 都市" @input="emit('update:genre', ($event.target as HTMLInputElement).value)" />
+            <input :value="form.genre" maxlength="80" autocomplete="off" placeholder="短剧 / 漫剧 / 青春奇幻 / 都市" @input="emit('update:genre', ($event.target as HTMLInputElement).value)" />
           </label>
           <label>
             <span>原著或故事资料</span>
@@ -193,7 +218,7 @@ function itemCode(item: TrashItem) {
             <textarea :value="form.writing_rules" rows="5" placeholder="例如：更强反转、更短场景、每集结尾留钩子、角色更贴近原创。" @input="emit('update:writing-rules', ($event.target as HTMLTextAreaElement).value)" />
           </label>
           <div class="toon-actions">
-            <button class="toon-button toon-button--dark" :disabled="loading">创建项目</button>
+            <button type="submit" class="toon-button toon-button--dark" :disabled="loading">{{ loading ? "创建中..." : "创建项目" }}</button>
             <button class="toon-button" type="button" @click="emit('go', 'studio')">取消</button>
           </div>
         </form>
@@ -206,12 +231,15 @@ function itemCode(item: TrashItem) {
             <h2>我的项目</h2>
           </div>
           <div class="toon-toolbar">
-            <input :value="workspaceSearch" placeholder="搜索项目..." @input="emit('update:workspace-search', ($event.target as HTMLInputElement).value)" />
-            <button class="toon-button toon-button--dark" @click="emit('open-project-create', 'manual')">+ 新建项目</button>
+            <label class="toon-search">
+              <span>搜索项目</span>
+              <input :value="workspaceSearch" placeholder="搜索项目..." @input="emit('update:workspace-search', ($event.target as HTMLInputElement).value)" />
+            </label>
+            <button type="button" class="toon-button toon-button--dark" @click="emit('open-project-create', 'manual')">+ 新建项目</button>
           </div>
         </div>
         <div v-if="visibleProjects.length" class="toon-project-grid">
-          <article v-for="project in visibleProjects" :key="project.id" class="toon-project-card" @click="openProject(project.id)">
+          <article v-for="project in visibleProjects" :key="project.id" class="toon-project-card" tabindex="0" role="button" :aria-label="`打开项目：${project.title}`" @click="openProject(project.id)" @keydown.enter.prevent="openProject(project.id)" @keydown.space.prevent="openProject(project.id)">
             <div>
               <strong>{{ project.title }}</strong>
               <span>{{ project.genre || "未设置风格" }}</span>
@@ -256,18 +284,22 @@ function itemCode(item: TrashItem) {
 
       <section v-else class="toon-workbench">
         <aside class="toon-inspector toon-card">
-          <div class="toon-select">
+          <div v-if="projects.length" class="toon-select">
             <label>当前项目</label>
             <select :value="selectedProject?.id || ''" @change="openProject(Number(($event.target as HTMLSelectElement).value))">
+              <option value="" disabled>选择项目</option>
               <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.title }}</option>
             </select>
           </div>
           <div class="toon-batch">
             <strong>批量生产设置</strong>
-            <button>全选</button>
-            <button>提取资产</button>
-            <button>生成提示词</button>
-            <button class="toon-button--dark">开始生产</button>
+            <p>批量选择、资产提取和生产队列需要接入后端任务后再开放，当前只展示项目状态。</p>
+            <div class="toon-next-actions" aria-label="待接入能力">
+              <span>全选</span>
+              <span>提取资产</span>
+              <span>生成提示词</span>
+              <span>开始生产</span>
+            </div>
           </div>
           <div class="toon-status-row">
             <span>人物 {{ characterCards.length }}</span>
@@ -277,8 +309,13 @@ function itemCode(item: TrashItem) {
           </div>
         </aside>
 
-        <div class="toon-canvas" :class="`toon-canvas--${activeModule}`">
-          <template v-if="activeModule === 'script'">
+        <div class="toon-canvas" :class="`toon-canvas--${activeModule}`" :aria-label="`${moduleLabels[activeModule]}画布`">
+          <article v-if="!selectedProject && activeModule !== 'settings'" class="toon-node toon-node--empty">
+            <h3>先打开一个项目</h3>
+            <span>从左侧或顶部切回“项目”，选择项目后再进入编剧、资产和出片画布。</span>
+          </article>
+
+          <template v-else-if="activeModule === 'script'">
             <article class="toon-node toon-node--document">
               <p>故事骨架</p>
               <h3>{{ selectedProject?.title || "未选择项目" }}</h3>
@@ -299,16 +336,16 @@ function itemCode(item: TrashItem) {
           <template v-else-if="activeModule === 'assets'">
             <article v-for="asset in mediaAssets.slice(0, 12)" :key="asset.id" class="toon-asset-card">
               <div class="toon-asset-card__preview">
-                <img v-if="/^https?:|^data:|\\.(png|jpg|jpeg|webp|gif)$/i.test(asset.uri)" :src="asset.uri" alt="" />
+                <img v-if="/^https?:|^data:|\\.(png|jpg|jpeg|webp|gif)$/i.test(asset.uri)" :src="asset.uri" :alt="`${assetKindLabel(asset.asset_type)}素材预览`" loading="lazy" decoding="async" />
                 <span v-else>{{ assetKindLabel(asset.asset_type) }}</span>
               </div>
               <strong>{{ assetKindLabel(asset.asset_type) }} {{ asset.id }}</strong>
               <span class="toon-asset-card__candidate">{{ assetCandidateLabel(asset) }}</span>
               <p>{{ asset.prompt || asset.status || "素材已归档到项目。" }}</p>
-              <div class="toon-asset-card__actions">
-                <button type="button">设为采用</button>
-                <button type="button">取消采用</button>
-                <button type="button">删除候选</button>
+              <div class="toon-asset-card__actions" aria-label="候选资产状态">
+                <span>设为采用</span>
+                <span>取消采用</span>
+                <span>删除候选</span>
               </div>
             </article>
             <article v-if="!mediaAssets.length" class="toon-node toon-node--empty">
@@ -355,6 +392,10 @@ function itemCode(item: TrashItem) {
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
   gap: 16px;
+  --toon-ink: color-mix(in oklab, var(--ink) 92%, oklch(20% 0.026 18));
+  --toon-ink-muted: color-mix(in oklab, var(--ink-soft) 88%, var(--rose-strong));
+  --toon-line: rgba(20, 16, 20, 0.1);
+  --toon-surface: rgba(255, 255, 255, 0.64);
 }
 
 .toon-rail,
@@ -389,19 +430,43 @@ function itemCode(item: TrashItem) {
 .toon-rail__brand {
   height: 48px;
   color: white;
-  background: linear-gradient(135deg, rgba(240, 111, 155, 0.92), rgba(248, 182, 200, 0.88));
+  background: linear-gradient(135deg, color-mix(in oklab, var(--rose-strong) 86%, white), color-mix(in oklab, var(--rose) 68%, white));
 }
 
 .toon-rail button {
   border: 0;
   background: transparent;
   color: color-mix(in oklab, var(--rose-strong) 42%, var(--ink));
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
 .toon-rail button.active,
 .toon-topbar nav button.active {
   color: white;
-  background: #141014;
+  background: color-mix(in oklab, var(--toon-ink) 92%, var(--rose-strong));
+}
+
+.toon-rail button:hover,
+.toon-topbar nav button:hover,
+.toon-user button:hover,
+.toon-button:hover,
+.toon-project-card footer button:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.toon-rail button:focus-visible,
+.toon-topbar nav button:focus-visible,
+.toon-user button:focus-visible,
+.toon-button:focus-visible,
+.toon-project-card:focus-visible,
+.toon-project-card footer button:focus-visible,
+.toon-create input:focus-visible,
+.toon-create textarea:focus-visible,
+.toon-select select:focus-visible,
+.toon-toolbar input:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--rose-strong) 28%, white);
+  outline-offset: 3px;
 }
 
 .toon-stage {
@@ -458,19 +523,26 @@ function itemCode(item: TrashItem) {
 .toon-user button,
 .toon-project-card footer button,
 .toon-batch button {
-  min-height: 38px;
+  min-height: 42px;
   border: 1px solid rgba(20, 16, 20, 0.1);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.64);
   color: #191318;
   padding: 0 14px;
   font-weight: 700;
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
 .toon-button--dark,
 .toon-batch .toon-button--dark {
   color: white;
-  background: #141014;
+  background: color-mix(in oklab, var(--toon-ink) 92%, var(--rose-strong));
+}
+
+.toon-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+  transform: none;
 }
 
 .toon-projects,
@@ -487,9 +559,19 @@ function itemCode(item: TrashItem) {
   align-items: end;
 }
 
+.toon-search {
+  display: grid;
+  gap: 6px;
+}
+
+.toon-search span {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
 .toon-toolbar input {
   width: min(360px, 42vw);
-  min-height: 38px;
+  min-height: 42px;
   border: 1px solid rgba(20, 16, 20, 0.1);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.72);
@@ -512,6 +594,15 @@ function itemCode(item: TrashItem) {
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.58);
   cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.toon-project-card:hover,
+.toon-project-card:focus-visible {
+  border-color: color-mix(in oklab, var(--rose-strong) 22%, white);
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 18px 42px rgba(240, 111, 155, 0.12);
+  transform: translateY(-2px);
 }
 
 .toon-project-card strong,
@@ -581,6 +672,7 @@ function itemCode(item: TrashItem) {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.72);
   padding: 12px;
+  color: var(--toon-ink);
 }
 
 .toon-create textarea {
@@ -607,6 +699,29 @@ function itemCode(item: TrashItem) {
   gap: 10px;
 }
 
+.toon-batch p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.toon-next-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.toon-next-actions span {
+  min-height: 38px;
+  display: grid;
+  align-items: center;
+  border: 1px dashed rgba(20, 16, 20, 0.12);
+  border-radius: 10px;
+  padding: 0 12px;
+  color: color-mix(in oklab, var(--ink-soft) 78%, white);
+  background: rgba(255, 255, 255, 0.42);
+}
+
 .toon-status-row span {
   padding: 0.28rem 0.56rem;
   border-radius: 999px;
@@ -625,6 +740,7 @@ function itemCode(item: TrashItem) {
     radial-gradient(circle, rgba(20, 16, 20, 0.12) 1px, transparent 1px) 0 0 / 22px 22px,
     rgba(255, 255, 255, 0.36);
   padding: 34px;
+  contain: layout paint;
 }
 
 .toon-node,
@@ -684,6 +800,8 @@ function itemCode(item: TrashItem) {
   display: grid;
   gap: 10px;
   padding: 12px;
+  content-visibility: auto;
+  contain-intrinsic-size: 250px;
 }
 
 .toon-asset-card__preview {
@@ -726,12 +844,15 @@ function itemCode(item: TrashItem) {
   flex-wrap: wrap;
 }
 
-.toon-asset-card__actions button {
-  min-height: 28px;
+.toon-asset-card__actions span {
+  min-height: 34px;
+  display: inline-grid;
+  align-items: center;
   border: 1px solid rgba(20, 16, 20, 0.1);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.66);
-  color: #191318;
+  color: color-mix(in oklab, var(--ink-soft) 82%, white);
+  padding: 0 10px;
   font-size: 0.76rem;
 }
 
@@ -798,6 +919,8 @@ function itemCode(item: TrashItem) {
     min-height: auto;
     grid-template-columns: repeat(7, minmax(0, 1fr));
     grid-template-rows: auto;
+    padding: 10px;
+    border-radius: 20px;
   }
 
   .toon-stage,
@@ -809,6 +932,49 @@ function itemCode(item: TrashItem) {
   }
 
   .toon-toolbar input {
+    width: 100%;
+  }
+
+  .toon-stage {
+    padding: 18px;
+  }
+
+  .toon-canvas {
+    min-height: 520px;
+    padding: 20px;
+  }
+
+  .toon-project-card footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .toon-project-card footer button,
+  .toon-asset-card__actions span {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .toon-rail {
+    grid-template-columns: repeat(4, minmax(44px, 1fr));
+  }
+
+  .toon-rail span {
+    display: none;
+  }
+
+  .toon-topbar nav,
+  .toon-user,
+  .toon-actions,
+  .toon-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .toon-topbar nav button,
+  .toon-user button,
+  .toon-button {
     width: 100%;
   }
 }
