@@ -213,18 +213,22 @@ export const useWorkbenchStore = defineStore("workbench", () => {
 
   async function initialize() {
     error.value = "";
-    bootstrap.value = await api.bootstrap();
-    if (token.value) {
-      try {
-        currentUser.value = await api.me(token.value);
-        await loadProjects();
-        await loadMyNovels();
-      } catch {
-        setToken(null);
-        currentUser.value = null;
+    try {
+      bootstrap.value = await api.bootstrap();
+      if (token.value) {
+        try {
+          currentUser.value = await api.me(token.value);
+          await loadProjects();
+          await loadMyNovels();
+        } catch {
+          setToken(null);
+          currentUser.value = null;
+        }
+      } else {
+        captcha.value = await api.captcha();
       }
-    } else {
-      captcha.value = await api.captcha();
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : "启动工作台失败。";
     }
   }
 

@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_VUE = ROOT / "frontend" / "src" / "App.vue"
+WORKBENCH_STORE = ROOT / "frontend" / "src" / "stores" / "workbench.ts"
 TOONFLOW_WORKBENCH = ROOT / "frontend" / "src" / "components" / "workspace" / "ToonflowWorkbench.vue"
 WORKSPACE_DIR = ROOT / "frontend" / "src" / "components" / "workspace"
 PLAYWRIGHT_AUDIT = ROOT / "scripts" / "playwright_audit.mjs"
@@ -51,6 +52,14 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         self.assertNotIn('"novelStage"', restorable_block)
         self.assertNotIn('"videoStage"', restorable_block)
         self.assertIn("window.scrollTo({ top: 0, left: 0, behavior: \"auto\" })", app_source)
+
+    def test_startup_api_failure_is_handled_without_unhandled_rejection(self) -> None:
+        store_source = WORKBENCH_STORE.read_text(encoding="utf-8")
+        initialize_block = store_source.split("async function initialize() {", 1)[1].split("async function refreshCaptcha()", 1)[0]
+
+        self.assertIn("try {", initialize_block)
+        self.assertIn('error.value = err instanceof Error ? err.message : "启动工作台失败。";', initialize_block)
+        self.assertNotIn("throw", initialize_block)
 
     def test_playwright_audit_writes_to_repo_output_directory(self) -> None:
         audit_source = PLAYWRIGHT_AUDIT.read_text(encoding="utf-8")
