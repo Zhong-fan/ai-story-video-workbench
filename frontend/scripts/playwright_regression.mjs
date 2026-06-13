@@ -36,6 +36,11 @@ async function closeAuth(page) {
 async function registerFreshUser(page) {
   const username = `reg_${Date.now()}`;
   const password = "Regression123!";
+  const logoutButton = page.locator(".toon-user button").filter({ hasText: "退出" }).first();
+  if (await logoutButton.isVisible()) {
+    await logoutButton.click();
+    await buttonByText(page, "创建账号").waitFor();
+  }
   await openAuth(page, "register");
   await page.locator('input[autocomplete="username"]').fill(username);
   await page.locator('input[autocomplete="new-password"]').fill(password);
@@ -44,7 +49,7 @@ async function registerFreshUser(page) {
   await page.locator('input[inputmode="numeric"]').fill(solveCaptcha(challenge ?? ""));
   await buttonByText(page, "注册并登录").click();
   await page.locator(".auth-modal").waitFor({ state: "detached", timeout: 10000 });
-  await page.locator(".sidebar-user").filter({ hasText: username }).waitFor();
+  await page.locator(".toon-user").filter({ hasText: username }).waitFor();
   return { username, password };
 }
 
@@ -67,25 +72,22 @@ async function testEmptyLoginDoesNotPost(page) {
 async function testMobileLayout(page) {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await buttonByText(page, "打开菜单").waitFor();
+  await page.locator("aside[aria-label='ToonFlow style navigation']").waitFor();
+  await page.locator(".toon-rail__label").filter({ hasText: "项目" }).waitFor();
+  assert(!(await page.locator("nav[aria-label='Project modules']").isVisible()), "Duplicate module nav should collapse on mobile");
+  await buttonByText(page, "登录").waitFor();
   const mainBox = await page.locator("main").boundingBox();
   assert(mainBox && mainBox.width > 300, "Mobile main content should remain readable");
-  await buttonByText(page, "打开菜单").click();
-  await page.locator("nav[aria-label='Primary']").waitFor();
   await page.setViewportSize({ width: 1440, height: 900 });
 }
 
 async function createProject(page, title) {
-  await page.getByRole("heading", { name: "从一个项目开始，往下推进到小说、资产和视频。" }).waitFor();
-  await buttonByText(page, "导入已有文本").waitFor();
-  await buttonByText(page, "用 AI 生成底稿").waitFor();
+  await page.getByRole("heading", { name: "我的项目", level: 2 }).waitFor();
   await buttonByText(page, "新建项目").click();
-  await page.getByRole("heading", { name: "先把项目核心设定立住" }).waitFor();
-  await page.getByRole("textbox", { name: "自主输入" }).fill(title);
-  await buttonByText(page, "下一步").click();
-  await page.getByRole("textbox", { name: "世界观" }).fill("雨夜城市中，人们会在短暂烟火里听见未来一天的心声。");
-  await page.getByRole("textbox", { name: "写作偏好" }).fill("轻小说节奏，重视人物互动，每章都要推进关系变化。");
-  await buttonByText(page, "下一步").click();
+  await page.getByRole("heading", { name: "建立创作项目" }).waitFor();
+  await page.getByLabel("项目标题").fill(title);
+  await page.getByLabel("原著或故事资料").fill("雨夜城市中，人们会在短暂烟火里听见未来一天的心声。");
+  await page.getByLabel("改编要求").fill("轻小说节奏，重视人物互动，每章都要推进关系变化。");
   await buttonByText(page, "创建项目").click();
   await page.getByText(title).first().waitFor({ timeout: 15000 });
 }
@@ -96,21 +98,61 @@ async function testProjectCreateDeleteRestore(page) {
   const projectTitle = `回归测试项目 ${Date.now()}`;
 
   await createProject(page, projectTitle);
-  await buttonByText(page, "返回工作区").click();
-  await buttonByText(page, projectTitle).waitFor();
+  await buttonByText(page, "项目").click();
+  await page.getByText(projectTitle).first().waitFor();
 
-  const projectCard = page.locator(".project-home-card").filter({ hasText: projectTitle }).first();
+  const projectCard = page.locator(".toon-project-grid article").filter({ hasText: projectTitle }).first();
   await projectCard.getByRole("button", { name: "删除" }).click();
-  await page.locator(".empty-text").filter({ hasText: "还没有项目" }).waitFor();
+  await page.locator(".toon-empty").filter({ hasText: "还没有项目" }).waitFor();
 
   await buttonByText(page, "回收站").click();
-  await page.locator(".memory-card").filter({ hasText: projectTitle }).first().waitFor();
-  await page.getByText("项目 1", { exact: true }).waitFor();
-  await page.locator(".memory-card").filter({ hasText: projectTitle }).first().getByRole("button", { name: "恢复" }).click();
-  await page.locator(".empty-text").filter({ hasText: "回收站目前是空的" }).waitFor();
+  await page.locator(".toon-project-grid article").filter({ hasText: projectTitle }).first().waitFor();
+  await page.locator(".toon-project-grid article").filter({ hasText: projectTitle }).first().getByRole("button", { name: "恢复" }).click();
+  await page.locator(".toon-empty").filter({ hasText: "回收站目前是空的" }).waitFor();
 
   await buttonByText(page, "项目").click();
-  await buttonByText(page, projectTitle).waitFor();
+  await page.locator(".toon-project-grid article").filter({ hasText: projectTitle }).first().waitFor();
+}
+
+async function testWorkbenchSmokePath(page) {
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await registerFreshUser(page);
+  const projectTitle = `工作台冒烟项目 ${Date.now()}`;
+  const consoleProblems = [];
+  const onConsole = (message) => {
+    if (["error", "warning"].includes(message.type())) {
+      consoleProblems.push(`${message.type()}: ${message.text()}`);
+    }
+  };
+  page.on("console", onConsole);
+
+  try {
+    await createProject(page, projectTitle);
+    await page.getByText(projectTitle).first().click();
+    await page.locator(".toon-canvas").waitFor();
+    await page.getByRole("heading", { name: projectTitle, level: 1 }).waitFor();
+    await page.locator(".toon-agent").filter({ hasText: "生产监督" }).waitFor();
+
+    await buttonByText(page, "编剧").click();
+    await page.locator(".toon-canvas--script").waitFor();
+    await page.getByText("01 · 故事源").waitFor();
+
+    await buttonByText(page, "资产").click();
+    await page.locator(".toon-canvas--assets").waitFor();
+    await page.getByText("等待生成资产").waitFor();
+
+    await buttonByText(page, "出片").click();
+    await page.locator(".toon-canvas--production").waitFor();
+    await page.getByText("Track 1 · 分镜").waitFor();
+
+    await buttonByText(page, "设置").click();
+    await page.locator(".toon-canvas--settings").waitFor();
+    await page.getByRole("button", { name: "保存设置" }).waitFor();
+
+    assert(consoleProblems.length === 0, `Workbench smoke path logged console problems:\n${consoleProblems.join("\n")}`);
+  } finally {
+    page.off("console", onConsole);
+  }
 }
 
 async function main() {
@@ -122,6 +164,7 @@ async function main() {
     await testEmptyLoginDoesNotPost(page);
     await testMobileLayout(page);
     await testProjectCreateDeleteRestore(page);
+    await testWorkbenchSmokePath(page);
   } finally {
     await browser.close();
   }

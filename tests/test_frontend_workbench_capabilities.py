@@ -45,10 +45,11 @@ class FrontendWorkbenchCapabilitiesTests(unittest.TestCase):
         source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
 
         self.assertIn("mediaAssets", source)
-        self.assertIn("productionTracks", source)
         self.assertIn("storyboards", source)
-        self.assertIn("videoTaskCount", source)
+        self.assertIn("selectedStoryboardTasks", source)
         self.assertIn("characterCards", source)
+        self.assertIn("preflight_summary", source)
+        self.assertIn("review_findings", source)
         self.assertNotIn("PreviewModal", source)
         self.assertNotIn("LongformPipelinePanel", source)
 

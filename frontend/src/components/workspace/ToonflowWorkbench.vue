@@ -1,14 +1,22 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
-import type { LongformState, MediaAsset, Project, ProjectCreateDraft, ProjectDetailResponse, ProjectPayload, TrashItem, VideoTask } from "../../types";
+import type {
+  LongformState,
+  MediaAsset,
+  Project,
+  ProjectCreateDraft,
+  ProjectDetailResponse,
+  ProjectPayload,
+  Storyboard,
+  StoryboardShot,
+  TaskEvent,
+  TrashItem,
+  VideoTask,
+} from "../../types";
 
 type CreationMode = "upload" | "ai" | "manual";
 type WorkbenchModule = "projects" | "script" | "assets" | "production" | "settings" | "trash";
-type RailItem = {
-  module: WorkbenchModule;
-  label: string;
-  paths: string[];
-};
+type RailItem = { module: WorkbenchModule; label: string; glyph: string };
 
 const props = defineProps<{
   currentView: string;
@@ -47,73 +55,15 @@ const emit = defineEmits<{
 }>();
 
 const activeModule = ref<WorkbenchModule>("projects");
-const settingsDraft = reactive({
-  title: "",
-  genre: "",
-  world_brief: "",
-  writing_rules: "",
-});
-const moduleLabels: Record<WorkbenchModule, string> = {
-  projects: "项目",
-  script: "编剧",
-  assets: "资产",
-  production: "出片",
-  settings: "设置",
-  trash: "回收站",
-};
+const activeStoryboardId = ref<number | null>(null);
+const settingsDraft = reactive({ title: "", genre: "", world_brief: "", writing_rules: "" });
 const railItems: RailItem[] = [
-  {
-    module: "projects",
-    label: "项目",
-    paths: [
-      "M6 12.5A2.5 2.5 0 0 1 8.5 10H15l2 3h8.5A2.5 2.5 0 0 1 28 15.5v8A2.5 2.5 0 0 1 25.5 26h-17A2.5 2.5 0 0 1 6 23.5v-11Z",
-      "M10 18h14",
-    ],
-  },
-  {
-    module: "script",
-    label: "编剧",
-    paths: [
-      "M9 7h10l4 4v14H9V7Z",
-      "M19 7v5h5",
-      "M12 16h9M12 20h7",
-    ],
-  },
-  {
-    module: "assets",
-    label: "资产",
-    paths: [
-      "M7 9h18v17H7V9Z",
-      "m9 23 5.2-6 3.8 4.2 2.4-2.7L25 23",
-      "M20.5 13.5h.01",
-    ],
-  },
-  {
-    module: "production",
-    label: "出片",
-    paths: [
-      "M8 8h18v18H8V8Z",
-      "m14 13 7 4-7 4v-8Z",
-    ],
-  },
-  {
-    module: "settings",
-    label: "设置",
-    paths: [
-      "M9 11h14M9 17h14M9 23h14",
-      "M13 9v4M20 15v4M16 21v4",
-    ],
-  },
-  {
-    module: "trash",
-    label: "回收站",
-    paths: [
-      "M10 12h14",
-      "M13 12V9h8v3",
-      "M12 15l1 11h8l1-11",
-      "M16 17v6M19 17v6",
-    ],
-  },
+  { module: "projects", label: "项目", glyph: "▱" },
+  { module: "script", label: "编剧", glyph: "▤" },
+  { module: "assets", label: "资产", glyph: "◉" },
+  { module: "production", label: "出片", glyph: "▶" },
+  { module: "settings", label: "设置", glyph: "⌘" },
+  { module: "trash", label: "回收站", glyph: "⌫" },
 ];
 
 const visibleProjects = computed(() => {
@@ -123,59 +73,46 @@ const visibleProjects = computed(() => {
     [project.title, project.genre, project.world_brief, project.writing_rules].join(" ").toLowerCase().includes(keyword),
   );
 });
-
 const selectedProject = computed(() => props.activeProject?.project ?? null);
+const characterCards = computed(() => props.activeProject?.character_cards ?? []);
+const chapterCount = computed(() => props.activeProject?.project_chapters.length ?? 0);
+const storyboards = computed(() => props.longformState.storyboards);
+const mediaAssets = computed(() => props.longformState.media_assets);
+const videoTasks = computed(() => props.longformState.video_tasks);
+const selectedStoryboard = computed(() =>
+  storyboards.value.find((item) => item.id === activeStoryboardId.value) ?? storyboards.value[0] ?? null,
+);
+const selectedStoryboardTasks = computed(() =>
+  selectedStoryboard.value ? videoTasks.value.filter((task) => task.storyboard_id === selectedStoryboard.value?.id) : [],
+);
+const selectedStoryboardAssets = computed(() =>
+  selectedStoryboard.value ? mediaAssets.value.filter((asset) => asset.storyboard_id === selectedStoryboard.value?.id) : mediaAssets.value,
+);
+const recentEvents = computed(() => {
+  const events: TaskEvent[] = [];
+  for (const storyboard of storyboards.value) events.push(...storyboard.events);
+  for (const task of videoTasks.value) events.push(...task.events);
+  return events.sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 8);
+});
 const workspaceTitle = computed(() => {
   if (props.currentView === "projectCreate") return "新建项目";
   if (activeModule.value === "projects") return "我的项目";
   if (activeModule.value === "trash") return "回收站";
   return selectedProject.value?.title || "选择一个项目";
 });
-const characterCards = computed(() => props.activeProject?.character_cards ?? []);
-const chapterCount = computed(() => props.activeProject?.project_chapters.length ?? 0);
-const scriptCount = computed(() => props.longformState.draft_versions.length);
-const storyboardCount = computed(() => props.longformState.storyboards.length);
-const mediaAssets = computed(() => props.longformState.media_assets);
-const videoTaskCount = computed(() => props.longformState.video_tasks.length);
-
-const productionTracks = computed(() => {
-  return props.longformState.storyboards.slice(0, 6).map((storyboard, index) => ({
-    storyboard,
-    tasks: videoTasksByStoryboard(storyboard.id),
-    title: storyboard.title || `Storyboard ${index + 1}`,
-    meta: `${storyboard.shots.length} 镜头 · ${storyboard.status || "待生产"}`,
-    detail: storyboard.summary || "分镜已进入生产画布，可继续补首帧、配音和视频任务。",
-  }));
+const preflight = computed(() => {
+  const value = selectedStoryboard.value?.progress?.preflight_summary;
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
 });
-
-function videoTasksByStoryboard(storyboardId: number) {
-  return props.longformState.video_tasks.filter((task) => task.storyboard_id === storyboardId);
-}
-
-function hasActiveVideoTask(tasks: VideoTask[]) {
-  return tasks.some((task) => ["queued", "running"].includes(task.task_status));
-}
-
-function productionTaskLabel(task: VideoTask) {
-  const status = task.task_status || "pending";
-  const output = task.output_uri ? " · 有输出" : "";
-  return `${status}${output}`;
-}
-
-function fallbackProductionTracks() {
-  return [
-    {
-      title: "Track 1 · 文本拆镜",
-      meta: "等待剧本",
-      detail: "生成或导入剧本后，这里会形成可拖拽的镜头轨道。",
-    },
-    {
-      title: "Track 2 · 角色资产",
-      meta: `${characterCards.value.length} 人物`,
-      detail: "人物三视图、服装、表情和声音会挂到镜头节点上。",
-    },
-  ];
-}
+const reviewFindings = computed(() => {
+  const value = selectedStoryboard.value?.progress?.review_findings;
+  return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
+});
+const sourceMode = computed(() => {
+  const trace = selectedStoryboard.value?.progress?.generation_trace;
+  if (trace && typeof trace === "object" && "source_mode" in trace) return String(trace.source_mode);
+  return selectedStoryboard.value?.source_chapter_ids?.length ? "novel_chapters" : "未记录";
+});
 
 function selectModule(module: WorkbenchModule) {
   activeModule.value = module;
@@ -183,34 +120,65 @@ function selectModule(module: WorkbenchModule) {
   else if (module === "assets") emit("go", "assetLibrary");
   else emit("go", "studio");
 }
-
 function openProject(projectId: number) {
   if (!projectId) return;
   activeModule.value = "script";
   emit("open-project", projectId);
 }
-
-watch(
-  () => props.currentView,
-  (view) => {
-    if (view === "trash") activeModule.value = "trash";
-    else if (view === "assetLibrary") activeModule.value = "assets";
-    else if (view === "projectCreate") activeModule.value = "projects";
-  },
-  { immediate: true },
-);
-
-watch(
-  selectedProject,
-  (project) => {
-    settingsDraft.title = project?.title ?? "";
-    settingsDraft.genre = project?.genre ?? "";
-    settingsDraft.world_brief = project?.world_brief ?? "";
-    settingsDraft.writing_rules = project?.writing_rules ?? "";
-  },
-  { immediate: true },
-);
-
+function selectStoryboard(storyboard: Storyboard) {
+  activeStoryboardId.value = storyboard.id;
+}
+function videoTasksByStoryboard(storyboardId: number) {
+  return videoTasks.value.filter((task) => task.storyboard_id === storyboardId);
+}
+function hasActiveVideoTask(tasks: VideoTask[]) {
+  return tasks.some((task) => ["queued", "running"].includes(task.task_status));
+}
+function statusLabel(status: string | undefined) {
+  const labels: Record<string, string> = {
+    pending: "等待中", queued: "排队中", running: "生产中", completed: "已完成",
+    failed: "失败", blocked: "已阻断", locked: "已锁定", draft: "草稿",
+  };
+  return labels[status || ""] || status || "未记录";
+}
+function statusTone(status: string | undefined) {
+  if (["completed", "locked", "ready", "passed"].includes(status || "")) return "good";
+  if (["failed", "blocked"].includes(status || "")) return "bad";
+  if (["running", "queued", "warning"].includes(status || "")) return "warn";
+  return "neutral";
+}
+function formatDateTime(value: string | undefined) {
+  if (!value) return "未记录";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "未记录" : date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+function shortText(value: string | undefined, fallback: string, length = 90) {
+  const text = value?.trim() || fallback;
+  return text.length > length ? `${text.slice(0, length)}…` : text;
+}
+function assetKindLabel(value: string) {
+  const lower = value.toLowerCase();
+  if (lower.includes("video")) return "视频";
+  if (lower.includes("voice") || lower.includes("audio")) return "音频";
+  if (lower.includes("turnaround")) return "角色三视图";
+  if (lower.includes("last_frame")) return "尾帧";
+  if (lower.includes("frame")) return "首帧";
+  return "素材";
+}
+function assetIsLocked(asset: MediaAsset) {
+  return asset.meta?.locked === true || asset.meta?.candidate_status === "locked";
+}
+function assetCandidateLabel(asset: MediaAsset) {
+  const version = asset.meta?.candidate_version || asset.meta?.version;
+  if (version) return `候选 v${version}${assetIsLocked(asset) ? " · 已采用" : ""}`;
+  return assetIsLocked(asset) ? "已采用" : "候选资产";
+}
+function assetLockMeta(locked: boolean) {
+  return { locked, candidate_status: locked ? "locked" : "candidate" };
+}
+function shotAsset(shot: StoryboardShot) {
+  return selectedStoryboardAssets.value.find((asset) => asset.shot_id === shot.id && asset.asset_type.includes("frame"));
+}
 function projectSettingsPayload() {
   const project = selectedProject.value;
   if (!project) return null;
@@ -240,363 +208,149 @@ function projectSettingsPayload() {
     style_profile: project.style_profile,
   };
 }
-
 function saveProjectSettings() {
   const payload = projectSettingsPayload();
-  if (!payload) return;
-  emit("save-project-settings", payload);
+  if (payload) emit("save-project-settings", payload);
 }
 
-function formatDateTime(value: string | undefined) {
-  if (!value) return "未记录";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "未记录";
-  return date.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatProjectCode(value: number) {
-  return `P${String(value).padStart(6, "0")}`;
-}
-
-function assetKindLabel(value: string) {
-  const lower = value.toLowerCase();
-  if (lower.includes("video")) return "视频";
-  if (lower.includes("voice") || lower.includes("audio")) return "音频";
-  if (lower.includes("turnaround")) return "三视图";
-  if (lower.includes("frame")) return "首帧";
-  return "素材";
-}
-
-function assetCandidateLabel(asset: { meta: Record<string, unknown> }) {
-  const version = asset.meta?.candidate_version || asset.meta?.version;
-  const status = asset.meta?.candidate_status || (asset.meta?.locked ? "locked" : "");
-  if (version) return `候选 v${version}${status === "locked" ? " · 已采用" : ""}`;
-  if (status === "locked") return "已采用";
-  return "候选资产";
-}
-
-function assetIsLocked(asset: MediaAsset) {
-  return asset.meta?.locked === true || asset.meta?.candidate_status === "locked";
-}
-
-function assetLockMeta(locked: boolean) {
-  return {
-    locked,
-    candidate_status: locked ? "locked" : "candidate",
-  };
-}
-
-function itemCode(item: TrashItem) {
-  if (item.item_type === "media_asset") return `M${String(item.item_id).padStart(6, "0")}`;
-  if (item.item_type === "project") return formatProjectCode(item.item_id);
-  return "";
-}
+watch(() => props.currentView, (view) => {
+  if (view === "trash") activeModule.value = "trash";
+  else if (view === "assetLibrary") activeModule.value = "assets";
+  else if (view === "projectCreate") activeModule.value = "projects";
+}, { immediate: true });
+watch(selectedProject, (project) => {
+  settingsDraft.title = project?.title ?? "";
+  settingsDraft.genre = project?.genre ?? "";
+  settingsDraft.world_brief = project?.world_brief ?? "";
+  settingsDraft.writing_rules = project?.writing_rules ?? "";
+}, { immediate: true });
+watch(storyboards, (items) => {
+  if (!items.some((item) => item.id === activeStoryboardId.value)) activeStoryboardId.value = items[0]?.id ?? null;
+}, { immediate: true });
 </script>
 
 <template>
   <div class="toon-shell">
     <aside class="toon-rail" aria-label="ToonFlow style navigation">
-      <div class="toon-rail__brand" aria-label="ChenFlow">CF</div>
-      <button
-        v-for="item in railItems.slice(0, 4)"
-        :key="item.module"
-        type="button"
-        :class="{ active: activeModule === item.module }"
-        :aria-current="activeModule === item.module ? 'page' : undefined"
-        :aria-label="item.label"
-        :title="item.label"
-        @click="selectModule(item.module)"
-      >
-        <svg aria-hidden="true" viewBox="0 0 32 32">
-          <path v-for="path in item.paths" :key="path" :d="path" />
-        </svg>
+      <button class="toon-rail__brand" type="button" aria-label="ChenFlow 项目" :aria-current="activeModule === 'projects' ? 'page' : undefined" @click="selectModule('projects')">CF</button>
+      <button v-for="item in railItems.slice(0, 4)" :key="item.module" type="button" :class="{ active: activeModule === item.module }" :aria-current="activeModule === item.module ? 'page' : undefined" :aria-label="item.label" :title="item.label" @click="selectModule(item.module)">
+        <span aria-hidden="true">{{ item.glyph }}</span><small class="toon-rail__label">{{ item.label }}</small>
       </button>
-      <span></span>
-      <button
-        v-for="item in railItems.slice(4)"
-        :key="item.module"
-        type="button"
-        :class="{ active: activeModule === item.module }"
-        :aria-current="activeModule === item.module ? 'page' : undefined"
-        :aria-label="item.label"
-        :title="item.label"
-        @click="selectModule(item.module)"
-      >
-        <svg aria-hidden="true" viewBox="0 0 32 32">
-          <path v-for="path in item.paths" :key="path" :d="path" />
-        </svg>
+      <i aria-hidden="true"></i>
+      <button v-for="item in railItems.slice(4)" :key="item.module" type="button" :class="{ active: activeModule === item.module }" :aria-current="activeModule === item.module ? 'page' : undefined" :aria-label="item.label" :title="item.label" @click="selectModule(item.module)">
+        <span aria-hidden="true">{{ item.glyph }}</span><small class="toon-rail__label">{{ item.label }}</small>
       </button>
     </aside>
 
     <main class="toon-stage">
       <header class="toon-topbar">
-        <div>
-          <p>ChenFlow</p>
+        <div class="toon-heading">
+          <span>ChenFlow Studio</span>
           <h1>{{ workspaceTitle }}</h1>
         </div>
         <nav aria-label="Project modules">
-          <button type="button" :class="{ active: activeModule === 'script' }" :aria-current="activeModule === 'script' ? 'page' : undefined" @click="selectModule('script')">编剧</button>
-          <button type="button" :class="{ active: activeModule === 'assets' }" :aria-current="activeModule === 'assets' ? 'page' : undefined" @click="selectModule('assets')">资产</button>
-          <button type="button" :class="{ active: activeModule === 'production' }" :aria-current="activeModule === 'production' ? 'page' : undefined" @click="selectModule('production')">出片</button>
-          <button type="button" :class="{ active: activeModule === 'projects' }" :aria-current="activeModule === 'projects' ? 'page' : undefined" @click="selectModule('projects')">项目</button>
+          <button v-for="item in railItems.slice(1, 5)" :key="item.module" type="button" :class="{ active: activeModule === item.module }" :aria-current="activeModule === item.module ? 'page' : undefined" @click="selectModule(item.module)">
+            <span aria-hidden="true">{{ item.glyph }}</span>{{ item.label }}
+          </button>
         </nav>
         <div class="toon-user">
-          <template v-if="isAuthenticated">
-            <span>{{ username || "已登录" }}</span>
-            <button type="button" @click="emit('logout')">退出</button>
-          </template>
-          <template v-else>
-            <button type="button" @click="emit('login')">登录</button>
-            <button type="button" class="toon-button toon-button--dark" @click="emit('register')">创建账号</button>
-          </template>
+          <template v-if="isAuthenticated"><span>{{ username || "已登录" }}</span><button type="button" @click="emit('logout')">退出</button></template>
+          <template v-else><button type="button" @click="emit('login')">登录</button><button type="button" class="toon-button--dark" @click="emit('register')">创建账号</button></template>
         </div>
       </header>
 
-      <section v-if="!isAuthenticated" class="toon-card toon-card--empty">
-        <h2>登录后开始项目制创作</h2>
-        <p>界面按 Toonflow 的项目工作台组织：先建项目，再在编剧、资产和出片之间切换。</p>
-        <div class="toon-actions">
-          <button type="button" class="toon-button toon-button--dark" @click="emit('register')">创建账号</button>
-          <button type="button" class="toon-button" @click="emit('login')">登录</button>
-        </div>
+      <section v-if="!isAuthenticated" class="toon-empty">
+        <strong>从故事材料到最终成片，都留在一个项目里。</strong>
+        <p>登录后建立项目，组织剧本、资产、分镜、质量门禁和视频任务。</p>
+        <div><button type="button" class="toon-button--dark" @click="emit('register')">创建账号</button><button type="button" @click="emit('login')">登录</button></div>
       </section>
 
-      <section v-else-if="currentView === 'projectCreate'" class="toon-create toon-card">
-        <div class="toon-create__head">
-          <p>New Project</p>
-          <h2>新建项目</h2>
-          <span>只保留项目必要信息。后续剧本、资产和视频都在同一个工作台里推进。</span>
-        </div>
-        <form class="toon-create__form" @submit.prevent="emit('submit-create')">
-          <label>
-            <span>项目标题</span>
-            <input :value="form.title" maxlength="120" autocomplete="off" placeholder="例如：贪官之女，败家千金" @input="emit('update:title', ($event.target as HTMLInputElement).value)" />
-          </label>
-          <label>
-            <span>题材 / 风格</span>
-            <input :value="form.genre" maxlength="80" autocomplete="off" placeholder="短剧 / 漫剧 / 青春奇幻 / 都市" @input="emit('update:genre', ($event.target as HTMLInputElement).value)" />
-          </label>
-          <label>
-            <span>原著或故事资料</span>
-            <textarea :value="form.world_brief" rows="8" placeholder="粘贴原著梗概、角色关系、世界观或你想改编的剧情方向。" @input="emit('update:world-brief', ($event.target as HTMLTextAreaElement).value)" />
-          </label>
-          <label>
-            <span>改编要求</span>
-            <textarea :value="form.writing_rules" rows="5" placeholder="例如：更强反转、更短场景、每集结尾留钩子、角色更贴近原创。" @input="emit('update:writing-rules', ($event.target as HTMLTextAreaElement).value)" />
-          </label>
-          <div class="toon-actions">
-            <button type="submit" class="toon-button toon-button--dark" :disabled="loading">{{ loading ? "创建中..." : "创建项目" }}</button>
-            <button class="toon-button" type="button" @click="emit('go', 'studio')">取消</button>
-          </div>
+      <section v-else-if="currentView === 'projectCreate'" class="toon-create">
+        <header><span>NEW PROJECT</span><h2>建立创作项目</h2><p>先录入最小必要信息，后续内容在生产工作台中持续补齐。</p></header>
+        <form @submit.prevent="emit('submit-create')">
+          <label><span>项目标题</span><input :value="form.title" maxlength="120" autocomplete="off" @input="emit('update:title', ($event.target as HTMLInputElement).value)" /></label>
+          <label><span>题材 / 风格</span><input :value="form.genre" maxlength="80" autocomplete="off" @input="emit('update:genre', ($event.target as HTMLInputElement).value)" /></label>
+          <label><span>原著或故事资料</span><textarea :value="form.world_brief" rows="8" @input="emit('update:world-brief', ($event.target as HTMLTextAreaElement).value)" /></label>
+          <label><span>改编要求</span><textarea :value="form.writing_rules" rows="5" @input="emit('update:writing-rules', ($event.target as HTMLTextAreaElement).value)" /></label>
+          <footer><button type="submit" class="toon-button--dark" :disabled="loading">{{ loading ? "创建中..." : "创建项目" }}</button><button type="button" @click="emit('go', 'studio')">取消</button></footer>
         </form>
       </section>
 
       <section v-else-if="activeModule === 'projects'" class="toon-projects">
-        <div class="toon-section-head">
-          <div>
-            <p>Projects</p>
-            <h2>我的项目</h2>
-          </div>
-          <div class="toon-toolbar">
-            <label class="toon-search">
-              <span>搜索项目</span>
-              <input :value="workspaceSearch" placeholder="搜索项目..." @input="emit('update:workspace-search', ($event.target as HTMLInputElement).value)" />
-            </label>
-            <button type="button" class="toon-button toon-button--dark" @click="emit('open-project-create', 'manual')">+ 新建项目</button>
-          </div>
-        </div>
+        <header class="toon-section-head"><div><span>PROJECT LIBRARY</span><h2>我的项目</h2><p>管理所有长篇、短剧和视频续作项目。</p></div><button type="button" class="toon-button--dark" @click="emit('open-project-create', 'manual')">＋ 新建项目</button></header>
+        <div class="toon-project-toolbar"><input :value="workspaceSearch" aria-label="搜索项目" placeholder="搜索项目名称、题材或故事资料…" @input="emit('update:workspace-search', ($event.target as HTMLInputElement).value)" /><span>{{ visibleProjects.length }} 个项目</span></div>
         <div v-if="visibleProjects.length" class="toon-project-grid">
-          <article v-for="project in visibleProjects" :key="project.id" class="toon-project-card" tabindex="0" role="button" :aria-label="`打开项目：${project.title}`" @click="openProject(project.id)" @keydown.enter.prevent="openProject(project.id)" @keydown.space.prevent="openProject(project.id)">
-            <div>
-              <strong>{{ project.title }}</strong>
-              <span>{{ project.genre || "未设置风格" }}</span>
-            </div>
-            <p>{{ project.world_brief || project.writing_rules || "打开项目后继续导入原著、生成剧本、整理资产和出片。" }}</p>
-            <footer>
-              <span>{{ formatProjectCode(project.id) }}</span>
-              <span>{{ formatDateTime(project.updated_at) }}</span>
-              <button type="button" @click.stop="emit('delete-project', project.id)">删除</button>
-            </footer>
+          <article v-for="project in visibleProjects" :key="project.id" tabindex="0" @click="openProject(project.id)" @keydown.enter.self.prevent="openProject(project.id)" @keydown.space.self.prevent="openProject(project.id)">
+            <header><strong>{{ project.title }}</strong><span>{{ project.genre || "未设置题材" }}</span></header>
+            <p>{{ shortText(project.world_brief || project.writing_rules, "打开项目继续整理故事、资产与视频。", 130) }}</p>
+            <footer><time>{{ formatDateTime(project.updated_at) }}</time><button type="button" @click.stop="emit('delete-project', project.id)">删除</button></footer>
           </article>
         </div>
-        <div v-else class="toon-card toon-card--empty">
-          <h2>还没有项目</h2>
-          <p>点击“新建项目”，导入原著或一句话设定。后面的编剧、资产、分镜和视频不会再拆成互相独立的入口。</p>
-        </div>
+        <div v-else class="toon-empty"><strong>还没有项目</strong><p>创建第一个项目，把故事材料、人物、分镜和视频生产放进同一个工作台。</p></div>
       </section>
 
       <section v-else-if="activeModule === 'trash'" class="toon-projects">
-        <div class="toon-section-head">
-          <div>
-            <p>Trash</p>
-            <h2>回收站</h2>
-          </div>
-          <div class="toon-status-row">
-            <span>项目 {{ trashSummary.project }}</span>
-            <span>资产 {{ trashSummary.media_asset }}</span>
-          </div>
-        </div>
+        <header class="toon-section-head"><div><span>TRASH</span><h2>回收站</h2><p>项目 {{ trashSummary.project }} · 资产 {{ trashSummary.media_asset }}</p></div></header>
         <div v-if="trashItems.length" class="toon-project-grid">
-          <article v-for="item in trashItems" :key="`${item.item_type}-${item.item_id}`" class="toon-project-card">
-            <strong>{{ [itemCode(item), item.title].filter(Boolean).join(" · ") }}</strong>
-            <p>{{ item.subtitle || item.item_type }}</p>
-            <footer>
-              <span>{{ formatDateTime(item.deleted_at) }}</span>
-              <button type="button" @click="emit('restore-trash', item)">恢复</button>
-            </footer>
-          </article>
+          <article v-for="item in trashItems" :key="`${item.item_type}-${item.item_id}`"><header><strong>{{ item.title }}</strong><span>{{ item.item_type }}</span></header><p>{{ item.subtitle }}</p><footer><time>{{ formatDateTime(item.deleted_at) }}</time><button type="button" @click="emit('restore-trash', item)">恢复</button></footer></article>
         </div>
-        <div v-else class="toon-card toon-card--empty">回收站目前是空的。</div>
+        <div v-else class="toon-empty"><strong>回收站目前是空的</strong><p>删除的项目和资产会暂存在这里。</p></div>
       </section>
 
       <section v-else class="toon-workbench">
-        <aside class="toon-inspector toon-card">
-          <div v-if="projects.length" class="toon-select">
-            <label>当前项目</label>
-            <select :value="selectedProject?.id || ''" @change="openProject(Number(($event.target as HTMLSelectElement).value))">
-              <option value="" disabled>选择项目</option>
-              <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.title }}</option>
-            </select>
-          </div>
-          <div class="toon-batch">
-            <strong>批量生产设置</strong>
-            <p>批量选择、资产提取和生产队列需要接入后端任务后再开放，当前只展示项目状态。</p>
-            <div class="toon-next-actions" aria-label="待接入能力">
-              <span>全选</span>
-              <span>提取资产</span>
-              <span>生成提示词</span>
-              <span>开始生产</span>
-            </div>
-          </div>
-          <div class="toon-status-row">
-            <span>人物 {{ characterCards.length }}</span>
-            <span>章节 {{ chapterCount }}</span>
-            <span>草稿 {{ scriptCount }}</span>
-            <span>资产 {{ mediaAssets.length }}</span>
-          </div>
+        <aside class="toon-inspector">
+          <label class="toon-project-select"><span>当前项目</span><select :value="selectedProject?.id || ''" @change="openProject(Number(($event.target as HTMLSelectElement).value))"><option value="" disabled>选择项目</option><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.title }}</option></select></label>
+          <div class="toon-inspector__block"><strong>生产概览</strong><dl><div><dt>章节</dt><dd>{{ chapterCount }}</dd></div><div><dt>草稿</dt><dd>{{ longformState.draft_versions.length }}</dd></div><div><dt>资产</dt><dd>{{ mediaAssets.length }}</dd></div><div><dt>分镜</dt><dd>{{ storyboards.length }}</dd></div></dl></div>
+          <div class="toon-inspector__block"><strong>下一步</strong><p v-if="!selectedProject">先选择一个项目。</p><p v-else-if="!storyboards.length">故事资料已进入项目，下一步需要生成或导入分镜。</p><p v-else-if="!mediaAssets.length">分镜已经存在，下一步准备角色资产和镜头首帧。</p><p v-else-if="!videoTasks.length">资产已经进入生产区，下一步执行预检并创建视频任务。</p><p v-else>视频任务已经开始，持续关注右侧运行记录和质量结果。</p></div>
+          <div v-if="storyboards.length" class="toon-storyboard-list"><strong>分镜稿</strong><button v-for="storyboard in storyboards" :key="storyboard.id" type="button" :class="{ active: selectedStoryboard?.id === storyboard.id }" @click="selectStoryboard(storyboard)"><span>{{ storyboard.title }}</span><small>{{ storyboard.shots.length }} 镜头 · {{ statusLabel(storyboard.status) }}</small></button></div>
         </aside>
 
-        <div class="toon-canvas" :class="`toon-canvas--${activeModule}`" :aria-label="`${moduleLabels[activeModule]}画布`">
-          <article v-if="!selectedProject && activeModule !== 'settings'" class="toon-node toon-node--empty">
-            <h3>先打开一个项目</h3>
-            <span>从左侧或顶部切回“项目”，选择项目后再进入编剧、资产和出片画布。</span>
-          </article>
+        <div class="toon-canvas" :class="`toon-canvas--${activeModule}`" :aria-label="`${activeModule}画布`">
+          <div class="toon-canvas-toolbar"><div><span class="toon-dot"></span><strong>{{ selectedProject?.title || "未选择项目" }}</strong><small>{{ activeModule === "script" ? "编剧工作台" : activeModule === "assets" ? "资产工作台" : activeModule === "production" ? "出片工作台" : "项目设置" }}</small></div><div><button type="button" title="刷新状态" @click="selectedProject && emit('open-project', selectedProject.id)">↻</button><span>画布 100%</span></div></div>
 
-          <template v-else-if="activeModule === 'script'">
-            <article class="toon-node toon-node--document">
-              <p>故事骨架</p>
-              <h3>{{ selectedProject?.title || "未选择项目" }}</h3>
-              <span>{{ selectedProject?.world_brief || "导入原著后，事件图谱和改编策略会在这里展开。" }}</span>
-            </article>
-            <article class="toon-node toon-node--table">
-              <p>改编策略</p>
-              <h3>ScriptAgent</h3>
-              <span>{{ selectedProject?.writing_rules || "生成剧本前先写清节奏、删改边界和角色保留策略。" }}</span>
-            </article>
-            <article class="toon-node toon-node--table">
-              <p>剧本</p>
-              <h3>{{ scriptCount }} 个草稿</h3>
-              <span>正文、分集脚本和可出片文本会在这里沉淀。</span>
-            </article>
-          </template>
+          <div v-if="!selectedProject" class="toon-empty toon-empty--canvas"><strong>先打开一个项目</strong><p>选择项目后，真实生产数据会铺在这张画布上。</p></div>
 
-          <template v-else-if="activeModule === 'assets'">
-            <article v-for="asset in mediaAssets.slice(0, 12)" :key="asset.id" class="toon-asset-card">
-              <div class="toon-asset-card__preview">
-                <img v-if="/^https?:|^data:|\\.(png|jpg|jpeg|webp|gif)$/i.test(asset.uri)" :src="asset.uri" :alt="`${assetKindLabel(asset.asset_type)}素材预览`" loading="lazy" decoding="async" />
-                <span v-else>{{ assetKindLabel(asset.asset_type) }}</span>
-              </div>
-              <strong>{{ assetKindLabel(asset.asset_type) }} {{ asset.id }}</strong>
-              <span class="toon-asset-card__candidate">{{ assetCandidateLabel(asset) }}</span>
-              <p>{{ asset.prompt || asset.status || "素材已归档到项目。" }}</p>
-              <div class="toon-asset-card__actions" aria-label="候选资产状态">
-                <button v-if="!assetIsLocked(asset)" type="button" :disabled="loading" @click="emit('update-media-asset', asset.id, assetLockMeta(true))">设为采用</button>
-                <button v-else type="button" :disabled="loading" @click="emit('update-media-asset', asset.id, assetLockMeta(false))">取消采用</button>
-                <button type="button" :disabled="loading" @click="emit('delete-media-asset', asset.id)">删除候选</button>
-              </div>
-            </article>
-            <article v-if="!mediaAssets.length" class="toon-node toon-node--empty">
-              <h3>等待生成资产</h3>
-              <span>角色三视图、场景图、首帧和音频会以卡片形式铺在这里。</span>
-            </article>
-          </template>
+          <div v-else-if="activeModule === 'script'" class="toon-flow">
+            <article class="toon-flow-node toon-flow-node--source"><header><span>01 · 故事源</span><b :class="`tone-${selectedProject?.world_brief ? 'good' : 'warn'}`">{{ selectedProject?.world_brief ? "已录入" : "待补充" }}</b></header><h3>{{ selectedProject?.title }}</h3><p>{{ shortText(selectedProject?.world_brief, "尚未录入故事资料。") }}</p><footer>{{ selectedProject?.reference_work || "原创项目" }}</footer></article>
+            <span class="toon-connector">→</span>
+            <article class="toon-flow-node"><header><span>02 · 创作约束</span><b :class="`tone-${selectedProject?.writing_rules ? 'good' : 'warn'}`">{{ selectedProject?.writing_rules ? "已设置" : "待补充" }}</b></header><h3>改编策略</h3><p>{{ shortText(selectedProject?.writing_rules, "尚未设置改编要求。") }}</p><footer>{{ characterCards.length }} 人物卡 · {{ props.activeProject?.sources.length || 0 }} 资料</footer></article>
+            <span class="toon-connector">→</span>
+            <article class="toon-flow-node"><header><span>03 · 长篇产物</span><b :class="`tone-${longformState.draft_versions.length ? 'good' : 'neutral'}`">{{ longformState.draft_versions.length ? "有草稿" : "未开始" }}</b></header><h3>{{ longformState.series_plans[0]?.title || "系列规划与正文" }}</h3><p>{{ longformState.series_plans[0]?.theme || "概要、章节规划和正文版本会在这里汇总。" }}</p><footer>{{ longformState.series_plans.length }} 份规划 · {{ longformState.draft_versions.length }} 个草稿</footer></article>
+            <span class="toon-connector">→</span>
+            <article class="toon-flow-node"><header><span>04 · 分镜出口</span><b :class="`tone-${storyboards.length ? 'good' : 'neutral'}`">{{ storyboards.length ? "已连接" : "未开始" }}</b></header><h3>{{ selectedStoryboard?.title || "等待分镜" }}</h3><p>{{ selectedStoryboard?.summary || "完成故事与正文准备后，从这里进入镜头生产。" }}</p><footer>{{ selectedStoryboard?.shots.length || 0 }} 镜头</footer></article>
+          </div>
 
-          <template v-else-if="activeModule === 'production'">
-            <article v-for="track in productionTracks" :key="track.title" class="toon-track">
-              <p>{{ track.meta }}</p>
-              <h3>{{ track.title }}</h3>
-              <span>{{ track.detail }}</span>
-              <footer>
-                <button type="button" :disabled="loading || hasActiveVideoTask(track.tasks)" @click="emit('create-video-task', track.storyboard.id)">
-                  {{ hasActiveVideoTask(track.tasks) ? "生产中" : "创建视频任务" }}
-                </button>
-              </footer>
-              <div v-if="track.tasks.length" class="toon-track__tasks" aria-label="视频任务">
-                <article v-for="task in track.tasks" :key="task.id">
-                  <strong>生产任务 {{ task.id }}</strong>
-                  <span>{{ productionTaskLabel(task) }}</span>
-                  <a v-if="task.output_uri" :href="task.output_uri" target="_blank" rel="noreferrer">查看输出</a>
-                  <button type="button" :disabled="loading || task.task_status === 'running'" @click="emit('delete-video-task', task.id)">删除任务</button>
-                </article>
-              </div>
+          <div v-else-if="activeModule === 'assets'" class="toon-asset-board">
+            <article v-for="asset in mediaAssets" :key="asset.id" class="toon-asset-card">
+              <div class="toon-asset-card__preview"><img v-if="/^https?:|^data:|\\.(png|jpg|jpeg|webp|gif)$/i.test(asset.uri)" :src="asset.uri" :alt="assetKindLabel(asset.asset_type)" loading="lazy" /><span v-else>{{ assetKindLabel(asset.asset_type) }}</span></div>
+              <header><strong>{{ assetKindLabel(asset.asset_type) }} #{{ asset.id }}</strong><b :class="`tone-${assetIsLocked(asset) ? 'good' : 'neutral'}`">{{ assetCandidateLabel(asset) }}</b></header>
+              <p>{{ shortText(asset.prompt || asset.status, "项目素材", 72) }}</p>
+              <footer><button v-if="!assetIsLocked(asset)" type="button" :disabled="loading" @click="emit('update-media-asset', asset.id, assetLockMeta(true))">设为采用</button><button v-else type="button" :disabled="loading" @click="emit('update-media-asset', asset.id, assetLockMeta(false))">取消采用</button><button type="button" :disabled="loading" @click="emit('delete-media-asset', asset.id)">删除候选</button></footer>
             </article>
-            <article v-for="track in fallbackProductionTracks()" v-if="!productionTracks.length" :key="track.title" class="toon-track">
-              <p>{{ track.meta }}</p>
-              <h3>{{ track.title }}</h3>
-              <span>{{ track.detail }}</span>
-            </article>
-          </template>
+            <div v-if="!mediaAssets.length" class="toon-empty toon-empty--canvas"><strong>等待生成资产</strong><p>角色三视图、场景图、镜头首帧和音频会铺在这里。</p></div>
+          </div>
 
-          <template v-else-if="activeModule === 'settings'">
-            <article v-if="!selectedProject" class="toon-node toon-node--empty">
-              <h3>先打开一个项目</h3>
-              <span>选择项目后才能保存项目级设定。</span>
-            </article>
-            <form v-else class="toon-settings toon-node toon-node--document" @submit.prevent="saveProjectSettings()">
-              <p>项目设置</p>
-              <h3>{{ selectedProject.title }}</h3>
-              <label>
-                <span>项目标题</span>
-                <input v-model="settingsDraft.title" maxlength="120" autocomplete="off" />
-              </label>
-              <label>
-                <span>题材 / 风格</span>
-                <input v-model="settingsDraft.genre" maxlength="80" autocomplete="off" />
-              </label>
-              <label>
-                <span>故事资料</span>
-                <textarea v-model="settingsDraft.world_brief" rows="6" />
-              </label>
-              <label>
-                <span>改编要求</span>
-                <textarea v-model="settingsDraft.writing_rules" rows="5" />
-              </label>
-              <footer>
-                <button type="submit" :disabled="loading">{{ loading ? "保存中..." : "保存设置" }}</button>
-              </footer>
-            </form>
-          </template>
+          <div v-else-if="activeModule === 'production'" class="toon-production-board">
+            <template v-if="selectedStoryboard">
+              <article class="toon-storyboard-table">
+                <header><div><span>分镜表</span><h3>{{ selectedStoryboard.title }}</h3></div><b :class="`tone-${statusTone(selectedStoryboard.status)}`">{{ statusLabel(selectedStoryboard.status) }}</b></header>
+                <div class="toon-shot-table"><div class="toon-shot-table__head"><span>镜头</span><span>画面与动作</span><span>时长</span><span>状态</span></div><div v-for="shot in selectedStoryboard.shots" :key="shot.id" class="toon-shot-row"><span>S{{ String(shot.shot_no).padStart(2, "0") }}</span><span><strong>{{ shortText(shot.narration_text, "无旁白", 36) }}</strong><small>{{ shortText(shot.visual_prompt, "尚未填写视觉提示词", 58) }}</small></span><span>{{ shot.duration_seconds }}s</span><span>{{ statusLabel(shot.status) }}</span></div></div>
+              </article>
+              <span class="toon-connector">→</span>
+              <article class="toon-frame-panel"><header><div><span>镜头面板</span><h3>{{ selectedStoryboard.shots.length }} 个镜头</h3></div><button type="button" :disabled="loading || hasActiveVideoTask(selectedStoryboardTasks)" @click="emit('create-video-task', selectedStoryboard.id)">{{ hasActiveVideoTask(selectedStoryboardTasks) ? "生产中" : "创建视频任务" }}</button></header><div class="toon-frame-grid"><div v-for="shot in selectedStoryboard.shots" :key="shot.id"><img v-if="shotAsset(shot)?.uri" :src="shotAsset(shot)?.uri" alt="" /><span v-else>未生成</span><small>S{{ String(shot.shot_no).padStart(2, "0") }}</small></div></div></article>
+            </template>
+            <div v-else class="toon-empty toon-empty--canvas"><strong>Track 1 · 分镜</strong><p>生成或导入分镜后，这里会形成可审核的镜头生产轨道。</p></div>
+          </div>
+
+          <form v-else-if="activeModule === 'settings' && selectedProject" class="toon-settings" @submit.prevent="saveProjectSettings()"><header><span>PROJECT SETTINGS</span><h3>{{ selectedProject.title }}</h3></header><label><span>项目标题</span><input v-model="settingsDraft.title" maxlength="120" /></label><label><span>题材 / 风格</span><input v-model="settingsDraft.genre" maxlength="80" /></label><label><span>故事资料</span><textarea v-model="settingsDraft.world_brief" rows="7" /></label><label><span>改编要求</span><textarea v-model="settingsDraft.writing_rules" rows="6" /></label><footer><button type="submit" class="toon-button--dark" :disabled="loading">{{ loading ? "保存中..." : "保存设置" }}</button></footer></form>
         </div>
 
-        <aside class="toon-agent toon-card">
-          <strong><span></span>{{ selectedProject?.title || "项目 Agent" }}</strong>
-          <ul>
-            <li>策划：从原著或简报建立事件图谱。</li>
-            <li>编剧：生成故事骨架、改编策略和剧本。</li>
-            <li>资产：提取角色、场景、道具并生成图像。</li>
-            <li>出片：组织分镜、首帧、配音和视频任务。</li>
-          </ul>
-          <div class="toon-agent__status" aria-label="项目状态摘要">
-            <span>章节 {{ chapterCount }}</span>
-            <span>分镜 {{ storyboardCount }}</span>
-            <span>视频任务 {{ videoTaskCount }}</span>
-          </div>
+        <aside class="toon-agent">
+          <header><div><span class="toon-dot"></span><strong>生产监督</strong></div><small>{{ selectedStoryboard?.title || "项目状态" }}</small></header>
+          <section><span>来源与预检</span><dl><div><dt>来源模式</dt><dd>{{ sourceMode }}</dd></div><div><dt>预检状态</dt><dd :class="`tone-text-${statusTone(String(preflight?.readiness || ''))}`">{{ preflight ? statusLabel(String(preflight.readiness)) : "尚未执行" }}</dd></div><div><dt>质量问题</dt><dd>{{ reviewFindings.length }}</dd></div></dl></section>
+          <section v-if="reviewFindings.length"><span>质量复查</span><article v-for="finding in reviewFindings.slice(0, 4)" :key="String(finding.finding_id)"><b :class="`tone-${finding.severity === 'blocking' ? 'bad' : 'warn'}`">{{ finding.severity === "blocking" ? "阻断" : "建议" }}</b><strong>{{ finding.title }}</strong><p>{{ finding.detail }}</p></article></section>
+          <section><span>运行记录</span><article v-for="event in recentEvents" :key="event.id"><time>{{ formatDateTime(event.created_at) }}</time><strong>{{ event.message }}</strong></article><p v-if="!recentEvents.length">当前项目还没有生产运行记录。</p></section>
+          <section v-if="selectedStoryboardTasks.length"><span>视频任务</span><article v-for="task in selectedStoryboardTasks" :key="task.id"><b :class="`tone-${statusTone(task.task_status)}`">{{ statusLabel(task.task_status) }}</b><strong>任务 #{{ task.id }}</strong><a v-if="task.output_uri" :href="task.output_uri" target="_blank" rel="noreferrer">查看输出</a><button type="button" :disabled="loading || task.task_status === 'running'" @click="emit('delete-video-task', task.id)">删除任务</button></article></section>
         </aside>
       </section>
     </main>
@@ -604,705 +358,86 @@ function itemCode(item: TrashItem) {
 </template>
 
 <style scoped>
-.toon-shell {
-  min-height: calc(100vh - 44px);
-  display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
-  gap: 16px;
-  --toon-ink: color-mix(in oklab, var(--ink) 92%, oklch(20% 0.026 18));
-  --toon-ink-muted: color-mix(in oklab, var(--ink-soft) 88%, var(--rose-strong));
-  --toon-line: rgba(20, 16, 20, 0.1);
-  --toon-surface: rgba(255, 255, 255, 0.64);
-}
-
-.toon-rail,
-.toon-stage,
-.toon-card {
-  border: 1px solid rgba(255, 255, 255, 0.82);
-  background: rgba(255, 255, 255, 0.62);
-  box-shadow: 0 22px 52px rgba(240, 111, 155, 0.1);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
-.toon-rail {
-  position: sticky;
-  top: 22px;
-  min-height: calc(100vh - 44px);
-  display: grid;
-  grid-template-rows: auto repeat(4, 48px) 1fr repeat(2, 48px);
-  gap: 10px;
-  padding: 14px;
-  border-radius: 24px;
-}
-
-.toon-rail__brand,
-.toon-rail button {
-  display: grid;
-  place-items: center;
-  border-radius: 16px;
-  font-weight: 800;
-}
-
-.toon-rail__brand {
-  height: 48px;
-  color: white;
-  background: linear-gradient(135deg, color-mix(in oklab, var(--rose-strong) 86%, white), color-mix(in oklab, var(--rose) 68%, white));
-}
-
-.toon-rail button {
-  border: 0;
-  background: transparent;
-  color: color-mix(in oklab, var(--rose-strong) 42%, var(--ink));
-  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
-}
-
-.toon-rail svg {
-  width: 23px;
-  height: 23px;
-  overflow: visible;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.75;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.toon-rail button.active,
-.toon-topbar nav button.active {
-  color: white;
-  background: color-mix(in oklab, var(--toon-ink) 92%, var(--rose-strong));
-}
-
-.toon-rail button:hover,
-.toon-topbar nav button:hover,
-.toon-user button:hover,
-.toon-button:hover,
-.toon-project-card footer button:hover,
-.toon-asset-card__actions button:hover,
-.toon-track button:hover,
-.toon-settings button:hover {
-  transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.86);
-}
-
-.toon-rail button.active:hover,
-.toon-topbar nav button.active:hover {
-  background: color-mix(in oklab, var(--toon-ink) 92%, var(--rose-strong));
-}
-
-.toon-rail button:focus-visible,
-.toon-topbar nav button:focus-visible,
-.toon-user button:focus-visible,
-.toon-button:focus-visible,
-.toon-project-card:focus-visible,
-.toon-project-card footer button:focus-visible,
-.toon-asset-card__actions button:focus-visible,
-.toon-track button:focus-visible,
-.toon-settings button:focus-visible,
-.toon-create input:focus-visible,
-.toon-create textarea:focus-visible,
-.toon-settings input:focus-visible,
-.toon-settings textarea:focus-visible,
-.toon-select select:focus-visible,
-.toon-toolbar input:focus-visible {
-  outline: 3px solid color-mix(in oklab, var(--rose-strong) 28%, white);
-  outline-offset: 3px;
-}
-
-.toon-stage {
-  min-width: 0;
-  min-height: calc(100vh - 44px);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 18px;
-  padding: 28px;
-  border-radius: 28px;
-}
-
-.toon-topbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 18px;
-  align-items: center;
-}
-
-.toon-topbar p,
-.toon-section-head p,
-.toon-create__head p {
-  margin: 0 0 4px;
-  color: var(--ink-soft);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.toon-topbar h1,
-.toon-section-head h2,
-.toon-create__head h2 {
-  margin: 0;
-  color: #181216;
-  font-family: var(--font-body);
-  font-size: clamp(1.5rem, 2.4vw, 2.2rem);
-  font-weight: 850;
-  letter-spacing: -0.04em;
-}
-
-.toon-topbar nav,
-.toon-user,
-.toon-actions,
-.toon-toolbar,
-.toon-status-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.toon-topbar nav button,
-.toon-button,
-.toon-user button,
-.toon-project-card footer button,
-.toon-asset-card__actions button,
-.toon-track button,
-.toon-settings button,
-.toon-batch button {
-  min-height: 42px;
-  border: 1px solid rgba(20, 16, 20, 0.1);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.64);
-  color: #191318;
-  padding: 0 14px;
-  font-weight: 700;
-  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-}
-
-.toon-button--dark,
-.toon-batch .toon-button--dark {
-  color: white;
-  background: color-mix(in oklab, var(--toon-ink) 92%, var(--rose-strong));
-}
-
-.toon-button:disabled {
-  cursor: wait;
-  opacity: 0.62;
-  transform: none;
-}
-
-.toon-projects,
-.toon-create {
-  display: grid;
-  gap: 18px;
-  align-content: start;
-}
-
-.toon-section-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  align-items: end;
-}
-
-.toon-search {
-  display: grid;
-  gap: 6px;
-}
-
-.toon-search span {
-  font-size: 0.78rem;
-  color: var(--ink-soft);
-}
-
-.toon-toolbar input {
-  width: min(360px, 42vw);
-  min-height: 42px;
-  border: 1px solid rgba(20, 16, 20, 0.1);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
-  padding: 0 12px;
-}
-
-.toon-project-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 14px;
-}
-
-.toon-project-card {
-  min-height: 180px;
-  display: grid;
-  gap: 16px;
-  align-content: start;
-  padding: 20px;
-  border: 1px solid rgba(20, 16, 20, 0.1);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.58);
-  cursor: pointer;
-  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-}
-
-.toon-project-card:hover,
-.toon-project-card:focus-visible {
-  border-color: color-mix(in oklab, var(--rose-strong) 22%, white);
-  background: rgba(255, 255, 255, 0.76);
-  box-shadow: 0 18px 42px rgba(240, 111, 155, 0.12);
-  transform: translateY(-2px);
-}
-
-.toon-project-card strong,
-.toon-project-card span,
-.toon-project-card p {
-  display: block;
-}
-
-.toon-project-card strong {
-  color: #181216;
-  font-size: 1.12rem;
-}
-
-.toon-project-card span,
-.toon-project-card p,
-.toon-create__head span {
-  color: var(--ink-soft);
-  line-height: 1.55;
-}
-
-.toon-project-card p {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-}
-
-.toon-project-card footer {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: auto;
-}
-
-.toon-card {
-  border-radius: 16px;
-  padding: 20px;
-}
-
-.toon-card--empty {
-  min-height: 260px;
-  align-content: center;
-}
-
-.toon-create {
-  grid-template-columns: minmax(220px, 0.5fr) minmax(0, 1fr);
-  padding: clamp(24px, 4vw, 48px);
-}
-
-.toon-create__form {
-  display: grid;
-  gap: 14px;
-}
-
-.toon-create label,
-.toon-select {
-  display: grid;
-  gap: 8px;
-}
-
-.toon-create input,
-.toon-create textarea,
-.toon-settings input,
-.toon-settings textarea,
-.toon-select select {
-  width: 100%;
-  border: 1px solid rgba(20, 16, 20, 0.1);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.72);
-  padding: 12px;
-  color: var(--toon-ink);
-}
-
-.toon-create textarea {
-  resize: vertical;
-  line-height: 1.65;
-}
-
-.toon-settings {
-  width: min(720px, 100%);
-}
-
-.toon-settings label {
-  display: grid;
-  gap: 8px;
-}
-
-.toon-settings textarea {
-  resize: vertical;
-  line-height: 1.65;
-}
-
-.toon-settings footer {
-  display: flex;
-  justify-content: flex-start;
-}
-
-.toon-settings button:disabled {
-  cursor: wait;
-  opacity: 0.58;
-  transform: none;
-}
-
-.toon-workbench {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 360px;
-  gap: 14px;
-}
-
-.toon-inspector,
-.toon-agent {
-  align-content: start;
-  display: grid;
-  gap: 18px;
-}
-
-.toon-batch {
-  display: grid;
-  gap: 10px;
-}
-
-.toon-batch p {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.9rem;
-  line-height: 1.6;
-}
-
-.toon-next-actions {
-  display: grid;
-  gap: 8px;
-}
-
-.toon-next-actions span {
-  min-height: 38px;
-  display: grid;
-  align-items: center;
-  border: 1px dashed rgba(20, 16, 20, 0.12);
-  border-radius: 10px;
-  padding: 0 12px;
-  color: color-mix(in oklab, var(--ink-soft) 78%, white);
-  background: rgba(255, 255, 255, 0.42);
-}
-
-.toon-status-row span {
-  padding: 0.28rem 0.56rem;
-  border-radius: 999px;
-  background: rgba(255, 239, 246, 0.74);
-  color: color-mix(in oklab, var(--rose-strong) 52%, var(--ink));
-  font-size: 0.8rem;
-}
-
-.toon-canvas {
-  position: relative;
-  min-height: 680px;
-  overflow: auto;
-  border-radius: 16px;
-  border: 1px solid rgba(20, 16, 20, 0.08);
-  background:
-    radial-gradient(circle, rgba(20, 16, 20, 0.12) 1px, transparent 1px) 0 0 / 22px 22px,
-    rgba(255, 255, 255, 0.36);
-  padding: 34px;
-  contain: layout paint;
-}
-
-.toon-node,
-.toon-track,
-.toon-asset-card {
-  border: 1px solid rgba(20, 16, 20, 0.11);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 14px 30px rgba(20, 16, 20, 0.06);
-}
-
-.toon-node {
-  width: min(360px, 100%);
-  min-height: 190px;
-  display: grid;
-  gap: 10px;
-  align-content: start;
-  margin-bottom: 28px;
-  padding: 18px;
-}
-
-.toon-node:nth-child(2) {
-  margin-left: min(260px, 28%);
-}
-
-.toon-node:nth-child(3) {
-  margin-left: min(120px, 14%);
-}
-
-.toon-node p,
-.toon-track p {
-  margin: 0;
-  color: var(--ink-soft);
-}
-
-.toon-node h3,
-.toon-track h3 {
-  margin: 0;
-  color: #181216;
-}
-
-.toon-node span,
-.toon-track span,
-.toon-agent li {
-  color: var(--ink-soft);
-  line-height: 1.62;
-}
-
-.toon-canvas--assets {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  align-content: start;
-  gap: 14px;
-}
-
-.toon-asset-card {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  content-visibility: auto;
-  contain-intrinsic-size: 250px;
-}
-
-.toon-asset-card__preview {
-  aspect-ratio: 16 / 10;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 10px;
-  background: rgba(246, 240, 244, 0.9);
-  color: var(--ink-soft);
-}
-
-.toon-asset-card__preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.toon-asset-card p {
-  display: -webkit-box;
-  min-height: 3.1em;
-  margin: 0;
-  overflow: hidden;
-  color: var(--ink-soft);
-  font-size: 0.84rem;
-  line-height: 1.55;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.toon-asset-card__candidate {
-  color: color-mix(in oklab, var(--rose-strong) 52%, var(--ink));
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.toon-asset-card__actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.toon-asset-card__actions button {
-  min-height: 34px;
-  display: inline-grid;
-  align-items: center;
-  border: 1px solid rgba(20, 16, 20, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.66);
-  color: color-mix(in oklab, var(--ink-soft) 82%, white);
-  padding: 0 10px;
-  font-size: 0.76rem;
-}
-
-.toon-asset-card__actions button:disabled {
-  cursor: wait;
-  opacity: 0.58;
-  transform: none;
-}
-
-.toon-canvas--production {
-  display: grid;
-  align-content: start;
-  gap: 16px;
-}
-
-.toon-track {
-  min-height: 130px;
-  display: grid;
-  gap: 12px;
-  padding: 18px;
-}
-
-.toon-track footer {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.toon-track button:disabled {
-  cursor: wait;
-  opacity: 0.58;
-  transform: none;
-}
-
-.toon-track__tasks {
-  display: grid;
-  gap: 8px;
-}
-
-.toon-track__tasks article {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 8px;
-  align-items: center;
-  border: 1px solid rgba(20, 16, 20, 0.08);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.54);
-  padding: 10px;
-}
-
-.toon-track__tasks a {
-  color: color-mix(in oklab, var(--rose-strong) 58%, var(--ink));
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.toon-agent strong {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.toon-agent strong span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #1ec25b;
-}
-
-.toon-agent ul {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-  padding-left: 20px;
-}
-
-.toon-agent__status {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: auto;
-  border: 1px solid rgba(20, 16, 20, 0.1);
-  border-radius: 14px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.62);
-}
-
-.toon-agent__status span {
-  border-radius: 999px;
-  background: rgba(255, 239, 246, 0.72);
-  color: color-mix(in oklab, var(--rose-strong) 52%, var(--ink));
-  padding: 0.28rem 0.56rem;
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-@media (max-width: 1180px) {
-  .toon-workbench {
-    grid-template-columns: 280px minmax(0, 1fr);
-  }
-
-  .toon-agent {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (max-width: 820px) {
-  .toon-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .toon-rail {
-    position: static;
-    min-height: auto;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    grid-template-rows: auto;
-    padding: 10px;
-    border-radius: 20px;
-  }
-
-  .toon-stage,
-  .toon-topbar,
-  .toon-create,
-  .toon-workbench,
-  .toon-section-head {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .toon-toolbar input {
-    width: 100%;
-  }
-
-  .toon-stage {
-    padding: 18px;
-  }
-
-  .toon-canvas {
-    min-height: 520px;
-    padding: 20px;
-  }
-
-  .toon-project-card footer {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .toon-project-card footer button,
-  .toon-asset-card__actions button,
-  .toon-track button,
-  .toon-settings button {
-    width: 100%;
-  }
-
-  .toon-track__tasks article {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 560px) {
-  .toon-rail {
-    grid-template-columns: repeat(4, minmax(44px, 1fr));
-  }
-
-  .toon-rail span {
-    display: none;
-  }
-
-  .toon-topbar nav,
-  .toon-user,
-  .toon-actions,
-  .toon-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .toon-topbar nav button,
-  .toon-user button,
-  .toon-button {
-    width: 100%;
-  }
-}
+.toon-shell { min-height: calc(100vh - 32px); display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 12px; color: var(--ink); font-family: "Microsoft YaHei", "PingFang SC", sans-serif; --toon-glass: rgba(255,255,255,.64); --toon-glass-strong: rgba(255,255,255,.78); --toon-line: rgba(255,255,255,.84); --toon-rose: color-mix(in oklab, var(--rose-strong) 76%, #6f2949); --toon-shadow: 0 20px 48px rgba(213,91,141,.13); }
+button, input, textarea, select { font: inherit; }
+button { min-height: 42px; border: 1px solid rgba(110,52,78,.12); border-radius: 9px; background: rgba(255,255,255,.64); color: var(--ink); padding: 0 13px; cursor: pointer; }
+button:hover { border-color: rgba(218,91,145,.3); background: rgba(255,255,255,.88); }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid color-mix(in oklab, var(--rose-strong) 66%, white); outline-offset: 2px; }
+button:disabled { cursor: wait; opacity: .48; }
+.toon-button--dark { border-color: transparent; background: var(--toon-rose); color: white; }
+.toon-button--dark:hover { background: color-mix(in oklab, var(--toon-rose) 88%, #49152c); color: white; }
+.toon-rail, .toon-stage { border: 1px solid var(--toon-line); background: var(--toon-glass); box-shadow: var(--toon-shadow); backdrop-filter: blur(24px) saturate(1.12); -webkit-backdrop-filter: blur(24px) saturate(1.12); }
+.toon-rail { position: sticky; top: 16px; height: calc(100vh - 32px); display: grid; grid-template-rows: repeat(5, 48px) 1fr repeat(2, 48px); gap: 8px; padding: 10px; border-radius: 18px; }
+.toon-rail button { width: 46px; padding: 0; border: 0; background: transparent; font-size: 1.35rem; font-weight: 800; }
+.toon-rail__label { display: none; font-size: .68rem; font-weight: 700; }
+.toon-rail button.active, .toon-rail__brand { background: var(--toon-rose); color: white; box-shadow: 0 10px 22px rgba(213,91,141,.2); }
+.toon-rail__brand { font-size: .84rem !important; letter-spacing: -.08em; }
+.toon-stage { min-width: 0; min-height: calc(100vh - 32px); display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 14px; padding: 18px; border-radius: 18px; }
+.toon-topbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 18px; align-items: center; padding: 0 4px 14px; border-bottom: 1px solid rgba(110,52,78,.1); }
+.toon-heading { min-width: 0; }
+.toon-heading span, .toon-section-head span, .toon-create header span, .toon-settings header span { color: #909090; font-size: .72rem; font-weight: 800; letter-spacing: .12em; }
+.toon-heading h1, .toon-section-head h2, .toon-create h2 { margin: 3px 0 0; overflow: hidden; font-size: 1.45rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.toon-topbar nav, .toon-user, .toon-empty > div, .toon-create footer { display: flex; gap: 8px; align-items: center; }
+.toon-topbar nav button { display: flex; gap: 7px; align-items: center; border-color: transparent; background: transparent; }
+.toon-topbar nav button.active { border-color: transparent; background: var(--toon-rose); color: white; }
+.toon-user { justify-content: end; }
+.toon-user > span { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toon-empty { min-height: 280px; display: grid; place-content: center; justify-items: start; gap: 10px; padding: 28px; border: 1px dashed rgba(151,77,109,.24); border-radius: 14px; background: rgba(255,255,255,.46); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.toon-empty strong { font-size: 1.25rem; }.toon-empty p { max-width: 56ch; margin: 0; color: #777; line-height: 1.7; }
+.toon-create { display: grid; grid-template-columns: minmax(220px, .55fr) minmax(0, 1fr); gap: 64px; align-content: start; padding: 42px; }
+.toon-create header p, .toon-section-head p { max-width: 60ch; color: #777; line-height: 1.65; }
+.toon-create form, .toon-create label, .toon-settings, .toon-settings label { display: grid; gap: 10px; }
+.toon-create form, .toon-settings { gap: 16px; }
+.toon-create input, .toon-create textarea, .toon-settings input, .toon-settings textarea, .toon-project-select select, .toon-project-toolbar input { width: 100%; border: 1px solid rgba(110,52,78,.14); border-radius: 9px; background: rgba(255,255,255,.66); padding: 11px 12px; color: var(--ink); }
+.toon-create textarea, .toon-settings textarea { resize: vertical; line-height: 1.65; }
+.toon-projects { display: grid; gap: 18px; align-content: start; padding: 20px; }
+.toon-section-head { display: flex; justify-content: space-between; gap: 24px; align-items: end; }
+.toon-section-head h2 { font-size: 2rem; }
+.toon-project-toolbar { display: flex; gap: 12px; align-items: center; }.toon-project-toolbar input { max-width: 520px; }.toon-project-toolbar span { color: #777; font-size: .85rem; }
+.toon-project-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.toon-project-grid article { min-height: 210px; display: grid; gap: 18px; align-content: start; padding: 20px; border: 1px solid var(--toon-line); border-radius: 12px; background: rgba(255,255,255,.54); box-shadow: 0 12px 30px rgba(213,91,141,.08); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); cursor: pointer; }
+.toon-project-grid article:hover { border-color: rgba(218,91,145,.3); background: rgba(255,255,255,.76); box-shadow: 0 16px 34px rgba(213,91,141,.14); transform: translateY(-1px); }
+.toon-project-grid header, .toon-project-grid footer, .toon-flow-node header, .toon-flow-node footer, .toon-asset-card header, .toon-asset-card footer, .toon-storyboard-table > header, .toon-frame-panel > header, .toon-agent > header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.toon-project-grid header strong { font-size: 1.12rem; }.toon-project-grid header span, .toon-project-grid time { color: #888; font-size: .78rem; }
+.toon-project-grid p { margin: 0; color: #555; line-height: 1.7; }.toon-project-grid footer { margin-top: auto; }
+.toon-workbench { min-height: 0; display: grid; grid-template-columns: 244px minmax(620px, 1fr) 308px; gap: 10px; overflow: auto; }
+.toon-inspector, .toon-agent { min-height: 0; overflow: auto; border: 1px solid var(--toon-line); border-radius: 12px; background: var(--toon-glass); box-shadow: 0 14px 34px rgba(213,91,141,.08); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
+.toon-inspector { display: grid; gap: 18px; align-content: start; padding: 14px; }
+.toon-project-select, .toon-inspector__block, .toon-storyboard-list { display: grid; gap: 9px; }
+.toon-project-select > span, .toon-inspector__block > strong, .toon-storyboard-list > strong { color: #777; font-size: .75rem; letter-spacing: .06em; }
+.toon-inspector__block { padding-top: 16px; border-top: 1px solid rgba(110,52,78,.09); }
+.toon-inspector__block dl, .toon-agent dl { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 0; }
+.toon-inspector__block dl div, .toon-agent dl div { display: grid; gap: 3px; padding: 9px; background: rgba(255,239,246,.62); border: 1px solid rgba(255,255,255,.76); border-radius: 8px; }
+dt { color: #888; font-size: .7rem; } dd { margin: 0; font-weight: 800; }
+.toon-inspector__block p { margin: 0; color: #555; font-size: .85rem; line-height: 1.65; }
+.toon-storyboard-list button { height: auto; display: grid; gap: 3px; justify-items: start; padding: 10px; text-align: left; }
+.toon-storyboard-list button.active { border-color: transparent; background: var(--toon-rose); color: white; }.toon-storyboard-list small { opacity: .66; }
+.toon-canvas { min-height: 720px; overflow: auto; border: 1px solid var(--toon-line); border-radius: 12px; background: radial-gradient(circle, rgba(132,67,96,.18) 1px, transparent 1px) 0 0 / 18px 18px, rgba(255,255,255,.4); box-shadow: inset 0 1px 0 rgba(255,255,255,.72); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+.toon-canvas-toolbar { position: sticky; top: 0; z-index: 3; display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 11px 14px; border-bottom: 1px solid rgba(110,52,78,.1); background: rgba(255,255,255,.78); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.toon-canvas-toolbar > div { display: flex; gap: 9px; align-items: center; }.toon-canvas-toolbar small, .toon-canvas-toolbar span:last-child { color: #888; font-size: .75rem; }.toon-canvas-toolbar button { min-height: 34px; padding: 0 10px; }
+.toon-dot { width: 8px; height: 8px; border-radius: 50%; background: #17a34a; }
+.toon-empty--canvas { margin: 80px auto; width: min(520px, calc(100% - 48px)); }
+.toon-flow, .toon-production-board { min-width: 1100px; display: flex; gap: 18px; align-items: center; padding: 52px 32px; }
+.toon-flow-node { width: 250px; min-height: 230px; display: grid; gap: 15px; align-content: start; padding: 16px; border: 1px solid var(--toon-line); border-radius: 12px; background: rgba(255,255,255,.72); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.toon-flow-node--source { margin-top: -80px; }.toon-flow-node:nth-of-type(2) { margin-top: 80px; }.toon-flow-node:nth-of-type(3) { margin-top: -30px; }
+.toon-flow-node h3, .toon-flow-node p { margin: 0; }.toon-flow-node p { color: #555; font-size: .84rem; line-height: 1.65; }.toon-flow-node footer { margin-top: auto; color: #888; font-size: .75rem; }
+.toon-flow-node header span, .toon-storyboard-table header span, .toon-frame-panel header span { color: #777; font-size: .72rem; font-weight: 800; letter-spacing: .06em; }
+.toon-connector { color: #777; font-size: 1.5rem; }
+[class^="tone-"], [class*=" tone-"] { display: inline-flex; width: fit-content; border-radius: 4px; padding: 3px 6px; font-size: .68rem; font-weight: 800; }
+.tone-good { background: #d9f5e3; color: #087434; }.tone-warn { background: #fff0c9; color: #8a5b00; }.tone-bad { background: #ffe0df; color: #a11d17; }.tone-neutral { background: #ededed; color: #666; }
+.tone-text-good { color: #087434; }.tone-text-warn { color: #8a5b00; }.tone-text-bad { color: #a11d17; }.tone-text-neutral { color: #666; }
+.toon-asset-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; align-content: start; padding: 24px; }
+.toon-asset-card { display: grid; gap: 10px; padding: 10px; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 12px 26px rgba(213,91,141,.08); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.toon-asset-card__preview { aspect-ratio: 16/10; display: grid; place-items: center; overflow: hidden; border-radius: 7px; background: rgba(255,235,244,.72); color: #888; }.toon-asset-card__preview img { width: 100%; height: 100%; object-fit: cover; }
+.toon-asset-card p { min-height: 3em; margin: 0; color: #666; font-size: .76rem; line-height: 1.55; }.toon-asset-card footer { justify-content: start; flex-wrap: wrap; }.toon-asset-card footer button { min-height: 32px; padding: 0 8px; font-size: .72rem; }
+.toon-storyboard-table { width: 540px; max-height: 610px; overflow: auto; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-storyboard-table > header, .toon-frame-panel > header { position: sticky; top: 0; z-index: 2; padding: 13px; border-bottom: 1px solid rgba(110,52,78,.1); background: rgba(255,255,255,.88); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-storyboard-table h3, .toon-frame-panel h3 { margin: 3px 0 0; font-size: .95rem; }
+.toon-shot-table__head, .toon-shot-row { display: grid; grid-template-columns: 52px minmax(260px, 1fr) 52px 70px; align-items: start; }.toon-shot-table__head { position: sticky; top: 67px; padding: 8px 10px; background: rgba(255,234,243,.88); color: #777; font-size: .68rem; }.toon-shot-row { padding: 10px; border-top: 1px solid rgba(110,52,78,.08); font-size: .74rem; }.toon-shot-row:nth-child(odd) { background: rgba(255,249,252,.54); }.toon-shot-row > span:nth-child(2) { display: grid; gap: 4px; }.toon-shot-row small { color: #777; line-height: 1.5; }
+.toon-frame-panel { width: 520px; min-height: 430px; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-frame-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 10px; }.toon-frame-grid > div { position: relative; aspect-ratio: 16/10; display: grid; place-items: center; overflow: hidden; border-radius: 5px; background: rgba(255,235,244,.72); color: #888; font-size: .68rem; }.toon-frame-grid img { width: 100%; height: 100%; object-fit: cover; }.toon-frame-grid small { position: absolute; top: 4px; left: 4px; padding: 2px 4px; border-radius: 3px; background: var(--toon-rose); color: white; font-size: .58rem; }
+.toon-settings { width: min(720px, calc(100% - 48px)); margin: 28px; padding: 22px; border: 1px solid var(--toon-line); border-radius: 12px; background: rgba(255,255,255,.72); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-settings h3 { margin: 4px 0 0; }
+.toon-agent { display: grid; gap: 0; align-content: start; }.toon-agent > header { position: sticky; top: 0; z-index: 2; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.1); background: rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }.toon-agent > header > div { display: flex; gap: 8px; align-items: center; }.toon-agent > header small { color: #888; }
+.toon-agent section { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.08); }.toon-agent section > span { color: #777; font-size: .72rem; font-weight: 800; letter-spacing: .08em; }.toon-agent article { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(255,255,255,.82); border-radius: 8px; background: rgba(255,255,255,.5); }.toon-agent article p, .toon-agent section > p { margin: 0; color: #666; font-size: .76rem; line-height: 1.55; }.toon-agent article time { color: #999; font-size: .68rem; }.toon-agent article a { color: var(--toon-rose); font-size: .76rem; font-weight: 800; }.toon-agent article button { min-height: 32px; width: fit-content; font-size: .72rem; }
+@media (max-width: 1180px) { .toon-workbench { grid-template-columns: 220px minmax(620px, 1fr); }.toon-agent { grid-column: 1 / -1; max-height: 360px; }.toon-topbar { grid-template-columns: minmax(180px, 1fr) auto; }.toon-user { grid-column: 1 / -1; justify-content: start; } }
+@media (max-width: 900px) { .toon-shell { grid-template-columns: minmax(0, 1fr); }.toon-rail { position: sticky; top: 8px; z-index: 8; height: auto; grid-template-columns: repeat(7, minmax(64px, 1fr)); grid-template-rows: auto; overflow-x: auto; padding: 8px; }.toon-rail i { display: none; }.toon-rail button { width: auto; min-width: 64px; min-height: 50px; display: grid; place-content: center; gap: 2px; font-size: 1.05rem; }.toon-rail__brand { min-width: 52px !important; }.toon-rail__label { display: block; }.toon-stage { min-height: auto; }.toon-topbar nav { display: none; }.toon-workbench { grid-template-columns: minmax(0, 1fr); overflow: visible; }.toon-inspector, .toon-agent { max-height: none; }.toon-inspector { grid-template-columns: repeat(2, minmax(0, 1fr)); }.toon-project-select, .toon-storyboard-list { grid-column: 1 / -1; }.toon-canvas { min-height: 620px; }.toon-flow, .toon-production-board { min-width: 980px; } }
+@media (max-width: 760px) { .toon-shell { gap: 8px; }.toon-stage { padding: 12px; }.toon-topbar, .toon-create, .toon-section-head { display: grid; grid-template-columns: minmax(0, 1fr); }.toon-user { grid-column: auto; }.toon-project-toolbar { align-items: stretch; flex-direction: column; }.toon-inspector { grid-template-columns: minmax(0, 1fr); }.toon-project-select, .toon-storyboard-list { grid-column: auto; }.toon-canvas { min-height: 560px; scroll-snap-type: x proximity; }.toon-flow > *, .toon-production-board > * { scroll-snap-align: start; }.toon-create { padding: 18px; gap: 24px; } }
+@media (max-width: 460px) { .toon-rail { grid-template-columns: repeat(7, 62px); }.toon-topbar { gap: 12px; }.toon-heading h1 { font-size: 1.15rem; }.toon-user { width: 100%; overflow-x: auto; }.toon-user button { min-height: 44px; }.toon-canvas-toolbar { align-items: flex-start; }.toon-canvas-toolbar > div:last-child { flex-shrink: 0; }.toon-project-grid { grid-template-columns: minmax(0, 1fr); }.toon-create form { padding: 14px; } }
 </style>

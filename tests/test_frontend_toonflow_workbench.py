@@ -32,22 +32,41 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
     def test_toonflow_workbench_matches_project_canvas_model(self) -> None:
         source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
 
-        self.assertIn("策划：从原著或简报建立事件图谱", source)
         self.assertIn("编剧", source)
         self.assertIn("资产", source)
         self.assertIn("出片", source)
         self.assertIn("toon-canvas", source)
-        self.assertIn("批量生产设置", source)
+        self.assertIn("toon-flow-node", source)
+        self.assertIn("toon-storyboard-table", source)
+        self.assertIn("toon-frame-panel", source)
+        self.assertIn("生产监督", source)
         self.assertNotIn("视频创作", source)
         self.assertNotIn("小说创作", source)
         self.assertNotIn("动画资产", source)
+
+    def test_workbench_adapts_navigation_for_touch_screens(self) -> None:
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        self.assertIn("toon-rail__label", source)
+        self.assertIn(":aria-current=\"activeModule === item.module ? 'page' : undefined\"", source)
+        self.assertIn("@media (max-width: 900px)", source)
+        self.assertIn("min-height: 50px", source)
+        self.assertIn("scroll-snap-type: x proximity", source)
+
+    def test_project_card_keyboard_actions_do_not_bubble_from_delete_button(self) -> None:
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        self.assertIn('@keydown.enter.self.prevent="openProject(project.id)"', source)
+        self.assertIn('@keydown.space.self.prevent="openProject(project.id)"', source)
 
     def test_agent_panel_does_not_show_fake_command_input(self) -> None:
         source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
 
         self.assertNotIn("输入生产指令", source)
         self.assertNotIn("toon-agent__input", source)
-        self.assertIn("toon-agent__status", source)
+        self.assertIn("来源与预检", source)
+        self.assertIn("质量复查", source)
+        self.assertIn("运行记录", source)
 
     def test_asset_cards_wire_existing_asset_actions(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")
@@ -72,10 +91,10 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
 
         self.assertIn('(e: "create-video-task"', source)
         self.assertIn('(e: "delete-video-task"', source)
-        self.assertIn("videoTasksByStoryboard", source)
-        self.assertIn('@click="emit(\'create-video-task\', track.storyboard.id)"', source)
+        self.assertIn("selectedStoryboardTasks", source)
+        self.assertIn('@click="emit(\'create-video-task\', selectedStoryboard.id)"', source)
         self.assertIn('@click="emit(\'delete-video-task\', task.id)"', source)
-        self.assertIn("生产任务 {{ task.id }}", source)
+        self.assertIn("任务 #{{ task.id }}", source)
         self.assertNotIn("Track 3 · 视频出片", source)
 
         self.assertIn('@create-video-task="store.createVideoTask"', app_source)
