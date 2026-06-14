@@ -48,6 +48,9 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
 
         self.assertIn("toon-rail__label", source)
+        self.assertIn("iconPaths", source)
+        self.assertIn('viewBox="0 0 24 24"', source)
+        self.assertNotIn('glyph: "▱"', source)
         self.assertIn(":aria-current=\"activeModule === item.module ? 'page' : undefined\"", source)
         self.assertIn("@media (max-width: 900px)", source)
         self.assertIn("min-height: 50px", source)

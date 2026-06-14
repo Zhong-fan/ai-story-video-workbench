@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
 
-const baseUrl = "http://127.0.0.1:8500/";
+const baseUrl = process.env.CHENFLOW_BASE_URL || "http://127.0.0.1:8500/";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

@@ -16,7 +16,7 @@ import type {
 
 type CreationMode = "upload" | "ai" | "manual";
 type WorkbenchModule = "projects" | "script" | "assets" | "production" | "settings" | "trash";
-type RailItem = { module: WorkbenchModule; label: string; glyph: string };
+type RailItem = { module: WorkbenchModule; label: string; iconPaths: string[] };
 
 const props = defineProps<{
   currentView: string;
@@ -58,12 +58,12 @@ const activeModule = ref<WorkbenchModule>("projects");
 const activeStoryboardId = ref<number | null>(null);
 const settingsDraft = reactive({ title: "", genre: "", world_brief: "", writing_rules: "" });
 const railItems: RailItem[] = [
-  { module: "projects", label: "项目", glyph: "▱" },
-  { module: "script", label: "编剧", glyph: "▤" },
-  { module: "assets", label: "资产", glyph: "◉" },
-  { module: "production", label: "出片", glyph: "▶" },
-  { module: "settings", label: "设置", glyph: "⌘" },
-  { module: "trash", label: "回收站", glyph: "⌫" },
+  { module: "projects", label: "项目", iconPaths: ["M3.5 7.5h6l2 2h9v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z", "M3.5 11.5h17"] },
+  { module: "script", label: "编剧", iconPaths: ["M6 3.5h9l3 3v14H6z", "M15 3.5v4h4", "M9 11h6M9 15h6M9 18h4"] },
+  { module: "assets", label: "资产", iconPaths: ["M4 5.5h16v13H4z", "m6 15 3-3 2.5 2.5 2-2 2.5 2.5", "M15.5 9h.01"] },
+  { module: "production", label: "出片", iconPaths: ["M4.5 4.5h15v15h-15z", "m10 9 5 3-5 3z"] },
+  { module: "settings", label: "设置", iconPaths: ["M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z", "M19 13.5v-3l-2-.7-.7-1.7.9-1.9-2.1-2.1-1.9.9-1.7-.7-.7-2h-3l-.7 2-1.7.7-1.9-.9-2.1 2.1.9 1.9-.7 1.7-2 .7v3l2 .7.7 1.7-.9 1.9 2.1 2.1 1.9-.9 1.7.7.7 2h3l.7-2 1.7-.7 1.9.9 2.1-2.1-.9-1.9.7-1.7z"] },
+  { module: "trash", label: "回收站", iconPaths: ["M5.5 7h13", "M9 7V4.5h6V7", "m7.5 7 .8 13h7.4l.8-13", "M10 10.5v6M14 10.5v6"] },
 ];
 
 const visibleProjects = computed(() => {
@@ -234,11 +234,11 @@ watch(storyboards, (items) => {
     <aside class="toon-rail" aria-label="ToonFlow style navigation">
       <button class="toon-rail__brand" type="button" aria-label="ChenFlow 项目" :aria-current="activeModule === 'projects' ? 'page' : undefined" @click="selectModule('projects')">CF</button>
       <button v-for="item in railItems.slice(0, 4)" :key="item.module" type="button" :class="{ active: activeModule === item.module }" :aria-current="activeModule === item.module ? 'page' : undefined" :aria-label="item.label" :title="item.label" @click="selectModule(item.module)">
-        <span aria-hidden="true">{{ item.glyph }}</span><small class="toon-rail__label">{{ item.label }}</small>
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path v-for="path in item.iconPaths" :key="path" :d="path" /></svg><small class="toon-rail__label">{{ item.label }}</small>
       </button>
       <i aria-hidden="true"></i>
       <button v-for="item in railItems.slice(4)" :key="item.module" type="button" :class="{ active: activeModule === item.module }" :aria-current="activeModule === item.module ? 'page' : undefined" :aria-label="item.label" :title="item.label" @click="selectModule(item.module)">
-        <span aria-hidden="true">{{ item.glyph }}</span><small class="toon-rail__label">{{ item.label }}</small>
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path v-for="path in item.iconPaths" :key="path" :d="path" /></svg><small class="toon-rail__label">{{ item.label }}</small>
       </button>
     </aside>
 
@@ -250,7 +250,7 @@ watch(storyboards, (items) => {
         </div>
         <nav aria-label="Project modules">
           <button v-for="item in railItems.slice(1, 5)" :key="item.module" type="button" :class="{ active: activeModule === item.module }" :aria-current="activeModule === item.module ? 'page' : undefined" @click="selectModule(item.module)">
-            <span aria-hidden="true">{{ item.glyph }}</span>{{ item.label }}
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path v-for="path in item.iconPaths" :key="path" :d="path" /></svg>{{ item.label }}
           </button>
         </nav>
         <div class="toon-user">
@@ -358,24 +358,26 @@ watch(storyboards, (items) => {
 </template>
 
 <style scoped>
-.toon-shell { min-height: calc(100vh - 32px); display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 12px; color: var(--ink); font-family: "Microsoft YaHei", "PingFang SC", sans-serif; --toon-glass: rgba(255,255,255,.64); --toon-glass-strong: rgba(255,255,255,.78); --toon-line: rgba(255,255,255,.84); --toon-rose: color-mix(in oklab, var(--rose-strong) 76%, #6f2949); --toon-shadow: 0 20px 48px rgba(213,91,141,.13); }
+.toon-shell { min-height: calc(100vh - 32px); display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 12px; color: var(--toon-ink); font-family: "Microsoft YaHei", "PingFang SC", sans-serif; --toon-ink: oklch(31% .055 345); --toon-ink-soft: oklch(47% .045 345); --toon-ink-muted: oklch(61% .035 345); --toon-glass: rgba(255,248,252,.68); --toon-glass-strong: rgba(255,251,253,.82); --toon-line: rgba(255,226,239,.86); --toon-rose: oklch(65% .155 350); --toon-rose-deep: oklch(55% .14 350); --toon-rose-soft: oklch(95% .045 350); --toon-shadow: 0 20px 48px color-mix(in oklab, var(--toon-rose) 15%, transparent); }
 button, input, textarea, select { font: inherit; }
-button { min-height: 42px; border: 1px solid rgba(110,52,78,.12); border-radius: 9px; background: rgba(255,255,255,.64); color: var(--ink); padding: 0 13px; cursor: pointer; }
-button:hover { border-color: rgba(218,91,145,.3); background: rgba(255,255,255,.88); }
+button { min-height: 42px; border: 1px solid color-mix(in oklab, var(--toon-rose) 18%, transparent); border-radius: 9px; background: rgba(255,249,252,.7); color: var(--toon-ink); padding: 0 13px; cursor: pointer; }
+button:hover { border-color: color-mix(in oklab, var(--toon-rose) 42%, transparent); background: rgba(255,252,254,.92); }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid color-mix(in oklab, var(--rose-strong) 66%, white); outline-offset: 2px; }
 button:disabled { cursor: wait; opacity: .48; }
 .toon-button--dark { border-color: transparent; background: var(--toon-rose); color: white; }
-.toon-button--dark:hover { background: color-mix(in oklab, var(--toon-rose) 88%, #49152c); color: white; }
+.toon-button--dark:hover { background: var(--toon-rose-deep); color: white; }
 .toon-rail, .toon-stage { border: 1px solid var(--toon-line); background: var(--toon-glass); box-shadow: var(--toon-shadow); backdrop-filter: blur(24px) saturate(1.12); -webkit-backdrop-filter: blur(24px) saturate(1.12); }
 .toon-rail { position: sticky; top: 16px; height: calc(100vh - 32px); display: grid; grid-template-rows: repeat(5, 48px) 1fr repeat(2, 48px); gap: 8px; padding: 10px; border-radius: 18px; }
-.toon-rail button { width: 46px; padding: 0; border: 0; background: transparent; font-size: 1.35rem; font-weight: 800; }
+.toon-rail button { width: 46px; padding: 0; border: 0; background: transparent; color: var(--toon-ink-soft); }
+.toon-rail svg, .toon-topbar nav svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.toon-topbar nav svg { width: 17px; height: 17px; }
 .toon-rail__label { display: none; font-size: .68rem; font-weight: 700; }
-.toon-rail button.active, .toon-rail__brand { background: var(--toon-rose); color: white; box-shadow: 0 10px 22px rgba(213,91,141,.2); }
+.toon-rail button.active, .toon-rail__brand { background: var(--toon-rose); color: oklch(99% .008 350); box-shadow: 0 10px 22px color-mix(in oklab, var(--toon-rose) 30%, transparent); }
 .toon-rail__brand { font-size: .84rem !important; letter-spacing: -.08em; }
 .toon-stage { min-width: 0; min-height: calc(100vh - 32px); display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 14px; padding: 18px; border-radius: 18px; }
 .toon-topbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 18px; align-items: center; padding: 0 4px 14px; border-bottom: 1px solid rgba(110,52,78,.1); }
 .toon-heading { min-width: 0; }
-.toon-heading span, .toon-section-head span, .toon-create header span, .toon-settings header span { color: #909090; font-size: .72rem; font-weight: 800; letter-spacing: .12em; }
+.toon-heading span, .toon-section-head span, .toon-create header span, .toon-settings header span { color: var(--toon-ink-muted); font-size: .72rem; font-weight: 800; letter-spacing: .12em; }
 .toon-heading h1, .toon-section-head h2, .toon-create h2 { margin: 3px 0 0; overflow: hidden; font-size: 1.45rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .toon-topbar nav, .toon-user, .toon-empty > div, .toon-create footer { display: flex; gap: 8px; align-items: center; }
 .toon-topbar nav button { display: flex; gap: 7px; align-items: center; border-color: transparent; background: transparent; }
@@ -383,59 +385,59 @@ button:disabled { cursor: wait; opacity: .48; }
 .toon-user { justify-content: end; }
 .toon-user > span { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toon-empty { min-height: 280px; display: grid; place-content: center; justify-items: start; gap: 10px; padding: 28px; border: 1px dashed rgba(151,77,109,.24); border-radius: 14px; background: rgba(255,255,255,.46); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
-.toon-empty strong { font-size: 1.25rem; }.toon-empty p { max-width: 56ch; margin: 0; color: #777; line-height: 1.7; }
+.toon-empty strong { font-size: 1.25rem; }.toon-empty p { max-width: 56ch; margin: 0; color: var(--toon-ink-soft); line-height: 1.7; }
 .toon-create { display: grid; grid-template-columns: minmax(220px, .55fr) minmax(0, 1fr); gap: 64px; align-content: start; padding: 42px; }
-.toon-create header p, .toon-section-head p { max-width: 60ch; color: #777; line-height: 1.65; }
+.toon-create header p, .toon-section-head p { max-width: 60ch; color: var(--toon-ink-soft); line-height: 1.65; }
 .toon-create form, .toon-create label, .toon-settings, .toon-settings label { display: grid; gap: 10px; }
 .toon-create form, .toon-settings { gap: 16px; }
-.toon-create input, .toon-create textarea, .toon-settings input, .toon-settings textarea, .toon-project-select select, .toon-project-toolbar input { width: 100%; border: 1px solid rgba(110,52,78,.14); border-radius: 9px; background: rgba(255,255,255,.66); padding: 11px 12px; color: var(--ink); }
+.toon-create input, .toon-create textarea, .toon-settings input, .toon-settings textarea, .toon-project-select select, .toon-project-toolbar input { width: 100%; border: 1px solid color-mix(in oklab, var(--toon-rose) 20%, transparent); border-radius: 9px; background: rgba(255,250,253,.74); padding: 11px 12px; color: var(--toon-ink); }
 .toon-create textarea, .toon-settings textarea { resize: vertical; line-height: 1.65; }
 .toon-projects { display: grid; gap: 18px; align-content: start; padding: 20px; }
 .toon-section-head { display: flex; justify-content: space-between; gap: 24px; align-items: end; }
 .toon-section-head h2 { font-size: 2rem; }
-.toon-project-toolbar { display: flex; gap: 12px; align-items: center; }.toon-project-toolbar input { max-width: 520px; }.toon-project-toolbar span { color: #777; font-size: .85rem; }
+.toon-project-toolbar { display: flex; gap: 12px; align-items: center; }.toon-project-toolbar input { max-width: 520px; }.toon-project-toolbar span { color: var(--toon-ink-soft); font-size: .85rem; }
 .toon-project-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
 .toon-project-grid article { min-height: 210px; display: grid; gap: 18px; align-content: start; padding: 20px; border: 1px solid var(--toon-line); border-radius: 12px; background: rgba(255,255,255,.54); box-shadow: 0 12px 30px rgba(213,91,141,.08); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); cursor: pointer; }
 .toon-project-grid article:hover { border-color: rgba(218,91,145,.3); background: rgba(255,255,255,.76); box-shadow: 0 16px 34px rgba(213,91,141,.14); transform: translateY(-1px); }
 .toon-project-grid header, .toon-project-grid footer, .toon-flow-node header, .toon-flow-node footer, .toon-asset-card header, .toon-asset-card footer, .toon-storyboard-table > header, .toon-frame-panel > header, .toon-agent > header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-.toon-project-grid header strong { font-size: 1.12rem; }.toon-project-grid header span, .toon-project-grid time { color: #888; font-size: .78rem; }
-.toon-project-grid p { margin: 0; color: #555; line-height: 1.7; }.toon-project-grid footer { margin-top: auto; }
+.toon-project-grid header strong { font-size: 1.12rem; }.toon-project-grid header span, .toon-project-grid time { color: var(--toon-ink-muted); font-size: .78rem; }
+.toon-project-grid p { margin: 0; color: var(--toon-ink-soft); line-height: 1.7; }.toon-project-grid footer { margin-top: auto; }
 .toon-workbench { min-height: 0; display: grid; grid-template-columns: 244px minmax(620px, 1fr) 308px; gap: 10px; overflow: auto; }
 .toon-inspector, .toon-agent { min-height: 0; overflow: auto; border: 1px solid var(--toon-line); border-radius: 12px; background: var(--toon-glass); box-shadow: 0 14px 34px rgba(213,91,141,.08); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
 .toon-inspector { display: grid; gap: 18px; align-content: start; padding: 14px; }
 .toon-project-select, .toon-inspector__block, .toon-storyboard-list { display: grid; gap: 9px; }
-.toon-project-select > span, .toon-inspector__block > strong, .toon-storyboard-list > strong { color: #777; font-size: .75rem; letter-spacing: .06em; }
+.toon-project-select > span, .toon-inspector__block > strong, .toon-storyboard-list > strong { color: var(--toon-ink-soft); font-size: .75rem; letter-spacing: .06em; }
 .toon-inspector__block { padding-top: 16px; border-top: 1px solid rgba(110,52,78,.09); }
 .toon-inspector__block dl, .toon-agent dl { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 0; }
 .toon-inspector__block dl div, .toon-agent dl div { display: grid; gap: 3px; padding: 9px; background: rgba(255,239,246,.62); border: 1px solid rgba(255,255,255,.76); border-radius: 8px; }
-dt { color: #888; font-size: .7rem; } dd { margin: 0; font-weight: 800; }
-.toon-inspector__block p { margin: 0; color: #555; font-size: .85rem; line-height: 1.65; }
+dt { color: var(--toon-ink-muted); font-size: .7rem; } dd { margin: 0; font-weight: 800; }
+.toon-inspector__block p { margin: 0; color: var(--toon-ink-soft); font-size: .85rem; line-height: 1.65; }
 .toon-storyboard-list button { height: auto; display: grid; gap: 3px; justify-items: start; padding: 10px; text-align: left; }
 .toon-storyboard-list button.active { border-color: transparent; background: var(--toon-rose); color: white; }.toon-storyboard-list small { opacity: .66; }
 .toon-canvas { min-height: 720px; overflow: auto; border: 1px solid var(--toon-line); border-radius: 12px; background: radial-gradient(circle, rgba(132,67,96,.18) 1px, transparent 1px) 0 0 / 18px 18px, rgba(255,255,255,.4); box-shadow: inset 0 1px 0 rgba(255,255,255,.72); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 .toon-canvas-toolbar { position: sticky; top: 0; z-index: 3; display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 11px 14px; border-bottom: 1px solid rgba(110,52,78,.1); background: rgba(255,255,255,.78); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
-.toon-canvas-toolbar > div { display: flex; gap: 9px; align-items: center; }.toon-canvas-toolbar small, .toon-canvas-toolbar span:last-child { color: #888; font-size: .75rem; }.toon-canvas-toolbar button { min-height: 34px; padding: 0 10px; }
+.toon-canvas-toolbar > div { display: flex; gap: 9px; align-items: center; }.toon-canvas-toolbar small, .toon-canvas-toolbar span:last-child { color: var(--toon-ink-muted); font-size: .75rem; }.toon-canvas-toolbar button { min-height: 34px; padding: 0 10px; }
 .toon-dot { width: 8px; height: 8px; border-radius: 50%; background: #17a34a; }
 .toon-empty--canvas { margin: 80px auto; width: min(520px, calc(100% - 48px)); }
 .toon-flow, .toon-production-board { min-width: 1100px; display: flex; gap: 18px; align-items: center; padding: 52px 32px; }
 .toon-flow-node { width: 250px; min-height: 230px; display: grid; gap: 15px; align-content: start; padding: 16px; border: 1px solid var(--toon-line); border-radius: 12px; background: rgba(255,255,255,.72); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 .toon-flow-node--source { margin-top: -80px; }.toon-flow-node:nth-of-type(2) { margin-top: 80px; }.toon-flow-node:nth-of-type(3) { margin-top: -30px; }
-.toon-flow-node h3, .toon-flow-node p { margin: 0; }.toon-flow-node p { color: #555; font-size: .84rem; line-height: 1.65; }.toon-flow-node footer { margin-top: auto; color: #888; font-size: .75rem; }
-.toon-flow-node header span, .toon-storyboard-table header span, .toon-frame-panel header span { color: #777; font-size: .72rem; font-weight: 800; letter-spacing: .06em; }
-.toon-connector { color: #777; font-size: 1.5rem; }
+.toon-flow-node h3, .toon-flow-node p { margin: 0; }.toon-flow-node p { color: var(--toon-ink-soft); font-size: .84rem; line-height: 1.65; }.toon-flow-node footer { margin-top: auto; color: var(--toon-ink-muted); font-size: .75rem; }
+.toon-flow-node header span, .toon-storyboard-table header span, .toon-frame-panel header span { color: var(--toon-ink-soft); font-size: .72rem; font-weight: 800; letter-spacing: .06em; }
+.toon-connector { color: color-mix(in oklab, var(--toon-rose) 58%, var(--toon-ink-soft)); font-size: 1.5rem; }
 [class^="tone-"], [class*=" tone-"] { display: inline-flex; width: fit-content; border-radius: 4px; padding: 3px 6px; font-size: .68rem; font-weight: 800; }
-.tone-good { background: #d9f5e3; color: #087434; }.tone-warn { background: #fff0c9; color: #8a5b00; }.tone-bad { background: #ffe0df; color: #a11d17; }.tone-neutral { background: #ededed; color: #666; }
-.tone-text-good { color: #087434; }.tone-text-warn { color: #8a5b00; }.tone-text-bad { color: #a11d17; }.tone-text-neutral { color: #666; }
+.tone-good { background: #d9f5e3; color: #087434; }.tone-warn { background: #fff0c9; color: #8a5b00; }.tone-bad { background: #ffe0df; color: #a11d17; }.tone-neutral { background: var(--toon-rose-soft); color: var(--toon-ink-soft); }
+.tone-text-good { color: #087434; }.tone-text-warn { color: #8a5b00; }.tone-text-bad { color: #a11d17; }.tone-text-neutral { color: var(--toon-ink-soft); }
 .toon-asset-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; align-content: start; padding: 24px; }
 .toon-asset-card { display: grid; gap: 10px; padding: 10px; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 12px 26px rgba(213,91,141,.08); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
-.toon-asset-card__preview { aspect-ratio: 16/10; display: grid; place-items: center; overflow: hidden; border-radius: 7px; background: rgba(255,235,244,.72); color: #888; }.toon-asset-card__preview img { width: 100%; height: 100%; object-fit: cover; }
-.toon-asset-card p { min-height: 3em; margin: 0; color: #666; font-size: .76rem; line-height: 1.55; }.toon-asset-card footer { justify-content: start; flex-wrap: wrap; }.toon-asset-card footer button { min-height: 32px; padding: 0 8px; font-size: .72rem; }
+.toon-asset-card__preview { aspect-ratio: 16/10; display: grid; place-items: center; overflow: hidden; border-radius: 7px; background: rgba(255,235,244,.72); color: var(--toon-ink-muted); }.toon-asset-card__preview img { width: 100%; height: 100%; object-fit: cover; }
+.toon-asset-card p { min-height: 3em; margin: 0; color: var(--toon-ink-soft); font-size: .76rem; line-height: 1.55; }.toon-asset-card footer { justify-content: start; flex-wrap: wrap; }.toon-asset-card footer button { min-height: 32px; padding: 0 8px; font-size: .72rem; }
 .toon-storyboard-table { width: 540px; max-height: 610px; overflow: auto; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-storyboard-table > header, .toon-frame-panel > header { position: sticky; top: 0; z-index: 2; padding: 13px; border-bottom: 1px solid rgba(110,52,78,.1); background: rgba(255,255,255,.88); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-storyboard-table h3, .toon-frame-panel h3 { margin: 3px 0 0; font-size: .95rem; }
-.toon-shot-table__head, .toon-shot-row { display: grid; grid-template-columns: 52px minmax(260px, 1fr) 52px 70px; align-items: start; }.toon-shot-table__head { position: sticky; top: 67px; padding: 8px 10px; background: rgba(255,234,243,.88); color: #777; font-size: .68rem; }.toon-shot-row { padding: 10px; border-top: 1px solid rgba(110,52,78,.08); font-size: .74rem; }.toon-shot-row:nth-child(odd) { background: rgba(255,249,252,.54); }.toon-shot-row > span:nth-child(2) { display: grid; gap: 4px; }.toon-shot-row small { color: #777; line-height: 1.5; }
-.toon-frame-panel { width: 520px; min-height: 430px; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-frame-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 10px; }.toon-frame-grid > div { position: relative; aspect-ratio: 16/10; display: grid; place-items: center; overflow: hidden; border-radius: 5px; background: rgba(255,235,244,.72); color: #888; font-size: .68rem; }.toon-frame-grid img { width: 100%; height: 100%; object-fit: cover; }.toon-frame-grid small { position: absolute; top: 4px; left: 4px; padding: 2px 4px; border-radius: 3px; background: var(--toon-rose); color: white; font-size: .58rem; }
+.toon-shot-table__head, .toon-shot-row { display: grid; grid-template-columns: 52px minmax(260px, 1fr) 52px 70px; align-items: start; }.toon-shot-table__head { position: sticky; top: 67px; padding: 8px 10px; background: rgba(255,234,243,.88); color: var(--toon-ink-soft); font-size: .68rem; }.toon-shot-row { padding: 10px; border-top: 1px solid rgba(110,52,78,.08); font-size: .74rem; }.toon-shot-row:nth-child(odd) { background: rgba(255,249,252,.54); }.toon-shot-row > span:nth-child(2) { display: grid; gap: 4px; }.toon-shot-row small { color: var(--toon-ink-soft); line-height: 1.5; }
+.toon-frame-panel { width: 520px; min-height: 430px; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-frame-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 10px; }.toon-frame-grid > div { position: relative; aspect-ratio: 16/10; display: grid; place-items: center; overflow: hidden; border-radius: 5px; background: rgba(255,235,244,.72); color: var(--toon-ink-muted); font-size: .68rem; }.toon-frame-grid img { width: 100%; height: 100%; object-fit: cover; }.toon-frame-grid small { position: absolute; top: 4px; left: 4px; padding: 2px 4px; border-radius: 3px; background: var(--toon-rose); color: white; font-size: .58rem; }
 .toon-settings { width: min(720px, calc(100% - 48px)); margin: 28px; padding: 22px; border: 1px solid var(--toon-line); border-radius: 12px; background: rgba(255,255,255,.72); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-settings h3 { margin: 4px 0 0; }
-.toon-agent { display: grid; gap: 0; align-content: start; }.toon-agent > header { position: sticky; top: 0; z-index: 2; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.1); background: rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }.toon-agent > header > div { display: flex; gap: 8px; align-items: center; }.toon-agent > header small { color: #888; }
-.toon-agent section { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.08); }.toon-agent section > span { color: #777; font-size: .72rem; font-weight: 800; letter-spacing: .08em; }.toon-agent article { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(255,255,255,.82); border-radius: 8px; background: rgba(255,255,255,.5); }.toon-agent article p, .toon-agent section > p { margin: 0; color: #666; font-size: .76rem; line-height: 1.55; }.toon-agent article time { color: #999; font-size: .68rem; }.toon-agent article a { color: var(--toon-rose); font-size: .76rem; font-weight: 800; }.toon-agent article button { min-height: 32px; width: fit-content; font-size: .72rem; }
+.toon-agent { display: grid; gap: 0; align-content: start; }.toon-agent > header { position: sticky; top: 0; z-index: 2; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.1); background: rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }.toon-agent > header > div { display: flex; gap: 8px; align-items: center; }.toon-agent > header small { color: var(--toon-ink-muted); }
+.toon-agent section { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.08); }.toon-agent section > span { color: var(--toon-ink-soft); font-size: .72rem; font-weight: 800; letter-spacing: .08em; }.toon-agent article { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(255,255,255,.82); border-radius: 8px; background: rgba(255,255,255,.5); }.toon-agent article p, .toon-agent section > p { margin: 0; color: var(--toon-ink-soft); font-size: .76rem; line-height: 1.55; }.toon-agent article time { color: var(--toon-ink-muted); font-size: .68rem; }.toon-agent article a { color: var(--toon-rose-deep); font-size: .76rem; font-weight: 800; }.toon-agent article button { min-height: 32px; width: fit-content; font-size: .72rem; }
 @media (max-width: 1180px) { .toon-workbench { grid-template-columns: 220px minmax(620px, 1fr); }.toon-agent { grid-column: 1 / -1; max-height: 360px; }.toon-topbar { grid-template-columns: minmax(180px, 1fr) auto; }.toon-user { grid-column: 1 / -1; justify-content: start; } }
 @media (max-width: 900px) { .toon-shell { grid-template-columns: minmax(0, 1fr); }.toon-rail { position: sticky; top: 8px; z-index: 8; height: auto; grid-template-columns: repeat(7, minmax(64px, 1fr)); grid-template-rows: auto; overflow-x: auto; padding: 8px; }.toon-rail i { display: none; }.toon-rail button { width: auto; min-width: 64px; min-height: 50px; display: grid; place-content: center; gap: 2px; font-size: 1.05rem; }.toon-rail__brand { min-width: 52px !important; }.toon-rail__label { display: block; }.toon-stage { min-height: auto; }.toon-topbar nav { display: none; }.toon-workbench { grid-template-columns: minmax(0, 1fr); overflow: visible; }.toon-inspector, .toon-agent { max-height: none; }.toon-inspector { grid-template-columns: repeat(2, minmax(0, 1fr)); }.toon-project-select, .toon-storyboard-list { grid-column: 1 / -1; }.toon-canvas { min-height: 620px; }.toon-flow, .toon-production-board { min-width: 980px; } }
 @media (max-width: 760px) { .toon-shell { gap: 8px; }.toon-stage { padding: 12px; }.toon-topbar, .toon-create, .toon-section-head { display: grid; grid-template-columns: minmax(0, 1fr); }.toon-user { grid-column: auto; }.toon-project-toolbar { align-items: stretch; flex-direction: column; }.toon-inspector { grid-template-columns: minmax(0, 1fr); }.toon-project-select, .toon-storyboard-list { grid-column: auto; }.toon-canvas { min-height: 560px; scroll-snap-type: x proximity; }.toon-flow > *, .toon-production-board > * { scroll-snap-align: start; }.toon-create { padding: 18px; gap: 24px; } }
