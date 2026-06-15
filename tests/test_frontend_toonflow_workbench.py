@@ -169,6 +169,18 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         ]:
             self.assertIn(binding, app_source)
 
+    def test_video_tasks_surface_progress_failures_and_recovery(self) -> None:
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        self.assertIn("function taskProgressText", source)
+        self.assertIn("function taskProgressPercent", source)
+        self.assertIn("function taskFailureText", source)
+        self.assertIn('role="progressbar"', source)
+        self.assertIn("失败原因", source)
+        self.assertIn("重新创建任务", source)
+        self.assertIn("task.error_message", source)
+        self.assertIn("task.progress.failure_stage", source)
+
     def test_project_create_restores_manual_import_and_ai_draft_modes(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")
         source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
