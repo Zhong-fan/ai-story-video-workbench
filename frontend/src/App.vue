@@ -6,7 +6,7 @@ import AuthModal from "./components/auth/AuthModal.vue";
 import ToonflowWorkbench from "./components/workspace/ToonflowWorkbench.vue";
 import { useAuthFlow } from "./composables/useAuthFlow";
 import { useWorkbenchStore } from "./stores/workbench";
-import type { ProjectCreateDraft, ProjectPayload, TrashItem, UpdateMediaAssetPayload, ViewKey } from "./types";
+import type { ProjectAIBriefDraftPayload, ProjectCreateDraft, ProjectImportDraftPayload, ProjectPayload, TrashItem, UpdateMediaAssetPayload, ViewKey } from "./types";
 
 const store = useWorkbenchStore();
 const {
@@ -25,6 +25,7 @@ const {
 const currentView = ref<ViewKey>("studio");
 const authError = ref("");
 const workspaceSearch = ref("");
+const projectCreationMode = ref<"upload" | "ai" | "manual">("manual");
 const hasRestoredViewState = ref(false);
 let feedbackTimer: number | null = null;
 
@@ -103,8 +104,19 @@ function goToView(view: ViewKey) {
   currentView.value = view;
 }
 
-function openSidebarProjectCreate() {
+function openSidebarProjectCreate(mode: "upload" | "ai" | "manual" = "manual") {
+  projectCreationMode.value = mode;
   goToView("projectCreate");
+}
+
+async function loadImportedProjectDraft(payload: ProjectImportDraftPayload) {
+  const draft = await store.loadImportedProjectDraft(payload);
+  if (draft) Object.assign(projectForm, draft.project, { reference_work_confirmed: false });
+}
+
+async function loadAiProjectDraft(payload: ProjectAIBriefDraftPayload) {
+  const draft = await store.loadAiProjectDraft(payload);
+  if (draft) Object.assign(projectForm, draft.project, { reference_work_confirmed: false });
 }
 
 function readPersistedNumber(key: string, legacyKey?: string) {
@@ -289,6 +301,7 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
       <ToonflowWorkbench
         v-model:workspace-search="workspaceSearch"
         :current-view="currentView"
+        :creation-mode="projectCreationMode"
         :is-authenticated="isAuthenticated"
         :username="currentUser?.username"
         :projects="projects"
@@ -302,7 +315,9 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
         @login="openAuthPanel('login', 'studio')"
         @register="openAuthPanel('register', 'studio')"
         @logout="store.logout()"
-        @open-project-create="openSidebarProjectCreate()"
+        @open-project-create="openSidebarProjectCreate"
+        @load-imported-project-draft="loadImportedProjectDraft"
+        @load-ai-project-draft="loadAiProjectDraft"
         @open-project="openWorkspaceProject"
         @delete-project="deleteProjectToTrash"
         @restore-trash="restoreTrash"
@@ -310,6 +325,15 @@ watch(() => [authError.value, error.value, success.value], ([nextAuthError, next
         @delete-media-asset="store.deleteMediaAsset"
         @create-video-task="store.createVideoTask"
         @delete-video-task="store.deleteVideoTask"
+        @delete-storyboard="store.deleteStoryboard"
+        @generate-character-turnaround="store.generateCharacterTurnaround"
+        @generate-shot-first-frame="store.generateShotFirstFrame"
+        @generate-storyboard-voice="store.generateStoryboardVoice"
+        @prepare-video-production="store.prepareVideoProduction"
+        @update-storyboard-shot="store.updateStoryboardShot"
+        @create-storyboard-shot="store.createStoryboardShot"
+        @delete-storyboard-shot="store.deleteStoryboardShot"
+        @reorder-storyboard-shots="store.reorderStoryboardShots"
         @save-project-settings="store.updateProject"
         @update:title="projectForm.title = $event"
         @update:genre="projectForm.genre = $event"

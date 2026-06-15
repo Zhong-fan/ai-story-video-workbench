@@ -39,3 +39,24 @@ The goal of this change is to upgrade the product from a pipeline-oriented workb
 - The workbench should explain how each output was produced, which assets and prompts were used, and what the next quality-sensitive action is.
 - Video generation should become more reviewable before render and more actionable after failure.
 - Storyboard and asset flows should become first-class quality control surfaces instead of passive intermediate artifacts.
+
+## Implementation Status
+
+Status as of 2026-06-15: in progress.
+
+Implemented or substantially implemented:
+
+- A production-workbench primary surface with source, storyboard, asset, and video status.
+- Manual, imported-text, and AI-brief project creation entry paths.
+- Direct workbench actions for character turnaround, shot first frame, storyboard narration, video preflight, storyboard deletion, and video task creation.
+- A pink frosted-glass visual language, unified line icons, and responsive mobile navigation.
+- Existing backend contracts for source trace, preflight, review findings, generation diagnostics, and quality-sensitive video blocking.
+
+Still required before this change is complete:
+
+- Reconnect shot edit, add, delete, and reorder controls to the new workbench.
+- Reconnect longform planning, chapter generation, revision, and finalization flows.
+- Surface full dual-layer generation transparency consistently across major steps.
+- Complete direct issue-driven routing from preflight and post-render findings into correction controls.
+- Improve destructive-action confirmation, detailed task progress, failure recovery, and retry feedback.
+- Decompose the workbench component only where clearer ownership or reuse justifies it.

@@ -30,10 +30,10 @@ The system SHALL record progress events for long-running creative workflows.
 
 ### Requirement: Replaceable Worker Runtime
 
-The system SHOULD keep the near-term local worker but define task contracts that can later be executed by queue-backed workers.
+The system SHALL define task contracts that remain executable by the near-term local worker and can later be executed by queue-backed workers.
 
 #### Scenario: Queue-backed worker is introduced
 
 - **WHEN** a queue-backed runtime replaces the local worker
-- **THEN** domain contracts, task states, progress events, and quality gate semantics SHOULD remain stable
+- **THEN** domain contracts, task states, progress events, and quality gate semantics SHALL remain stable
 

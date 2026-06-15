@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import type {
+  CreateStoryboardShotPayload,
+  GenerateCharacterTurnaroundPayload,
+  GenerateVoicePayload,
   LongformState,
   MediaAsset,
   Project,
+  ProjectAIBriefDraftPayload,
   ProjectCreateDraft,
   ProjectDetailResponse,
+  ProjectImportDraftPayload,
   ProjectPayload,
   Storyboard,
   StoryboardShot,
   TaskEvent,
   TrashItem,
+  UpdateStoryboardShotPayload,
+  VideoProductionPreflightPayload,
   VideoTask,
 } from "../../types";
 
@@ -20,6 +27,7 @@ type RailItem = { module: WorkbenchModule; label: string; iconPaths: string[] };
 
 const props = defineProps<{
   currentView: string;
+  creationMode: CreationMode;
   isAuthenticated: boolean;
   username?: string | null;
   projects: Project[];
@@ -38,6 +46,8 @@ const emit = defineEmits<{
   (e: "logout"): void;
   (e: "go", view: "studio" | "projectCreate" | "assetLibrary" | "trash"): void;
   (e: "open-project-create", mode: CreationMode): void;
+  (e: "load-imported-project-draft", payload: ProjectImportDraftPayload): void;
+  (e: "load-ai-project-draft", payload: ProjectAIBriefDraftPayload): void;
   (e: "open-project", projectId: number): void;
   (e: "delete-project", projectId: number): void;
   (e: "restore-trash", item: TrashItem): void;
@@ -45,6 +55,15 @@ const emit = defineEmits<{
   (e: "delete-media-asset", assetId: number): void;
   (e: "create-video-task", storyboardId: number): void;
   (e: "delete-video-task", taskId: number): void;
+  (e: "delete-storyboard", storyboardId: number): void;
+  (e: "generate-character-turnaround", payload: GenerateCharacterTurnaroundPayload): void;
+  (e: "generate-shot-first-frame", storyboardId: number, shotId: number): void;
+  (e: "generate-storyboard-voice", storyboardId: number, payload: GenerateVoicePayload): void;
+  (e: "prepare-video-production", storyboardId: number, payload: VideoProductionPreflightPayload): void;
+  (e: "update-storyboard-shot", storyboardId: number, shotId: number, payload: UpdateStoryboardShotPayload): void;
+  (e: "create-storyboard-shot", storyboardId: number, payload: CreateStoryboardShotPayload): void;
+  (e: "delete-storyboard-shot", storyboardId: number, shotId: number): void;
+  (e: "reorder-storyboard-shots", storyboardId: number, payload: { shot_ids: number[] }): void;
   (e: "save-project-settings", payload: ProjectPayload): void;
   (e: "update:workspace-search", value: string): void;
   (e: "update:title", value: string): void;
@@ -57,6 +76,17 @@ const emit = defineEmits<{
 const activeModule = ref<WorkbenchModule>("projects");
 const activeStoryboardId = ref<number | null>(null);
 const settingsDraft = reactive({ title: "", genre: "", world_brief: "", writing_rules: "" });
+const creationAssist = reactive({ script_text: "", protagonist: "", core_conflict: "", audience: "", tone: "" });
+const editingShotId = ref<number | null>(null);
+const shotDraft = reactive<UpdateStoryboardShotPayload>({
+  narration_text: "",
+  visual_prompt: "",
+  character_refs: [],
+  scene_refs: [],
+  audio_script: {},
+  duration_seconds: 4,
+  status: "draft",
+});
 const railItems: RailItem[] = [
   { module: "projects", label: "项目", iconPaths: ["M3.5 7.5h6l2 2h9v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z", "M3.5 11.5h17"] },
   { module: "script", label: "编剧", iconPaths: ["M6 3.5h9l3 3v14H6z", "M15 3.5v4h4", "M9 11h6M9 15h6M9 18h4"] },
@@ -128,9 +158,6 @@ function openProject(projectId: number) {
 function selectStoryboard(storyboard: Storyboard) {
   activeStoryboardId.value = storyboard.id;
 }
-function videoTasksByStoryboard(storyboardId: number) {
-  return videoTasks.value.filter((task) => task.storyboard_id === storyboardId);
-}
 function hasActiveVideoTask(tasks: VideoTask[]) {
   return tasks.some((task) => ["queued", "running"].includes(task.task_status));
 }
@@ -178,6 +205,55 @@ function assetLockMeta(locked: boolean) {
 }
 function shotAsset(shot: StoryboardShot) {
   return selectedStoryboardAssets.value.find((asset) => asset.shot_id === shot.id && asset.asset_type.includes("frame"));
+}
+function shotLabel(shot: StoryboardShot) {
+  return `S${String(shot.shot_no).padStart(2, "0")}`;
+}
+function editShot(shot: StoryboardShot) {
+  editingShotId.value = shot.id;
+  Object.assign(shotDraft, {
+    narration_text: shot.narration_text,
+    visual_prompt: shot.visual_prompt,
+    character_refs: [...shot.character_refs],
+    scene_refs: [...shot.scene_refs],
+    audio_script: { ...shot.audio_script },
+    duration_seconds: shot.duration_seconds,
+    status: shot.status,
+  });
+}
+function saveShot() {
+  if (!selectedStoryboard.value || editingShotId.value === null) return;
+  emit("update-storyboard-shot", selectedStoryboard.value.id, editingShotId.value, {
+    ...shotDraft,
+    narration_text: shotDraft.narration_text.trim(),
+    visual_prompt: shotDraft.visual_prompt.trim(),
+  });
+}
+function addShot() {
+  if (!selectedStoryboard.value) return;
+  emit("create-storyboard-shot", selectedStoryboard.value.id, {
+    narration_text: "",
+    visual_prompt: "",
+    character_refs: [],
+    scene_refs: [],
+    audio_script: {},
+    duration_seconds: 4,
+    status: "draft",
+  });
+}
+function deleteShot(shot: StoryboardShot) {
+  if (!selectedStoryboard.value || !window.confirm(`确认删除 ${shotLabel(shot)}？此操作无法撤销。`)) return;
+  if (editingShotId.value === shot.id) editingShotId.value = null;
+  emit("delete-storyboard-shot", selectedStoryboard.value.id, shot.id);
+}
+function moveShot(shot: StoryboardShot, offset: -1 | 1) {
+  if (!selectedStoryboard.value) return;
+  const shotIds = selectedStoryboard.value.shots.map((item) => item.id);
+  const currentIndex = shotIds.indexOf(shot.id);
+  const nextIndex = currentIndex + offset;
+  if (currentIndex < 0 || nextIndex < 0 || nextIndex >= shotIds.length) return;
+  [shotIds[currentIndex], shotIds[nextIndex]] = [shotIds[nextIndex], shotIds[currentIndex]];
+  emit("reorder-storyboard-shots", selectedStoryboard.value.id, { shot_ids: shotIds });
 }
 function projectSettingsPayload() {
   const project = selectedProject.value;
@@ -227,6 +303,9 @@ watch(selectedProject, (project) => {
 watch(storyboards, (items) => {
   if (!items.some((item) => item.id === activeStoryboardId.value)) activeStoryboardId.value = items[0]?.id ?? null;
 }, { immediate: true });
+watch(selectedStoryboard, () => {
+  editingShotId.value = null;
+});
 </script>
 
 <template>
@@ -266,8 +345,8 @@ watch(storyboards, (items) => {
       </section>
 
       <section v-else-if="currentView === 'projectCreate'" class="toon-create">
-        <header><span>NEW PROJECT</span><h2>建立创作项目</h2><p>先录入最小必要信息，后续内容在生产工作台中持续补齐。</p></header>
-        <form @submit.prevent="emit('submit-create')">
+        <header><span>NEW PROJECT</span><h2>建立创作项目</h2><p>选择最顺手的起点，整理出的项目草稿会回填到右侧，确认后再创建。</p><nav class="toon-create-modes" aria-label="项目创建方式"><button v-for="mode in ([['manual', '手动填写'], ['upload', '导入文本'], ['ai', 'AI 底稿']] as const)" :key="mode[0]" type="button" :class="{ active: creationMode === mode[0] }" @click="emit('open-project-create', mode[0])">{{ mode[1] }}</button></nav><form v-if="creationMode === 'upload'" class="toon-create-assist" @submit.prevent="emit('load-imported-project-draft', { title: form.title, genre: form.genre, script_text: creationAssist.script_text })"><label><span>故事或剧本文本</span><textarea v-model="creationAssist.script_text" rows="10" placeholder="粘贴已有小说、剧本或故事梗概…" /></label><button type="submit" :disabled="loading || !creationAssist.script_text.trim()">{{ loading ? "整理中..." : "整理项目草稿" }}</button></form><form v-else-if="creationMode === 'ai'" class="toon-create-assist" @submit.prevent="emit('load-ai-project-draft', { title: form.title, genre: form.genre, protagonist: creationAssist.protagonist, core_conflict: creationAssist.core_conflict, audience: creationAssist.audience, tone: creationAssist.tone })"><label><span>主角</span><input v-model="creationAssist.protagonist" placeholder="主角是谁，他最鲜明的特征是什么？" /></label><label><span>核心冲突</span><textarea v-model="creationAssist.core_conflict" rows="5" placeholder="他必须解决什么问题，又会付出什么代价？" /></label><label><span>目标观众</span><input v-model="creationAssist.audience" placeholder="例如：喜欢都市情感短剧的年轻观众" /></label><label><span>情绪基调</span><input v-model="creationAssist.tone" placeholder="例如：轻盈、悬疑、克制" /></label><button type="submit" :disabled="loading || !creationAssist.protagonist.trim() || !creationAssist.core_conflict.trim()">{{ loading ? "生成中..." : "生成项目草稿" }}</button></form></header>
+        <form class="toon-create__project-form" @submit.prevent="emit('submit-create')">
           <label><span>项目标题</span><input :value="form.title" maxlength="120" autocomplete="off" @input="emit('update:title', ($event.target as HTMLInputElement).value)" /></label>
           <label><span>题材 / 风格</span><input :value="form.genre" maxlength="80" autocomplete="off" @input="emit('update:genre', ($event.target as HTMLInputElement).value)" /></label>
           <label><span>原著或故事资料</span><textarea :value="form.world_brief" rows="8" @input="emit('update:world-brief', ($event.target as HTMLTextAreaElement).value)" /></label>
@@ -321,6 +400,10 @@ watch(storyboards, (items) => {
           </div>
 
           <div v-else-if="activeModule === 'assets'" class="toon-asset-board">
+            <section v-if="characterCards.length" class="toon-character-strip">
+              <header><div><span>角色视觉基准</span><strong>{{ characterCards.length }} 个角色</strong></div><small>生成并采用三视图后，镜头首帧会继承角色外观。</small></header>
+              <div><article v-for="character in characterCards" :key="character.id"><strong>{{ character.name }}</strong><span>{{ character.story_role || "未设置角色定位" }}</span><button type="button" :disabled="loading" @click="emit('generate-character-turnaround', { character_card_id: character.id, prompt_note: '' })">生成三视图</button></article></div>
+            </section>
             <article v-for="asset in mediaAssets" :key="asset.id" class="toon-asset-card">
               <div class="toon-asset-card__preview"><img v-if="/^https?:|^data:|\\.(png|jpg|jpeg|webp|gif)$/i.test(asset.uri)" :src="asset.uri" :alt="assetKindLabel(asset.asset_type)" loading="lazy" /><span v-else>{{ assetKindLabel(asset.asset_type) }}</span></div>
               <header><strong>{{ assetKindLabel(asset.asset_type) }} #{{ asset.id }}</strong><b :class="`tone-${assetIsLocked(asset) ? 'good' : 'neutral'}`">{{ assetCandidateLabel(asset) }}</b></header>
@@ -333,11 +416,12 @@ watch(storyboards, (items) => {
           <div v-else-if="activeModule === 'production'" class="toon-production-board">
             <template v-if="selectedStoryboard">
               <article class="toon-storyboard-table">
-                <header><div><span>分镜表</span><h3>{{ selectedStoryboard.title }}</h3></div><b :class="`tone-${statusTone(selectedStoryboard.status)}`">{{ statusLabel(selectedStoryboard.status) }}</b></header>
-                <div class="toon-shot-table"><div class="toon-shot-table__head"><span>镜头</span><span>画面与动作</span><span>时长</span><span>状态</span></div><div v-for="shot in selectedStoryboard.shots" :key="shot.id" class="toon-shot-row"><span>S{{ String(shot.shot_no).padStart(2, "0") }}</span><span><strong>{{ shortText(shot.narration_text, "无旁白", 36) }}</strong><small>{{ shortText(shot.visual_prompt, "尚未填写视觉提示词", 58) }}</small></span><span>{{ shot.duration_seconds }}s</span><span>{{ statusLabel(shot.status) }}</span></div></div>
+                <header><div><span>分镜表</span><h3>{{ selectedStoryboard.title }}</h3></div><div class="toon-inline-actions"><b :class="`tone-${statusTone(selectedStoryboard.status)}`">{{ statusLabel(selectedStoryboard.status) }}</b><button type="button" :disabled="loading" @click="addShot">新增镜头</button><button type="button" :disabled="loading" @click="emit('delete-storyboard', selectedStoryboard.id)">删除分镜</button></div></header>
+                <div class="toon-shot-table"><div class="toon-shot-table__head"><span>镜头</span><span>画面与动作</span><span>时长</span><span>操作</span></div><div v-for="(shot, shotIndex) in selectedStoryboard.shots" :key="shot.id" class="toon-shot-row" :class="{ active: editingShotId === shot.id }" @click="editShot(shot)"><span>{{ shotLabel(shot) }}</span><span><strong>{{ shortText(shot.narration_text, "无旁白", 36) }}</strong><small>{{ shortText(shot.visual_prompt, "尚未填写视觉提示词", 58) }}</small></span><span>{{ shot.duration_seconds }}s</span><span class="toon-shot-actions"><button type="button" :disabled="loading || shotIndex === 0" aria-label="上移镜头" @click.stop="moveShot(shot, -1)">↑</button><button type="button" :disabled="loading || shotIndex === selectedStoryboard.shots.length - 1" aria-label="下移镜头" @click.stop="moveShot(shot, 1)">↓</button><button type="button" :disabled="loading" @click.stop="deleteShot(shot)">删除</button></span></div></div>
+                <form v-if="editingShotId !== null" class="toon-shot-editor" @submit.prevent="saveShot"><header><strong>编辑镜头</strong><button type="button" @click="editingShotId = null">关闭</button></header><label><span>旁白 / 动作</span><textarea v-model="shotDraft.narration_text" rows="3" /></label><label><span>视觉提示词</span><textarea v-model="shotDraft.visual_prompt" rows="5" /></label><div><label><span>时长（秒）</span><input v-model.number="shotDraft.duration_seconds" type="number" min="0.5" max="60" step="0.5" /></label><label><span>状态</span><select v-model="shotDraft.status"><option value="draft">草稿</option><option value="ready">就绪</option><option value="blocked">阻断</option><option value="completed">完成</option></select></label></div><button type="submit" class="toon-button--dark" :disabled="loading">{{ loading ? "保存中..." : "保存镜头" }}</button></form>
               </article>
               <span class="toon-connector">→</span>
-              <article class="toon-frame-panel"><header><div><span>镜头面板</span><h3>{{ selectedStoryboard.shots.length }} 个镜头</h3></div><button type="button" :disabled="loading || hasActiveVideoTask(selectedStoryboardTasks)" @click="emit('create-video-task', selectedStoryboard.id)">{{ hasActiveVideoTask(selectedStoryboardTasks) ? "生产中" : "创建视频任务" }}</button></header><div class="toon-frame-grid"><div v-for="shot in selectedStoryboard.shots" :key="shot.id"><img v-if="shotAsset(shot)?.uri" :src="shotAsset(shot)?.uri" alt="" /><span v-else>未生成</span><small>S{{ String(shot.shot_no).padStart(2, "0") }}</small></div></div></article>
+              <article class="toon-frame-panel"><header><div><span>镜头面板</span><h3>{{ selectedStoryboard.shots.length }} 个镜头</h3></div><div class="toon-inline-actions"><button type="button" :disabled="loading" @click="emit('generate-storyboard-voice', selectedStoryboard.id, { voice_role: 'narrator' })">生成旁白</button><button type="button" :disabled="loading || hasActiveVideoTask(selectedStoryboardTasks)" @click="emit('create-video-task', selectedStoryboard.id)">{{ hasActiveVideoTask(selectedStoryboardTasks) ? "生产中" : "创建视频任务" }}</button></div></header><div class="toon-frame-grid"><div v-for="shot in selectedStoryboard.shots" :key="shot.id"><img v-if="shotAsset(shot)?.uri" :src="shotAsset(shot)?.uri" :alt="`${shotLabel(shot)} 首帧`" /><span v-else>未生成</span><small>{{ shotLabel(shot) }}</small><button type="button" :disabled="loading" @click="emit('generate-shot-first-frame', selectedStoryboard.id, shot.id)">{{ shotAsset(shot) ? "重新生成" : "生成首帧" }}</button></div></div></article>
             </template>
             <div v-else class="toon-empty toon-empty--canvas"><strong>Track 1 · 分镜</strong><p>生成或导入分镜后，这里会形成可审核的镜头生产轨道。</p></div>
           </div>
@@ -347,7 +431,7 @@ watch(storyboards, (items) => {
 
         <aside class="toon-agent">
           <header><div><span class="toon-dot"></span><strong>生产监督</strong></div><small>{{ selectedStoryboard?.title || "项目状态" }}</small></header>
-          <section><span>来源与预检</span><dl><div><dt>来源模式</dt><dd>{{ sourceMode }}</dd></div><div><dt>预检状态</dt><dd :class="`tone-text-${statusTone(String(preflight?.readiness || ''))}`">{{ preflight ? statusLabel(String(preflight.readiness)) : "尚未执行" }}</dd></div><div><dt>质量问题</dt><dd>{{ reviewFindings.length }}</dd></div></dl></section>
+          <section><span>来源与预检</span><dl><div><dt>来源模式</dt><dd>{{ sourceMode }}</dd></div><div><dt>预检状态</dt><dd :class="`tone-text-${statusTone(String(preflight?.readiness || ''))}`">{{ preflight ? statusLabel(String(preflight.readiness)) : "尚未执行" }}</dd></div><div><dt>质量问题</dt><dd>{{ reviewFindings.length }}</dd></div></dl><button v-if="selectedStoryboard" type="button" class="toon-agent__primary" :disabled="loading" @click="emit('prepare-video-production', selectedStoryboard.id, { generate_character_turnarounds: true, generate_audio_scripts: true, generate_dialogue_audio: false, create_video_task: false })">执行生产预检</button></section>
           <section v-if="reviewFindings.length"><span>质量复查</span><article v-for="finding in reviewFindings.slice(0, 4)" :key="String(finding.finding_id)"><b :class="`tone-${finding.severity === 'blocking' ? 'bad' : 'warn'}`">{{ finding.severity === "blocking" ? "阻断" : "建议" }}</b><strong>{{ finding.title }}</strong><p>{{ finding.detail }}</p></article></section>
           <section><span>运行记录</span><article v-for="event in recentEvents" :key="event.id"><time>{{ formatDateTime(event.created_at) }}</time><strong>{{ event.message }}</strong></article><p v-if="!recentEvents.length">当前项目还没有生产运行记录。</p></section>
           <section v-if="selectedStoryboardTasks.length"><span>视频任务</span><article v-for="task in selectedStoryboardTasks" :key="task.id"><b :class="`tone-${statusTone(task.task_status)}`">{{ statusLabel(task.task_status) }}</b><strong>任务 #{{ task.id }}</strong><a v-if="task.output_uri" :href="task.output_uri" target="_blank" rel="noreferrer">查看输出</a><button type="button" :disabled="loading || task.task_status === 'running'" @click="emit('delete-video-task', task.id)">删除任务</button></article></section>
@@ -390,6 +474,7 @@ button:disabled { cursor: wait; opacity: .48; }
 .toon-create header p, .toon-section-head p { max-width: 60ch; color: var(--toon-ink-soft); line-height: 1.65; }
 .toon-create form, .toon-create label, .toon-settings, .toon-settings label { display: grid; gap: 10px; }
 .toon-create form, .toon-settings { gap: 16px; }
+.toon-create-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 18px; padding: 5px; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,248,252,.58); }.toon-create-modes button { min-height: 38px; padding: 0 8px; font-size: .76rem; }.toon-create-modes button.active { border-color: transparent; background: var(--toon-rose); color: white; }.toon-create-assist { margin-top: 14px; padding: 14px; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,250,253,.66); }.toon-create-assist button { background: var(--toon-rose-soft); color: var(--toon-rose-deep); font-weight: 800; }.toon-create__project-form { align-content: start; }
 .toon-create input, .toon-create textarea, .toon-settings input, .toon-settings textarea, .toon-project-select select, .toon-project-toolbar input { width: 100%; border: 1px solid color-mix(in oklab, var(--toon-rose) 20%, transparent); border-radius: 9px; background: rgba(255,250,253,.74); padding: 11px 12px; color: var(--toon-ink); }
 .toon-create textarea, .toon-settings textarea { resize: vertical; line-height: 1.65; }
 .toon-projects { display: grid; gap: 18px; align-content: start; padding: 20px; }
@@ -429,17 +514,21 @@ dt { color: var(--toon-ink-muted); font-size: .7rem; } dd { margin: 0; font-weig
 .tone-good { background: #d9f5e3; color: #087434; }.tone-warn { background: #fff0c9; color: #8a5b00; }.tone-bad { background: #ffe0df; color: #a11d17; }.tone-neutral { background: var(--toon-rose-soft); color: var(--toon-ink-soft); }
 .tone-text-good { color: #087434; }.tone-text-warn { color: #8a5b00; }.tone-text-bad { color: #a11d17; }.tone-text-neutral { color: var(--toon-ink-soft); }
 .toon-asset-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; align-content: start; padding: 24px; }
+.toon-character-strip { grid-column: 1 / -1; display: grid; gap: 12px; padding: 14px; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,248,252,.72); }.toon-character-strip > header { display: flex; justify-content: space-between; gap: 12px; align-items: end; }.toon-character-strip > header div { display: grid; gap: 3px; }.toon-character-strip > header span, .toon-character-strip > header small, .toon-character-strip article span { color: var(--toon-ink-soft); font-size: .72rem; }.toon-character-strip > div { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }.toon-character-strip article { min-width: 180px; display: grid; gap: 7px; padding: 10px; border-radius: 8px; background: rgba(255,255,255,.62); }.toon-character-strip button { min-height: 34px; width: fit-content; font-size: .72rem; }
 .toon-asset-card { display: grid; gap: 10px; padding: 10px; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 12px 26px rgba(213,91,141,.08); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 .toon-asset-card__preview { aspect-ratio: 16/10; display: grid; place-items: center; overflow: hidden; border-radius: 7px; background: rgba(255,235,244,.72); color: var(--toon-ink-muted); }.toon-asset-card__preview img { width: 100%; height: 100%; object-fit: cover; }
 .toon-asset-card p { min-height: 3em; margin: 0; color: var(--toon-ink-soft); font-size: .76rem; line-height: 1.55; }.toon-asset-card footer { justify-content: start; flex-wrap: wrap; }.toon-asset-card footer button { min-height: 32px; padding: 0 8px; font-size: .72rem; }
 .toon-storyboard-table { width: 540px; max-height: 610px; overflow: auto; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-storyboard-table > header, .toon-frame-panel > header { position: sticky; top: 0; z-index: 2; padding: 13px; border-bottom: 1px solid rgba(110,52,78,.1); background: rgba(255,255,255,.88); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-storyboard-table h3, .toon-frame-panel h3 { margin: 3px 0 0; font-size: .95rem; }
-.toon-shot-table__head, .toon-shot-row { display: grid; grid-template-columns: 52px minmax(260px, 1fr) 52px 70px; align-items: start; }.toon-shot-table__head { position: sticky; top: 67px; padding: 8px 10px; background: rgba(255,234,243,.88); color: var(--toon-ink-soft); font-size: .68rem; }.toon-shot-row { padding: 10px; border-top: 1px solid rgba(110,52,78,.08); font-size: .74rem; }.toon-shot-row:nth-child(odd) { background: rgba(255,249,252,.54); }.toon-shot-row > span:nth-child(2) { display: grid; gap: 4px; }.toon-shot-row small { color: var(--toon-ink-soft); line-height: 1.5; }
-.toon-frame-panel { width: 520px; min-height: 430px; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-frame-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 10px; }.toon-frame-grid > div { position: relative; aspect-ratio: 16/10; display: grid; place-items: center; overflow: hidden; border-radius: 5px; background: rgba(255,235,244,.72); color: var(--toon-ink-muted); font-size: .68rem; }.toon-frame-grid img { width: 100%; height: 100%; object-fit: cover; }.toon-frame-grid small { position: absolute; top: 4px; left: 4px; padding: 2px 4px; border-radius: 3px; background: var(--toon-rose); color: white; font-size: .58rem; }
+.toon-shot-table__head, .toon-shot-row { display: grid; grid-template-columns: 52px minmax(220px, 1fr) 52px 104px; align-items: start; }.toon-shot-table__head { position: sticky; top: 67px; padding: 8px 10px; background: rgba(255,234,243,.88); color: var(--toon-ink-soft); font-size: .68rem; }.toon-shot-row { padding: 10px; border-top: 1px solid rgba(110,52,78,.08); font-size: .74rem; cursor: pointer; }.toon-shot-row:nth-child(odd) { background: rgba(255,249,252,.54); }.toon-shot-row:hover, .toon-shot-row.active { background: rgba(255,226,239,.72); }.toon-shot-row > span:nth-child(2) { display: grid; gap: 4px; }.toon-shot-row small { color: var(--toon-ink-soft); line-height: 1.5; }.toon-shot-actions { display: flex; gap: 3px; flex-wrap: wrap; }.toon-shot-actions button { min-height: 26px; padding: 0 5px; font-size: .62rem; }
+.toon-shot-editor { display: grid; gap: 10px; padding: 13px; border-top: 1px solid var(--toon-line); background: rgba(255,246,251,.82); }.toon-shot-editor header, .toon-shot-editor > div { display: flex; gap: 8px; justify-content: space-between; }.toon-shot-editor label { min-width: 0; display: grid; flex: 1; gap: 5px; color: var(--toon-ink-soft); font-size: .7rem; }.toon-shot-editor input, .toon-shot-editor textarea, .toon-shot-editor select { width: 100%; border: 1px solid var(--toon-line); border-radius: 7px; background: rgba(255,255,255,.72); padding: 8px; color: var(--toon-ink); }.toon-shot-editor textarea { resize: vertical; line-height: 1.5; }.toon-shot-editor > button { justify-self: end; }
+.toon-inline-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: end; }.toon-inline-actions button { min-height: 32px; padding: 0 8px; font-size: .7rem; }
+.toon-frame-panel { width: 520px; min-height: 430px; border: 1px solid var(--toon-line); border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-frame-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 10px; }.toon-frame-grid > div { position: relative; aspect-ratio: 16/10; display: grid; place-items: center; overflow: hidden; border-radius: 5px; background: rgba(255,235,244,.72); color: var(--toon-ink-muted); font-size: .68rem; }.toon-frame-grid img { width: 100%; height: 100%; object-fit: cover; }.toon-frame-grid small { position: absolute; top: 4px; left: 4px; padding: 2px 4px; border-radius: 3px; background: var(--toon-rose); color: white; font-size: .58rem; }.toon-frame-grid button { position: absolute; right: 4px; bottom: 4px; min-height: 26px; padding: 0 5px; border-color: rgba(255,255,255,.72); background: rgba(255,248,252,.88); font-size: .6rem; }
 .toon-settings { width: min(720px, calc(100% - 48px)); margin: 28px; padding: 22px; border: 1px solid var(--toon-line); border-radius: 12px; background: rgba(255,255,255,.72); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-settings h3 { margin: 4px 0 0; }
 .toon-agent { display: grid; gap: 0; align-content: start; }.toon-agent > header { position: sticky; top: 0; z-index: 2; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.1); background: rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }.toon-agent > header > div { display: flex; gap: 8px; align-items: center; }.toon-agent > header small { color: var(--toon-ink-muted); }
 .toon-agent section { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.08); }.toon-agent section > span { color: var(--toon-ink-soft); font-size: .72rem; font-weight: 800; letter-spacing: .08em; }.toon-agent article { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(255,255,255,.82); border-radius: 8px; background: rgba(255,255,255,.5); }.toon-agent article p, .toon-agent section > p { margin: 0; color: var(--toon-ink-soft); font-size: .76rem; line-height: 1.55; }.toon-agent article time { color: var(--toon-ink-muted); font-size: .68rem; }.toon-agent article a { color: var(--toon-rose-deep); font-size: .76rem; font-weight: 800; }.toon-agent article button { min-height: 32px; width: fit-content; font-size: .72rem; }
+.toon-agent__primary { width: 100% !important; background: var(--toon-rose-soft); color: var(--toon-rose-deep); font-weight: 800; }
 @media (max-width: 1180px) { .toon-workbench { grid-template-columns: 220px minmax(620px, 1fr); }.toon-agent { grid-column: 1 / -1; max-height: 360px; }.toon-topbar { grid-template-columns: minmax(180px, 1fr) auto; }.toon-user { grid-column: 1 / -1; justify-content: start; } }
-@media (max-width: 900px) { .toon-shell { grid-template-columns: minmax(0, 1fr); }.toon-rail { position: sticky; top: 8px; z-index: 8; height: auto; grid-template-columns: repeat(7, minmax(64px, 1fr)); grid-template-rows: auto; overflow-x: auto; padding: 8px; }.toon-rail i { display: none; }.toon-rail button { width: auto; min-width: 64px; min-height: 50px; display: grid; place-content: center; gap: 2px; font-size: 1.05rem; }.toon-rail__brand { min-width: 52px !important; }.toon-rail__label { display: block; }.toon-stage { min-height: auto; }.toon-topbar nav { display: none; }.toon-workbench { grid-template-columns: minmax(0, 1fr); overflow: visible; }.toon-inspector, .toon-agent { max-height: none; }.toon-inspector { grid-template-columns: repeat(2, minmax(0, 1fr)); }.toon-project-select, .toon-storyboard-list { grid-column: 1 / -1; }.toon-canvas { min-height: 620px; }.toon-flow, .toon-production-board { min-width: 980px; } }
+@media (max-width: 900px) { .toon-shell { grid-template-columns: minmax(0, 1fr); }.toon-rail { position: sticky; top: 8px; z-index: 8; height: auto; grid-template-columns: repeat(7, minmax(64px, 1fr)); grid-template-rows: auto; overflow-x: auto; padding: 8px; }.toon-rail i { display: none; }.toon-rail button { width: auto; min-width: 64px; min-height: 50px; display: grid; place-content: center; gap: 2px; font-size: 1.05rem; }.toon-rail__brand { min-width: 52px !important; }.toon-rail__label { display: block; }.toon-stage { min-height: auto; }.toon-topbar nav { display: none; }.toon-workbench { grid-template-columns: minmax(0, 1fr); overflow: visible; }.toon-inspector, .toon-agent { max-height: none; }.toon-inspector { grid-template-columns: repeat(2, minmax(0, 1fr)); }.toon-project-select, .toon-storyboard-list { grid-column: 1 / -1; }.toon-canvas { min-height: 620px; }.toon-flow, .toon-production-board { min-width: 980px; }.toon-asset-card footer button, .toon-frame-grid button, .toon-inline-actions button, .toon-character-strip button, .toon-agent article button { min-height: 44px; } }
 @media (max-width: 760px) { .toon-shell { gap: 8px; }.toon-stage { padding: 12px; }.toon-topbar, .toon-create, .toon-section-head { display: grid; grid-template-columns: minmax(0, 1fr); }.toon-user { grid-column: auto; }.toon-project-toolbar { align-items: stretch; flex-direction: column; }.toon-inspector { grid-template-columns: minmax(0, 1fr); }.toon-project-select, .toon-storyboard-list { grid-column: auto; }.toon-canvas { min-height: 560px; scroll-snap-type: x proximity; }.toon-flow > *, .toon-production-board > * { scroll-snap-align: start; }.toon-create { padding: 18px; gap: 24px; } }
 @media (max-width: 460px) { .toon-rail { grid-template-columns: repeat(7, 62px); }.toon-topbar { gap: 12px; }.toon-heading h1 { font-size: 1.15rem; }.toon-user { width: 100%; overflow-x: auto; }.toon-user button { min-height: 44px; }.toon-canvas-toolbar { align-items: flex-start; }.toon-canvas-toolbar > div:last-child { flex-shrink: 0; }.toon-project-grid { grid-template-columns: minmax(0, 1fr); }.toon-create form { padding: 14px; } }
 </style>

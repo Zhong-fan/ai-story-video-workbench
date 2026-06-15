@@ -10,6 +10,19 @@ Phase 1 should solve the current quality bottlenecks directly:
 
 Phase 1 should not attempt to deliver the full idealized workbench in one pass.
 
+## Current Phase Status
+
+As of 2026-06-15, the workbench shell and several direct production actions are implemented, but Phase 1 is not complete.
+
+The current frontend provides a useful production overview and can initiate key generation and preflight actions. The next implementation pass should prioritize the missing correction loop:
+
+1. Restore shot edit, add, delete, and reorder controls inside the new workbench.
+2. Make preflight and post-render findings route directly into those controls.
+3. Complete generation transparency for prompts, models, parameters, source traces, and inherited assets.
+4. Surface detailed task progress, failure reasons, and retry or recovery actions.
+
+Broader canvas behavior and additional visual redesign remain lower priority than completing these production workflows.
+
 ## Phase 1: Must Ship First
 
 ### 1. Generation Transparency

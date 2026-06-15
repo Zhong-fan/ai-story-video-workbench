@@ -42,10 +42,10 @@ The system SHALL pass creative intent between domains through source artifacts r
 
 ### Requirement: Future Combination Inputs
 
-The system SHOULD allow future workflows to combine novels, images, characters, reference works, briefs, and existing storyboard inputs through a normalized source artifact contract.
+The system SHALL keep the normalized source artifact contract capable of representing future workflows that combine novels, images, characters, reference works, briefs, and existing storyboard inputs.
 
 #### Scenario: Combined source is introduced later
 
 - **GIVEN** a future workflow combines a chapter excerpt with images and a brief
 - **WHEN** the workflow is added
-- **THEN** it SHOULD use the existing source artifact contract rather than creating a domain-specific shortcut
+- **THEN** it SHALL use the existing source artifact contract rather than creating a domain-specific shortcut

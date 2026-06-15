@@ -103,6 +103,34 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         self.assertIn('@create-video-task="store.createVideoTask"', app_source)
         self.assertIn('@delete-video-task="store.deleteVideoTask"', app_source)
 
+    def test_production_canvas_wires_preflight_frame_voice_and_storyboard_actions(self) -> None:
+        app_source = APP_VUE.read_text(encoding="utf-8")
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        for event_name in [
+            "delete-storyboard",
+            "generate-character-turnaround",
+            "generate-shot-first-frame",
+            "generate-storyboard-voice",
+            "prepare-video-production",
+        ]:
+            self.assertIn(f'(e: "{event_name}"', source)
+
+        self.assertIn("执行生产预检", source)
+        self.assertIn("生成三视图", source)
+        self.assertIn("生成首帧", source)
+        self.assertIn("生成旁白", source)
+        self.assertIn(":alt=\"`${shotLabel(shot)} 首帧`\"", source)
+
+        for binding in [
+            '@delete-storyboard="store.deleteStoryboard"',
+            '@generate-character-turnaround="store.generateCharacterTurnaround"',
+            '@generate-shot-first-frame="store.generateShotFirstFrame"',
+            '@generate-storyboard-voice="store.generateStoryboardVoice"',
+            '@prepare-video-production="store.prepareVideoProduction"',
+        ]:
+            self.assertIn(binding, app_source)
+
     def test_settings_canvas_wires_project_update(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")
         source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
@@ -117,6 +145,43 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         self.assertIn('emit("save-project-settings", payload)', source)
 
         self.assertIn('@save-project-settings="store.updateProject"', app_source)
+
+    def test_production_canvas_wires_storyboard_shot_review_controls(self) -> None:
+        app_source = APP_VUE.read_text(encoding="utf-8")
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        for event_name in [
+            "update-storyboard-shot",
+            "create-storyboard-shot",
+            "delete-storyboard-shot",
+            "reorder-storyboard-shots",
+        ]:
+            self.assertIn(f'(e: "{event_name}"', source)
+
+        for control in ["新增镜头", "保存镜头", "上移镜头", "下移镜头"]:
+            self.assertIn(control, source)
+
+        for binding in [
+            '@update-storyboard-shot="store.updateStoryboardShot"',
+            '@create-storyboard-shot="store.createStoryboardShot"',
+            '@delete-storyboard-shot="store.deleteStoryboardShot"',
+            '@reorder-storyboard-shots="store.reorderStoryboardShots"',
+        ]:
+            self.assertIn(binding, app_source)
+
+    def test_project_create_restores_manual_import_and_ai_draft_modes(self) -> None:
+        app_source = APP_VUE.read_text(encoding="utf-8")
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        self.assertIn("creationMode: CreationMode", source)
+        self.assertIn("手动填写", source)
+        self.assertIn("导入文本", source)
+        self.assertIn("AI 底稿", source)
+        self.assertIn('(e: "load-imported-project-draft"', source)
+        self.assertIn('(e: "load-ai-project-draft"', source)
+        self.assertIn("store.loadImportedProjectDraft", app_source)
+        self.assertIn("store.loadAiProjectDraft", app_source)
+        self.assertIn(':creation-mode="projectCreationMode"', app_source)
 
     def test_project_create_is_not_restored_as_startup_view(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")

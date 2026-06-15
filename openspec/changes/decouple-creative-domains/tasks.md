@@ -1,5 +1,16 @@
 # Tasks
 
+Status reviewed 2026-06-15.
+
+This change remains directionally valid, but its checklist has not yet been reconciled item-by-item against the current implementation. The current product already contains several relevant contracts and workflows, including multiple project creation entry paths, storyboard source traces, asset-aware generation, video preflight, review findings, and explicit task outcomes. Keep unchecked items unchecked until their ownership boundaries, persistence behavior, and end-to-end verification are confirmed.
+
+Near-term reconciliation priorities:
+
+- Confirm whether video quality results are persisted after rendering or only represented during review.
+- Confirm task status and progress-event contracts across API, database, worker, and frontend.
+- Audit remaining direct cross-domain reads before claiming domain ownership separation.
+- Verify source-independent storyboard and video workflows through end-to-end tests.
+
 ## 1. Establish Domain Contracts
 
 - [ ] Define source artifact contracts for novel chapters, image references, and user briefs.
