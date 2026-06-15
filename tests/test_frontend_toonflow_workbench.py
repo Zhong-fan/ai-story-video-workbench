@@ -80,7 +80,7 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         self.assertIn('candidate_status: locked ? "locked" : "candidate"', source)
         self.assertIn('@click="emit(\'update-media-asset\', asset.id, assetLockMeta(true))"', source)
         self.assertIn('@click="emit(\'update-media-asset\', asset.id, assetLockMeta(false))"', source)
-        self.assertIn('@click="emit(\'delete-media-asset\', asset.id)"', source)
+        self.assertIn('@click="confirmDeleteMediaAsset(asset.id)"', source)
         self.assertNotIn("<span>设为采用</span>", source)
         self.assertNotIn("<span>取消采用</span>", source)
         self.assertNotIn("<span>删除候选</span>", source)
@@ -96,7 +96,7 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         self.assertIn('(e: "delete-video-task"', source)
         self.assertIn("selectedStoryboardTasks", source)
         self.assertIn('@click="emit(\'create-video-task\', selectedStoryboard.id)"', source)
-        self.assertIn('@click="emit(\'delete-video-task\', task.id)"', source)
+        self.assertIn('@click="confirmDeleteVideoTask(task.id)"', source)
         self.assertIn("任务 #{{ task.id }}", source)
         self.assertNotIn("Track 3 · 视频出片", source)
 
@@ -180,6 +180,28 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         self.assertIn("重新创建任务", source)
         self.assertIn("task.error_message", source)
         self.assertIn("task.progress.failure_stage", source)
+
+    def test_preflight_and_review_findings_focus_correction_controls(self) -> None:
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        self.assertIn("function issueShotNo", source)
+        self.assertIn("async function focusIssueShot", source)
+        self.assertIn('document.querySelector(".toon-shot-editor")?.scrollIntoView', source)
+        self.assertIn("preflightFailures", source)
+        self.assertIn("preflightWarnings", source)
+        self.assertIn("定位镜头", source)
+        self.assertIn("recommended_rework_level", source)
+
+    def test_destructive_workbench_actions_require_confirmation(self) -> None:
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        for helper in [
+            "confirmDeleteProject",
+            "confirmDeleteStoryboard",
+            "confirmDeleteMediaAsset",
+            "confirmDeleteVideoTask",
+        ]:
+            self.assertIn(f"function {helper}", source)
 
     def test_project_create_restores_manual_import_and_ai_draft_modes(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")

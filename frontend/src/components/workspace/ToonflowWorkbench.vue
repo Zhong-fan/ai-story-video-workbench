@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import type {
   CreateStoryboardShotPayload,
   GenerateCharacterTurnaroundPayload,
@@ -138,6 +138,14 @@ const reviewFindings = computed(() => {
   const value = selectedStoryboard.value?.progress?.review_findings;
   return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
 });
+const preflightFailures = computed(() => {
+  const value = preflight.value?.quality_gate_failures;
+  return Array.isArray(value) ? value.map(String) : [];
+});
+const preflightWarnings = computed(() => {
+  const value = preflight.value?.risk_warnings;
+  return Array.isArray(value) ? value.map(String) : [];
+});
 const sourceMode = computed(() => {
   const trace = selectedStoryboard.value?.progress?.generation_trace;
   if (trace && typeof trace === "object" && "source_mode" in trace) return String(trace.source_mode);
@@ -176,6 +184,35 @@ function taskProgressPercent(task: VideoTask) {
 }
 function taskFailureText(task: VideoTask) {
   return task.error_message || String(task.progress.failure_stage || "");
+}
+function issueShotNo(value: unknown) {
+  const match = String(value || "").match(/(?:镜头\s*|shot-)(\d+)/i);
+  return match ? Number(match[1]) : null;
+}
+function reworkLevelLabel(value: unknown) {
+  const labels: Record<string, string> = { shot: "修正镜头", storyboard: "调整分镜", local_fix: "局部修复" };
+  return labels[String(value || "")] || "查看建议";
+}
+async function focusIssueShot(value: unknown) {
+  const shotNo = issueShotNo(value);
+  const shot = selectedStoryboard.value?.shots.find((item) => item.shot_no === shotNo);
+  activeModule.value = "production";
+  if (!shot) return;
+  editShot(shot);
+  await nextTick();
+  document.querySelector(".toon-shot-editor")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function confirmDeleteStoryboard(storyboardId: number) {
+  if (window.confirm("确认删除整个分镜？关联镜头和生产记录也会被移入回收站。")) emit("delete-storyboard", storyboardId);
+}
+function confirmDeleteProject(projectId: number) {
+  if (window.confirm("确认删除整个项目？项目会进入回收站，可在回收站中恢复。")) emit("delete-project", projectId);
+}
+function confirmDeleteMediaAsset(assetId: number) {
+  if (window.confirm("确认删除这个素材候选？已采用素材建议先取消采用。")) emit("delete-media-asset", assetId);
+}
+function confirmDeleteVideoTask(taskId: number) {
+  if (window.confirm("确认删除这个视频任务记录？已生成的输出可能无法再从工作台访问。")) emit("delete-video-task", taskId);
 }
 function statusLabel(status: string | undefined) {
   const labels: Record<string, string> = {
@@ -378,7 +415,7 @@ watch(selectedStoryboard, () => {
           <article v-for="project in visibleProjects" :key="project.id" tabindex="0" @click="openProject(project.id)" @keydown.enter.self.prevent="openProject(project.id)" @keydown.space.self.prevent="openProject(project.id)">
             <header><strong>{{ project.title }}</strong><span>{{ project.genre || "未设置题材" }}</span></header>
             <p>{{ shortText(project.world_brief || project.writing_rules, "打开项目继续整理故事、资产与视频。", 130) }}</p>
-            <footer><time>{{ formatDateTime(project.updated_at) }}</time><button type="button" @click.stop="emit('delete-project', project.id)">删除</button></footer>
+            <footer><time>{{ formatDateTime(project.updated_at) }}</time><button type="button" @click.stop="confirmDeleteProject(project.id)">删除</button></footer>
           </article>
         </div>
         <div v-else class="toon-empty"><strong>还没有项目</strong><p>创建第一个项目，把故事材料、人物、分镜和视频生产放进同一个工作台。</p></div>
@@ -424,7 +461,7 @@ watch(selectedStoryboard, () => {
               <div class="toon-asset-card__preview"><img v-if="/^https?:|^data:|\\.(png|jpg|jpeg|webp|gif)$/i.test(asset.uri)" :src="asset.uri" :alt="assetKindLabel(asset.asset_type)" loading="lazy" /><span v-else>{{ assetKindLabel(asset.asset_type) }}</span></div>
               <header><strong>{{ assetKindLabel(asset.asset_type) }} #{{ asset.id }}</strong><b :class="`tone-${assetIsLocked(asset) ? 'good' : 'neutral'}`">{{ assetCandidateLabel(asset) }}</b></header>
               <p>{{ shortText(asset.prompt || asset.status, "项目素材", 72) }}</p>
-              <footer><button v-if="!assetIsLocked(asset)" type="button" :disabled="loading" @click="emit('update-media-asset', asset.id, assetLockMeta(true))">设为采用</button><button v-else type="button" :disabled="loading" @click="emit('update-media-asset', asset.id, assetLockMeta(false))">取消采用</button><button type="button" :disabled="loading" @click="emit('delete-media-asset', asset.id)">删除候选</button></footer>
+              <footer><button v-if="!assetIsLocked(asset)" type="button" :disabled="loading" @click="emit('update-media-asset', asset.id, assetLockMeta(true))">设为采用</button><button v-else type="button" :disabled="loading" @click="emit('update-media-asset', asset.id, assetLockMeta(false))">取消采用</button><button type="button" :disabled="loading" @click="confirmDeleteMediaAsset(asset.id)">删除候选</button></footer>
             </article>
             <div v-if="!mediaAssets.length" class="toon-empty toon-empty--canvas"><strong>等待生成资产</strong><p>角色三视图、场景图、镜头首帧和音频会铺在这里。</p></div>
           </div>
@@ -432,7 +469,7 @@ watch(selectedStoryboard, () => {
           <div v-else-if="activeModule === 'production'" class="toon-production-board">
             <template v-if="selectedStoryboard">
               <article class="toon-storyboard-table">
-                <header><div><span>分镜表</span><h3>{{ selectedStoryboard.title }}</h3></div><div class="toon-inline-actions"><b :class="`tone-${statusTone(selectedStoryboard.status)}`">{{ statusLabel(selectedStoryboard.status) }}</b><button type="button" :disabled="loading" @click="addShot">新增镜头</button><button type="button" :disabled="loading" @click="emit('delete-storyboard', selectedStoryboard.id)">删除分镜</button></div></header>
+                <header><div><span>分镜表</span><h3>{{ selectedStoryboard.title }}</h3></div><div class="toon-inline-actions"><b :class="`tone-${statusTone(selectedStoryboard.status)}`">{{ statusLabel(selectedStoryboard.status) }}</b><button type="button" :disabled="loading" @click="addShot">新增镜头</button><button type="button" :disabled="loading" @click="confirmDeleteStoryboard(selectedStoryboard.id)">删除分镜</button></div></header>
                 <div class="toon-shot-table"><div class="toon-shot-table__head"><span>镜头</span><span>画面与动作</span><span>时长</span><span>操作</span></div><div v-for="(shot, shotIndex) in selectedStoryboard.shots" :key="shot.id" class="toon-shot-row" :class="{ active: editingShotId === shot.id }" @click="editShot(shot)"><span>{{ shotLabel(shot) }}</span><span><strong>{{ shortText(shot.narration_text, "无旁白", 36) }}</strong><small>{{ shortText(shot.visual_prompt, "尚未填写视觉提示词", 58) }}</small></span><span>{{ shot.duration_seconds }}s</span><span class="toon-shot-actions"><button type="button" :disabled="loading || shotIndex === 0" aria-label="上移镜头" @click.stop="moveShot(shot, -1)">↑</button><button type="button" :disabled="loading || shotIndex === selectedStoryboard.shots.length - 1" aria-label="下移镜头" @click.stop="moveShot(shot, 1)">↓</button><button type="button" :disabled="loading" @click.stop="deleteShot(shot)">删除</button></span></div></div>
                 <form v-if="editingShotId !== null" class="toon-shot-editor" @submit.prevent="saveShot"><header><strong>编辑镜头</strong><button type="button" @click="editingShotId = null">关闭</button></header><label><span>旁白 / 动作</span><textarea v-model="shotDraft.narration_text" rows="3" /></label><label><span>视觉提示词</span><textarea v-model="shotDraft.visual_prompt" rows="5" /></label><div><label><span>时长（秒）</span><input v-model.number="shotDraft.duration_seconds" type="number" min="0.5" max="60" step="0.5" /></label><label><span>状态</span><select v-model="shotDraft.status"><option value="draft">草稿</option><option value="ready">就绪</option><option value="blocked">阻断</option><option value="completed">完成</option></select></label></div><button type="submit" class="toon-button--dark" :disabled="loading">{{ loading ? "保存中..." : "保存镜头" }}</button></form>
               </article>
@@ -447,10 +484,10 @@ watch(selectedStoryboard, () => {
 
         <aside class="toon-agent">
           <header><div><span class="toon-dot"></span><strong>生产监督</strong></div><small>{{ selectedStoryboard?.title || "项目状态" }}</small></header>
-          <section><span>来源与预检</span><dl><div><dt>来源模式</dt><dd>{{ sourceMode }}</dd></div><div><dt>预检状态</dt><dd :class="`tone-text-${statusTone(String(preflight?.readiness || ''))}`">{{ preflight ? statusLabel(String(preflight.readiness)) : "尚未执行" }}</dd></div><div><dt>质量问题</dt><dd>{{ reviewFindings.length }}</dd></div></dl><button v-if="selectedStoryboard" type="button" class="toon-agent__primary" :disabled="loading" @click="emit('prepare-video-production', selectedStoryboard.id, { generate_character_turnarounds: true, generate_audio_scripts: true, generate_dialogue_audio: false, create_video_task: false })">执行生产预检</button></section>
-          <section v-if="reviewFindings.length"><span>质量复查</span><article v-for="finding in reviewFindings.slice(0, 4)" :key="String(finding.finding_id)"><b :class="`tone-${finding.severity === 'blocking' ? 'bad' : 'warn'}`">{{ finding.severity === "blocking" ? "阻断" : "建议" }}</b><strong>{{ finding.title }}</strong><p>{{ finding.detail }}</p></article></section>
+          <section><span>来源与预检</span><dl><div><dt>来源模式</dt><dd>{{ sourceMode }}</dd></div><div><dt>预检状态</dt><dd :class="`tone-text-${statusTone(String(preflight?.readiness || ''))}`">{{ preflight ? statusLabel(String(preflight.readiness)) : "尚未执行" }}</dd></div><div><dt>阻断 / 风险</dt><dd>{{ preflightFailures.length }} / {{ preflightWarnings.length }}</dd></div></dl><div v-if="preflightFailures.length || preflightWarnings.length" class="toon-issue-list"><button v-for="issue in [...preflightFailures, ...preflightWarnings].slice(0, 5)" :key="issue" type="button" @click="focusIssueShot(issue)"><b :class="`tone-${preflightFailures.includes(issue) ? 'bad' : 'warn'}`">{{ preflightFailures.includes(issue) ? "阻断" : "风险" }}</b><span>{{ issue }}</span><small v-if="issueShotNo(issue)">定位镜头</small></button></div><button v-if="selectedStoryboard" type="button" class="toon-agent__primary" :disabled="loading" @click="emit('prepare-video-production', selectedStoryboard.id, { generate_character_turnarounds: true, generate_audio_scripts: true, generate_dialogue_audio: false, create_video_task: false })">执行生产预检</button></section>
+          <section v-if="reviewFindings.length"><span>质量复查</span><article v-for="finding in reviewFindings.slice(0, 4)" :key="String(finding.finding_id)"><b :class="`tone-${finding.severity === 'blocking' ? 'bad' : 'warn'}`">{{ finding.severity === "blocking" ? "阻断" : "建议" }}</b><strong>{{ finding.title }}</strong><p>{{ finding.detail }}</p><button type="button" @click="focusIssueShot(finding.finding_id || finding.title)">{{ reworkLevelLabel(finding.recommended_rework_level) }}</button></article></section>
           <section><span>运行记录</span><article v-for="event in recentEvents" :key="event.id"><time>{{ formatDateTime(event.created_at) }}</time><strong>{{ event.message }}</strong></article><p v-if="!recentEvents.length">当前项目还没有生产运行记录。</p></section>
-          <section v-if="selectedStoryboardTasks.length"><span>视频任务</span><article v-for="task in selectedStoryboardTasks" :key="task.id" class="toon-task-card"><header><strong>任务 #{{ task.id }}</strong><b :class="`tone-${statusTone(task.task_status)}`">{{ statusLabel(task.task_status) }}</b></header><div class="toon-task-progress" role="progressbar" :aria-label="`视频任务 #${task.id} 进度`" :aria-valuenow="taskProgressPercent(task)" aria-valuemin="0" aria-valuemax="100"><i :style="{ width: `${taskProgressPercent(task)}%` }"></i></div><p>{{ taskProgressText(task) }}</p><p v-if="taskFailureText(task)" class="toon-task-error"><strong>失败原因</strong>{{ taskFailureText(task) }}</p><footer><a v-if="task.output_uri" :href="task.output_uri" target="_blank" rel="noreferrer">查看输出</a><button v-if="['failed', 'blocked'].includes(task.task_status) && selectedStoryboard" type="button" :disabled="loading || hasActiveVideoTask(selectedStoryboardTasks)" @click="emit('create-video-task', selectedStoryboard.id)">重新创建任务</button><button type="button" :disabled="loading || task.task_status === 'running'" @click="emit('delete-video-task', task.id)">删除任务</button></footer></article></section>
+          <section v-if="selectedStoryboardTasks.length"><span>视频任务</span><article v-for="task in selectedStoryboardTasks" :key="task.id" class="toon-task-card"><header><strong>任务 #{{ task.id }}</strong><b :class="`tone-${statusTone(task.task_status)}`">{{ statusLabel(task.task_status) }}</b></header><div class="toon-task-progress" role="progressbar" :aria-label="`视频任务 #${task.id} 进度`" :aria-valuenow="taskProgressPercent(task)" aria-valuemin="0" aria-valuemax="100"><i :style="{ width: `${taskProgressPercent(task)}%` }"></i></div><p>{{ taskProgressText(task) }}</p><p v-if="taskFailureText(task)" class="toon-task-error"><strong>失败原因</strong>{{ taskFailureText(task) }}</p><footer><a v-if="task.output_uri" :href="task.output_uri" target="_blank" rel="noreferrer">查看输出</a><button v-if="['failed', 'blocked'].includes(task.task_status) && selectedStoryboard" type="button" :disabled="loading || hasActiveVideoTask(selectedStoryboardTasks)" @click="emit('create-video-task', selectedStoryboard.id)">重新创建任务</button><button type="button" :disabled="loading || task.task_status === 'running'" @click="confirmDeleteVideoTask(task.id)">删除任务</button></footer></article></section>
         </aside>
       </section>
     </main>
@@ -542,6 +579,7 @@ dt { color: var(--toon-ink-muted); font-size: .7rem; } dd { margin: 0; font-weig
 .toon-settings { width: min(720px, calc(100% - 48px)); margin: 28px; padding: 22px; border: 1px solid var(--toon-line); border-radius: 12px; background: rgba(255,255,255,.72); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-settings h3 { margin: 4px 0 0; }
 .toon-agent { display: grid; gap: 0; align-content: start; }.toon-agent > header { position: sticky; top: 0; z-index: 2; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.1); background: rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }.toon-agent > header > div { display: flex; gap: 8px; align-items: center; }.toon-agent > header small { color: var(--toon-ink-muted); }
 .toon-agent section { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.08); }.toon-agent section > span { color: var(--toon-ink-soft); font-size: .72rem; font-weight: 800; letter-spacing: .08em; }.toon-agent article { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(255,255,255,.82); border-radius: 8px; background: rgba(255,255,255,.5); }.toon-agent article p, .toon-agent section > p { margin: 0; color: var(--toon-ink-soft); font-size: .76rem; line-height: 1.55; }.toon-agent article time { color: var(--toon-ink-muted); font-size: .68rem; }.toon-agent article a { color: var(--toon-rose-deep); font-size: .76rem; font-weight: 800; }.toon-agent article button { min-height: 32px; width: fit-content; font-size: .72rem; }
+.toon-issue-list { display: grid; gap: 5px; }.toon-issue-list button { min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: start; padding: 7px; text-align: left; }.toon-issue-list button span { color: var(--toon-ink-soft); font-size: .7rem; line-height: 1.45; }.toon-issue-list button small { color: var(--toon-rose-deep); font-size: .64rem; font-weight: 800; }
 .toon-task-card header, .toon-task-card footer { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; }.toon-task-progress { height: 5px; overflow: hidden; border-radius: 999px; background: rgba(213,91,141,.12); }.toon-task-progress i { display: block; height: 100%; border-radius: inherit; background: var(--toon-rose); transition: width .24s ease-out; }.toon-task-error { display: grid; gap: 3px; padding: 8px; border-radius: 6px; background: rgba(255,224,223,.62); color: #8f211c !important; }.toon-task-error strong { font-size: .68rem; }.toon-task-card footer { justify-content: start; }
 .toon-agent__primary { width: 100% !important; background: var(--toon-rose-soft); color: var(--toon-rose-deep); font-weight: 800; }
 @media (max-width: 1180px) { .toon-workbench { grid-template-columns: 220px minmax(620px, 1fr); }.toon-agent { grid-column: 1 / -1; max-height: 360px; }.toon-topbar { grid-template-columns: minmax(180px, 1fr) auto; }.toon-user { grid-column: 1 / -1; justify-content: start; } }

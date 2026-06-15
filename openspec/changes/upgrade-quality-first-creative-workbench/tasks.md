@@ -13,15 +13,15 @@ Checkboxes in delivery and priority sections represent verified implementation. 
 - [x] Reconnect shot edit, add, delete, and reorder controls inside the new workbench.
 - [ ] Reconnect longform planning, chapter generation, revision, and finalization flows.
 - [x] Surface detailed video-task progress, failure reasons, retry, and recovery actions.
-- [ ] Add stronger confirmation and recovery feedback for destructive actions.
+- [x] Add stronger confirmation and recovery feedback for destructive actions.
 
 ## Phase 1 Priority
 
 - [ ] Ship generation transparency for storyboard, first-frame, preflight, render, and review, including prioritized render prompt display and source-level drill-down.
-- [ ] Ship visible video preflight with blocked reasons, quality-risk warnings, and shot-level focus behavior where a shot can be identified.
-- [ ] Ship post-render review with blocking versus advisory findings and direct focus into the recommended correction surface.
-- [ ] Ship shot-level and storyboard-level rework routing based on issue type, including shot highlight and scroll-to-edit behavior.
-- [ ] Ship minimal storyboard review controls that directly improve continuity and pacing.
+- [x] Ship visible video preflight with blocked reasons, quality-risk warnings, and shot-level focus behavior where a shot can be identified.
+- [x] Ship post-render review with blocking versus advisory findings and direct focus into the recommended correction surface.
+- [x] Ship shot-level and storyboard-level rework routing based on issue type, including shot highlight and scroll-to-edit behavior.
+- [x] Ship minimal storyboard review controls that directly improve continuity and pacing.
 - [ ] Ship downstream visibility for locked and missing visual assets.
 
 ## Phase 2 Priority
