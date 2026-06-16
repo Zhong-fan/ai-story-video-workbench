@@ -11,7 +11,7 @@ Checkboxes in delivery and priority sections represent verified implementation. 
 - [x] Connect direct actions for character turnaround, shot first frame, storyboard narration, video preflight, storyboard deletion, and video task creation.
 - [x] Verify the current baseline with Python tests, frontend type/build checks, and browser regression.
 - [x] Reconnect shot edit, add, delete, and reorder controls inside the new workbench.
-- [ ] Reconnect longform planning, chapter generation, revision, and finalization flows.
+- [x] Reconnect longform planning, chapter generation, revision, and finalization flows.
 - [x] Surface detailed video-task progress, failure reasons, retry, and recovery actions.
 - [x] Add stronger confirmation and recovery feedback for destructive actions.
 

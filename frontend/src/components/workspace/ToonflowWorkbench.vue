@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import type {
+  BatchGenerationPayload,
+  CanonicalizeDraftPayload,
   CreateStoryboardShotPayload,
   GenerateCharacterTurnaroundPayload,
+  GenerateSeriesPlanPayload,
   GenerateVoicePayload,
   LongformState,
   MediaAsset,
@@ -12,6 +15,7 @@ import type {
   ProjectDetailResponse,
   ProjectImportDraftPayload,
   ProjectPayload,
+  ReviseDraftPayload,
   Storyboard,
   StoryboardShot,
   TaskEvent,
@@ -60,6 +64,10 @@ const emit = defineEmits<{
   (e: "generate-shot-first-frame", storyboardId: number, shotId: number): void;
   (e: "generate-storyboard-voice", storyboardId: number, payload: GenerateVoicePayload): void;
   (e: "prepare-video-production", storyboardId: number, payload: VideoProductionPreflightPayload): void;
+  (e: "generate-series-plan", payload: GenerateSeriesPlanPayload): void;
+  (e: "run-batch-generation", payload: BatchGenerationPayload): void;
+  (e: "revise-draft-version", draftVersionId: number, payload: ReviseDraftPayload): void;
+  (e: "canonicalize-draft-version", draftVersionId: number, payload: CanonicalizeDraftPayload): void;
   (e: "update-storyboard-shot", storyboardId: number, shotId: number, payload: UpdateStoryboardShotPayload): void;
   (e: "create-storyboard-shot", storyboardId: number, payload: CreateStoryboardShotPayload): void;
   (e: "delete-storyboard-shot", storyboardId: number, shotId: number): void;
@@ -77,6 +85,15 @@ const activeModule = ref<WorkbenchModule>("projects");
 const activeStoryboardId = ref<number | null>(null);
 const settingsDraft = reactive({ title: "", genre: "", world_brief: "", writing_rules: "" });
 const creationAssist = reactive({ script_text: "", protagonist: "", core_conflict: "", audience: "", tone: "" });
+const longformDraft = reactive({
+  target_chapter_count: 12,
+  user_brief: "",
+  start_chapter_no: 1,
+  end_chapter_no: 1,
+  feedback_text: "",
+  author_name: "",
+  tagline: "",
+});
 const editingShotId = ref<number | null>(null);
 const shotDraft = reactive<UpdateStoryboardShotPayload>({
   narration_text: "",
@@ -118,6 +135,9 @@ const selectedStoryboardTasks = computed(() =>
 const selectedStoryboardAssets = computed(() =>
   selectedStoryboard.value ? mediaAssets.value.filter((asset) => asset.storyboard_id === selectedStoryboard.value?.id) : mediaAssets.value,
 );
+const latestSeriesPlan = computed(() => props.longformState.series_plans[0] ?? null);
+const latestDraftVersion = computed(() => props.longformState.draft_versions[0] ?? null);
+const latestBatchJob = computed(() => props.longformState.batch_jobs[0] ?? null);
 const recentEvents = computed(() => {
   const events: TaskEvent[] = [];
   for (const storyboard of storyboards.value) events.push(...storyboard.events);
@@ -213,6 +233,36 @@ function confirmDeleteMediaAsset(assetId: number) {
 }
 function confirmDeleteVideoTask(taskId: number) {
   if (window.confirm("确认删除这个视频任务记录？已生成的输出可能无法再从工作台访问。")) emit("delete-video-task", taskId);
+}
+function submitSeriesPlan() {
+  emit("generate-series-plan", {
+    target_chapter_count: Math.max(1, Number(longformDraft.target_chapter_count) || 1),
+    user_brief: longformDraft.user_brief.trim() || selectedProject.value?.world_brief || "按当前项目资料生成长篇规划。",
+  });
+}
+function submitBatchGeneration() {
+  const plan = latestSeriesPlan.value;
+  if (!plan) return;
+  emit("run-batch-generation", {
+    series_plan_id: plan.id,
+    start_chapter_no: Math.max(1, Number(longformDraft.start_chapter_no) || 1),
+    end_chapter_no: Math.max(1, Number(longformDraft.end_chapter_no) || 1),
+  });
+}
+function submitDraftRevision() {
+  const draft = latestDraftVersion.value;
+  const feedback = longformDraft.feedback_text.trim();
+  if (!draft || !feedback) return;
+  emit("revise-draft-version", draft.id, { feedback_text: feedback });
+}
+function submitDraftCanonicalize() {
+  const draft = latestDraftVersion.value;
+  if (!draft) return;
+  emit("canonicalize-draft-version", draft.id, {
+    author_name: longformDraft.author_name.trim() || "ChenFlow",
+    visibility: "private",
+    tagline: longformDraft.tagline.trim(),
+  });
 }
 function statusLabel(status: string | undefined) {
   const labels: Record<string, string> = {
@@ -352,6 +402,11 @@ watch(selectedProject, (project) => {
   settingsDraft.genre = project?.genre ?? "";
   settingsDraft.world_brief = project?.world_brief ?? "";
   settingsDraft.writing_rules = project?.writing_rules ?? "";
+  longformDraft.user_brief = project?.world_brief ?? "";
+}, { immediate: true });
+watch(latestSeriesPlan, (plan) => {
+  longformDraft.target_chapter_count = plan?.target_chapter_count || longformDraft.target_chapter_count;
+  longformDraft.end_chapter_no = plan?.target_chapter_count || longformDraft.end_chapter_no;
 }, { immediate: true });
 watch(storyboards, (items) => {
   if (!items.some((item) => item.id === activeStoryboardId.value)) activeStoryboardId.value = items[0]?.id ?? null;
@@ -442,7 +497,7 @@ watch(selectedStoryboard, () => {
 
           <div v-if="!selectedProject" class="toon-empty toon-empty--canvas"><strong>先打开一个项目</strong><p>选择项目后，真实生产数据会铺在这张画布上。</p></div>
 
-          <div v-else-if="activeModule === 'script'" class="toon-flow">
+          <div v-else-if="activeModule === 'script'" class="toon-flow toon-flow--script">
             <article class="toon-flow-node toon-flow-node--source"><header><span>01 · 故事源</span><b :class="`tone-${selectedProject?.world_brief ? 'good' : 'warn'}`">{{ selectedProject?.world_brief ? "已录入" : "待补充" }}</b></header><h3>{{ selectedProject?.title }}</h3><p>{{ shortText(selectedProject?.world_brief, "尚未录入故事资料。") }}</p><footer>{{ selectedProject?.reference_work || "原创项目" }}</footer></article>
             <span class="toon-connector">→</span>
             <article class="toon-flow-node"><header><span>02 · 创作约束</span><b :class="`tone-${selectedProject?.writing_rules ? 'good' : 'warn'}`">{{ selectedProject?.writing_rules ? "已设置" : "待补充" }}</b></header><h3>改编策略</h3><p>{{ shortText(selectedProject?.writing_rules, "尚未设置改编要求。") }}</p><footer>{{ characterCards.length }} 人物卡 · {{ props.activeProject?.sources.length || 0 }} 资料</footer></article>
@@ -450,6 +505,33 @@ watch(selectedStoryboard, () => {
             <article class="toon-flow-node"><header><span>03 · 长篇产物</span><b :class="`tone-${longformState.draft_versions.length ? 'good' : 'neutral'}`">{{ longformState.draft_versions.length ? "有草稿" : "未开始" }}</b></header><h3>{{ longformState.series_plans[0]?.title || "系列规划与正文" }}</h3><p>{{ longformState.series_plans[0]?.theme || "概要、章节规划和正文版本会在这里汇总。" }}</p><footer>{{ longformState.series_plans.length }} 份规划 · {{ longformState.draft_versions.length }} 个草稿</footer></article>
             <span class="toon-connector">→</span>
             <article class="toon-flow-node"><header><span>04 · 分镜出口</span><b :class="`tone-${storyboards.length ? 'good' : 'neutral'}`">{{ storyboards.length ? "已连接" : "未开始" }}</b></header><h3>{{ selectedStoryboard?.title || "等待分镜" }}</h3><p>{{ selectedStoryboard?.summary || "完成故事与正文准备后，从这里进入镜头生产。" }}</p><footer>{{ selectedStoryboard?.shots.length || 0 }} 镜头</footer></article>
+            <section class="toon-longform-panel">
+              <article>
+                <header><span>LONGFORM PLAN</span><strong>长篇规划</strong></header>
+                <label><span>目标章节数</span><input v-model.number="longformDraft.target_chapter_count" type="number" min="1" max="200" /></label>
+                <label><span>规划补充要求</span><textarea v-model="longformDraft.user_brief" rows="4" placeholder="补充节奏、主线、人物弧光或禁区。" /></label>
+                <button type="button" :disabled="loading" @click="submitSeriesPlan">{{ latestSeriesPlan ? "重新生成规划" : "生成长篇规划" }}</button>
+              </article>
+              <article>
+                <header><span>CHAPTER DRAFT</span><strong>正文生成</strong></header>
+                <p>{{ latestSeriesPlan ? `${latestSeriesPlan.title} · ${latestSeriesPlan.target_chapter_count} 章` : "先生成或选择一个长篇规划。" }}</p>
+                <div><label><span>起始章</span><input v-model.number="longformDraft.start_chapter_no" type="number" min="1" /></label><label><span>结束章</span><input v-model.number="longformDraft.end_chapter_no" type="number" min="1" /></label></div>
+                <button type="button" :disabled="loading || !latestSeriesPlan" @click="submitBatchGeneration">生成正文任务</button>
+                <small v-if="latestBatchJob">最近任务：{{ statusLabel(latestBatchJob.job_status) }} · {{ latestBatchJob.start_chapter_no }}-{{ latestBatchJob.end_chapter_no }} 章</small>
+              </article>
+              <article>
+                <header><span>REVISION</span><strong>草稿修订</strong></header>
+                <p>{{ latestDraftVersion ? `第 ${latestDraftVersion.chapter_no} 章 v${latestDraftVersion.version_no} · ${latestDraftVersion.title}` : "生成正文后可在这里修订最新草稿。" }}</p>
+                <label><span>修订反馈</span><textarea v-model="longformDraft.feedback_text" rows="4" placeholder="指出要加强、删减、改写或保持的部分。" /></label>
+                <button type="button" :disabled="loading || !latestDraftVersion || !longformDraft.feedback_text.trim()" @click="submitDraftRevision">按反馈生成新版本</button>
+              </article>
+              <article>
+                <header><span>CANONICAL</span><strong>定稿入库</strong></header>
+                <label><span>作者署名</span><input v-model="longformDraft.author_name" placeholder="默认 ChenFlow" /></label>
+                <label><span>一句话简介</span><input v-model="longformDraft.tagline" placeholder="可留空，默认私密保存" /></label>
+                <button type="button" :disabled="loading || !latestDraftVersion" @click="submitDraftCanonicalize">定稿最新草稿</button>
+              </article>
+            </section>
           </div>
 
           <div v-else-if="activeModule === 'assets'" class="toon-asset-board">
@@ -562,6 +644,7 @@ dt { color: var(--toon-ink-muted); font-size: .7rem; } dd { margin: 0; font-weig
 .toon-flow-node--source { margin-top: -80px; }.toon-flow-node:nth-of-type(2) { margin-top: 80px; }.toon-flow-node:nth-of-type(3) { margin-top: -30px; }
 .toon-flow-node h3, .toon-flow-node p { margin: 0; }.toon-flow-node p { color: var(--toon-ink-soft); font-size: .84rem; line-height: 1.65; }.toon-flow-node footer { margin-top: auto; color: var(--toon-ink-muted); font-size: .75rem; }
 .toon-flow-node header span, .toon-storyboard-table header span, .toon-frame-panel header span { color: var(--toon-ink-soft); font-size: .72rem; font-weight: 800; letter-spacing: .06em; }
+.toon-flow--script { align-items: flex-start; flex-wrap: wrap; }.toon-longform-panel { flex: 1 0 100%; display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 12px; }.toon-longform-panel article { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--toon-line); border-radius: 11px; background: rgba(255,255,255,.68); box-shadow: 0 12px 26px rgba(213,91,141,.08); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-longform-panel header { display: grid; gap: 3px; }.toon-longform-panel header span, .toon-longform-panel label span, .toon-longform-panel small { color: var(--toon-ink-soft); font-size: .7rem; }.toon-longform-panel label { display: grid; gap: 5px; }.toon-longform-panel input, .toon-longform-panel textarea { width: 100%; border: 1px solid var(--toon-line); border-radius: 7px; background: rgba(255,250,253,.76); padding: 8px; color: var(--toon-ink); }.toon-longform-panel textarea { resize: vertical; line-height: 1.5; }.toon-longform-panel p { min-height: 3.2em; margin: 0; color: var(--toon-ink-soft); font-size: .76rem; line-height: 1.55; }.toon-longform-panel > article > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }.toon-longform-panel button { background: var(--toon-rose-soft); color: var(--toon-rose-deep); font-weight: 800; }
 .toon-connector { color: color-mix(in oklab, var(--toon-rose) 58%, var(--toon-ink-soft)); font-size: 1.5rem; }
 [class^="tone-"], [class*=" tone-"] { display: inline-flex; width: fit-content; border-radius: 4px; padding: 3px 6px; font-size: .68rem; font-weight: 800; }
 .tone-good { background: #d9f5e3; color: #087434; }.tone-warn { background: #fff0c9; color: #8a5b00; }.tone-bad { background: #ffe0df; color: #a11d17; }.tone-neutral { background: var(--toon-rose-soft); color: var(--toon-ink-soft); }

@@ -217,6 +217,35 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         self.assertIn("store.loadAiProjectDraft", app_source)
         self.assertIn(':creation-mode="projectCreationMode"', app_source)
 
+    def test_script_canvas_reconnects_longform_workflows(self) -> None:
+        app_source = APP_VUE.read_text(encoding="utf-8")
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        for event_name in [
+            "generate-series-plan",
+            "run-batch-generation",
+            "revise-draft-version",
+            "canonicalize-draft-version",
+        ]:
+            self.assertIn(f'(e: "{event_name}"', source)
+
+        for label in [
+            "生成长篇规划",
+            "生成正文任务",
+            "按反馈生成新版本",
+            "定稿最新草稿",
+            "visibility: \"private\"",
+        ]:
+            self.assertIn(label, source)
+
+        for binding in [
+            '@generate-series-plan="store.generateSeriesPlan"',
+            '@run-batch-generation="store.runBatchGeneration"',
+            '@revise-draft-version="store.reviseDraftVersion"',
+            '@canonicalize-draft-version="store.canonicalizeDraftVersion"',
+        ]:
+            self.assertIn(binding, app_source)
+
     def test_project_create_is_not_restored_as_startup_view(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")
         restorable_block = app_source.split("const restorableViews: ViewKey[] = [", 1)[1].split("];", 1)[0]
