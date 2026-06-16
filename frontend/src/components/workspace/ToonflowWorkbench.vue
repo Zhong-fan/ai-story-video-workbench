@@ -4,6 +4,7 @@ import type {
   BatchGenerationPayload,
   CanonicalizeDraftPayload,
   CreateStoryboardShotPayload,
+  GenerationTraceStep,
   GenerateCharacterTurnaroundPayload,
   GenerateSeriesPlanPayload,
   GenerateVoicePayload,
@@ -158,6 +159,10 @@ const reviewFindings = computed(() => {
   const value = selectedStoryboard.value?.progress?.review_findings;
   return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
 });
+const generationTrace = computed(() => {
+  const value = selectedStoryboard.value?.progress?.generation_trace;
+  return Array.isArray(value) ? value as GenerationTraceStep[] : [];
+});
 const preflightFailures = computed(() => {
   const value = preflight.value?.quality_gate_failures;
   return Array.isArray(value) ? value.map(String) : [];
@@ -205,6 +210,14 @@ function taskProgressPercent(task: VideoTask) {
 function taskFailureText(task: VideoTask) {
   return task.error_message || String(task.progress.failure_stage || "");
 }
+function compactJson(value: unknown) {
+  if (!value || (typeof value === "object" && Object.keys(value as Record<string, unknown>).length === 0)) return "暂无技术参数";
+  return JSON.stringify(value, null, 2).slice(0, 1600);
+}
+function renderPromptSources(step: GenerationTraceStep) {
+  const sources = step.parameters?.render_prompt_sources;
+  return Array.isArray(sources) ? sources.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object")) : [];
+}
 function issueShotNo(value: unknown) {
   const match = String(value || "").match(/(?:镜头\s*|shot-)(\d+)/i);
   return match ? Number(match[1]) : null;
@@ -216,6 +229,15 @@ function reworkLevelLabel(value: unknown) {
 async function focusIssueShot(value: unknown) {
   const shotNo = issueShotNo(value);
   const shot = selectedStoryboard.value?.shots.find((item) => item.shot_no === shotNo);
+  activeModule.value = "production";
+  if (!shot) return;
+  editShot(shot);
+  await nextTick();
+  document.querySelector(".toon-shot-editor")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+async function focusTraceSource(source: Record<string, unknown>) {
+  const shotId = Number(source.shot_id || 0);
+  const shot = selectedStoryboard.value?.shots.find((item) => item.id === shotId);
   activeModule.value = "production";
   if (!shot) return;
   editShot(shot);
@@ -566,6 +588,7 @@ watch(selectedStoryboard, () => {
 
         <aside class="toon-agent">
           <header><div><span class="toon-dot"></span><strong>生产监督</strong></div><small>{{ selectedStoryboard?.title || "项目状态" }}</small></header>
+          <section v-if="generationTrace.length"><span>生成透明度</span><article v-for="step in generationTrace" :key="step.step_key" class="toon-trace-card"><header><strong>{{ step.label }}</strong><b :class="`tone-${statusTone(step.status)}`">{{ statusLabel(step.status) }}</b></header><p v-for="line in step.summary_lines" :key="line">{{ line }}</p><div v-if="step.inherited_inputs?.length" class="toon-trace-inputs"><span v-for="input in step.inherited_inputs" :key="`${step.step_key}-${input.kind}-${input.label}`"><b>{{ input.label }}</b>{{ input.value }}</span></div><details v-if="step.prompt_text || renderPromptSources(step).length"><summary>{{ step.step_key === 'render' ? '最终渲染 Prompt' : '提示词与来源' }}</summary><pre v-if="step.prompt_text">{{ step.prompt_text }}</pre><div v-if="renderPromptSources(step).length" class="toon-render-sources"><button v-for="source in renderPromptSources(step)" :key="String(source.asset_id || source.prompt)" type="button" @click="focusTraceSource(source)"><b>#{{ source.asset_id }}</b><span>{{ shortText(String(source.prompt || ''), '未记录 prompt', 96) }}</span></button></div></details><details><summary>技术参数</summary><pre>{{ compactJson(step.parameters) }}</pre></details></article></section>
           <section><span>来源与预检</span><dl><div><dt>来源模式</dt><dd>{{ sourceMode }}</dd></div><div><dt>预检状态</dt><dd :class="`tone-text-${statusTone(String(preflight?.readiness || ''))}`">{{ preflight ? statusLabel(String(preflight.readiness)) : "尚未执行" }}</dd></div><div><dt>阻断 / 风险</dt><dd>{{ preflightFailures.length }} / {{ preflightWarnings.length }}</dd></div></dl><div v-if="preflightFailures.length || preflightWarnings.length" class="toon-issue-list"><button v-for="issue in [...preflightFailures, ...preflightWarnings].slice(0, 5)" :key="issue" type="button" @click="focusIssueShot(issue)"><b :class="`tone-${preflightFailures.includes(issue) ? 'bad' : 'warn'}`">{{ preflightFailures.includes(issue) ? "阻断" : "风险" }}</b><span>{{ issue }}</span><small v-if="issueShotNo(issue)">定位镜头</small></button></div><button v-if="selectedStoryboard" type="button" class="toon-agent__primary" :disabled="loading" @click="emit('prepare-video-production', selectedStoryboard.id, { generate_character_turnarounds: true, generate_audio_scripts: true, generate_dialogue_audio: false, create_video_task: false })">执行生产预检</button></section>
           <section v-if="reviewFindings.length"><span>质量复查</span><article v-for="finding in reviewFindings.slice(0, 4)" :key="String(finding.finding_id)"><b :class="`tone-${finding.severity === 'blocking' ? 'bad' : 'warn'}`">{{ finding.severity === "blocking" ? "阻断" : "建议" }}</b><strong>{{ finding.title }}</strong><p>{{ finding.detail }}</p><button type="button" @click="focusIssueShot(finding.finding_id || finding.title)">{{ reworkLevelLabel(finding.recommended_rework_level) }}</button></article></section>
           <section><span>运行记录</span><article v-for="event in recentEvents" :key="event.id"><time>{{ formatDateTime(event.created_at) }}</time><strong>{{ event.message }}</strong></article><p v-if="!recentEvents.length">当前项目还没有生产运行记录。</p></section>
@@ -662,6 +685,7 @@ dt { color: var(--toon-ink-muted); font-size: .7rem; } dd { margin: 0; font-weig
 .toon-settings { width: min(720px, calc(100% - 48px)); margin: 28px; padding: 22px; border: 1px solid var(--toon-line); border-radius: 12px; background: rgba(255,255,255,.72); box-shadow: 0 14px 30px rgba(213,91,141,.1); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }.toon-settings h3 { margin: 4px 0 0; }
 .toon-agent { display: grid; gap: 0; align-content: start; }.toon-agent > header { position: sticky; top: 0; z-index: 2; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.1); background: rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }.toon-agent > header > div { display: flex; gap: 8px; align-items: center; }.toon-agent > header small { color: var(--toon-ink-muted); }
 .toon-agent section { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid rgba(110,52,78,.08); }.toon-agent section > span { color: var(--toon-ink-soft); font-size: .72rem; font-weight: 800; letter-spacing: .08em; }.toon-agent article { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(255,255,255,.82); border-radius: 8px; background: rgba(255,255,255,.5); }.toon-agent article p, .toon-agent section > p { margin: 0; color: var(--toon-ink-soft); font-size: .76rem; line-height: 1.55; }.toon-agent article time { color: var(--toon-ink-muted); font-size: .68rem; }.toon-agent article a { color: var(--toon-rose-deep); font-size: .76rem; font-weight: 800; }.toon-agent article button { min-height: 32px; width: fit-content; font-size: .72rem; }
+.toon-trace-card details { display: grid; gap: 6px; }.toon-trace-card summary { color: var(--toon-rose-deep); cursor: pointer; font-size: .72rem; font-weight: 800; }.toon-trace-card pre { max-height: 180px; overflow: auto; margin: 0; padding: 8px; border-radius: 6px; background: rgba(255,246,251,.8); color: var(--toon-ink-soft); font-size: .68rem; line-height: 1.5; white-space: pre-wrap; }.toon-trace-inputs { display: grid; gap: 5px; }.toon-trace-inputs span { display: grid; gap: 2px; padding: 6px; border-radius: 6px; background: rgba(255,239,246,.62); color: var(--toon-ink-soft); font-size: .68rem; }.toon-trace-inputs b { color: var(--toon-ink); }.toon-render-sources { display: grid; gap: 5px; margin-top: 6px; }.toon-render-sources button { width: 100%; height: auto; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; align-items: start; padding: 7px; text-align: left; }.toon-render-sources span { color: var(--toon-ink-soft); line-height: 1.45; }
 .toon-issue-list { display: grid; gap: 5px; }.toon-issue-list button { min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: start; padding: 7px; text-align: left; }.toon-issue-list button span { color: var(--toon-ink-soft); font-size: .7rem; line-height: 1.45; }.toon-issue-list button small { color: var(--toon-rose-deep); font-size: .64rem; font-weight: 800; }
 .toon-task-card header, .toon-task-card footer { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; }.toon-task-progress { height: 5px; overflow: hidden; border-radius: 999px; background: rgba(213,91,141,.12); }.toon-task-progress i { display: block; height: 100%; border-radius: inherit; background: var(--toon-rose); transition: width .24s ease-out; }.toon-task-error { display: grid; gap: 3px; padding: 8px; border-radius: 6px; background: rgba(255,224,223,.62); color: #8f211c !important; }.toon-task-error strong { font-size: .68rem; }.toon-task-card footer { justify-content: start; }
 .toon-agent__primary { width: 100% !important; background: var(--toon-rose-soft); color: var(--toon-rose-deep); font-weight: 800; }

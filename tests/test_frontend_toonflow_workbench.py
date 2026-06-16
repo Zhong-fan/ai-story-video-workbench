@@ -246,6 +246,18 @@ class FrontendToonflowWorkbenchTests(unittest.TestCase):
         ]:
             self.assertIn(binding, app_source)
 
+    def test_agent_panel_surfaces_generation_transparency(self) -> None:
+        source = TOONFLOW_WORKBENCH.read_text(encoding="utf-8")
+
+        self.assertIn("GenerationTraceStep", source)
+        self.assertIn("generationTrace", source)
+        self.assertIn("生成透明度", source)
+        self.assertIn("最终渲染 Prompt", source)
+        self.assertIn("技术参数", source)
+        self.assertIn("renderPromptSources", source)
+        self.assertIn("compactJson", source)
+        self.assertIn("focusTraceSource", source)
+
     def test_project_create_is_not_restored_as_startup_view(self) -> None:
         app_source = APP_VUE.read_text(encoding="utf-8")
         restorable_block = app_source.split("const restorableViews: ViewKey[] = [", 1)[1].split("];", 1)[0]

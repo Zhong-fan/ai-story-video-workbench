@@ -17,12 +17,12 @@ Checkboxes in delivery and priority sections represent verified implementation. 
 
 ## Phase 1 Priority
 
-- [ ] Ship generation transparency for storyboard, first-frame, preflight, render, and review, including prioritized render prompt display and source-level drill-down.
+- [x] Ship generation transparency for storyboard, first-frame, preflight, render, and review, including prioritized render prompt display and source-level drill-down.
 - [x] Ship visible video preflight with blocked reasons, quality-risk warnings, and shot-level focus behavior where a shot can be identified.
 - [x] Ship post-render review with blocking versus advisory findings and direct focus into the recommended correction surface.
 - [x] Ship shot-level and storyboard-level rework routing based on issue type, including shot highlight and scroll-to-edit behavior.
 - [x] Ship minimal storyboard review controls that directly improve continuity and pacing.
-- [ ] Ship downstream visibility for locked and missing visual assets.
+- [x] Ship downstream visibility for locked and missing visual assets.
 
 ## Phase 2 Priority
 
@@ -72,8 +72,8 @@ Checkboxes in delivery and priority sections represent verified implementation. 
 
 ## 6. Verification
 
-- [ ] Verify users can see the generation chain and actual inputs used at each major step.
-- [ ] Verify users can inspect both operator-level and technical-level generation details.
-- [ ] Verify continuity failures route users back to shot-level rework.
-- [ ] Verify pacing or structure failures route users back to storyboard or sequence-level rework.
-- [ ] Verify video preflight and post-render review become first-class product steps rather than hidden backend checks.
+- [x] Verify users can see the generation chain and actual inputs used at each major step.
+- [x] Verify users can inspect both operator-level and technical-level generation details.
+- [x] Verify continuity failures route users back to shot-level rework.
+- [x] Verify pacing or structure failures route users back to storyboard or sequence-level rework.
+- [x] Verify video preflight and post-render review become first-class product steps rather than hidden backend checks.
